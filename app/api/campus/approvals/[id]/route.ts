@@ -46,7 +46,10 @@ export async function PATCH(
   if (updateErr) return NextResponse.json({ error: updateErr.message }, { status: 400 })
 
   // 이메일 발송
-  const employee = req.users as { name: string; email: string } | null
+  const usersRaw = req.users as unknown
+  const employee: { name: string; email: string } | null = Array.isArray(usersRaw)
+    ? (usersRaw[0] ?? null)
+    : (usersRaw as { name: string; email: string } | null)
   if (employee?.email) {
     if (status === 'approved') {
       await sendEmail({

@@ -44,7 +44,11 @@ export async function GET() {
     totalEmployees: totalEmployees ?? 0,
     pendingCount: pendingCount ?? 0,
     onLeaveTodayCount: (onLeaveToday ?? []).length,
-    onLeaveTodayNames: (onLeaveToday ?? []).map((r: { users: { name: string } | null }) => r.users?.name ?? '').filter(Boolean),
+    onLeaveTodayNames: (onLeaveToday ?? []).map((r: { users: unknown }) => {
+      const u = r.users
+      if (Array.isArray(u)) return (u[0] as { name: string } | undefined)?.name ?? ''
+      return (u as { name: string } | null)?.name ?? ''
+    }).filter(Boolean),
     recentRequests: recentRequests ?? [],
   })
 }
