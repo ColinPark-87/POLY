@@ -10,6 +10,7 @@ const navItems = [
   { href: '/campus/employees', label: '직원 관리', icon: '👥' },
   { href: '/campus/holidays', label: '공휴일', icon: '🗓️' },
   { href: '/campus/direct-entry', label: '직접 입력', icon: '✏️' },
+  { href: '/campus/import', label: 'Excel Import', icon: '📥' },
   { href: '/campus/calendar', label: '캘린더', icon: '📅' },
 ]
 
