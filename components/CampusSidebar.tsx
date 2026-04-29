@@ -7,7 +7,7 @@ const navItems = [
   { href: '/campus/dashboard', label: '대시보드', icon: '📊' },
   { href: '/campus/approvals', label: '승인 대기', icon: '✅' },
   { href: '/campus/overview', label: '연차 현황', icon: '📋' },
-  { href: '/campus/balances', label: '잔여 관리', icon: '📊' },
+  { href: '/campus/balances', label: '잔여 관리', icon: '📉' },
   { href: '/campus/employees', label: '직원 관리', icon: '👥' },
   { href: '/campus/holidays', label: '공휴일', icon: '🗓️' },
   { href: '/campus/direct-entry', label: '직접 입력', icon: '✏️' },

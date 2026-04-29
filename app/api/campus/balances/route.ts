@@ -6,7 +6,10 @@ export async function GET(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
 
-  const { data: me } = await supabase.from('users').select('campus_id').eq('id', user.id).single()
+  const { data: me } = await supabase.from('users').select('campus_id, role').eq('id', user.id).single()
+  if (!me || !['campus_admin', 'hq_admin'].includes(me.role)) {
+    return NextResponse.json({ error: '권한 없음' }, { status: 403 })
+  }
   const { searchParams } = new URL(request.url)
   const year = parseInt(searchParams.get('year') ?? String(new Date().getFullYear()))
 
