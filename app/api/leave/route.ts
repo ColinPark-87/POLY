@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
 
   const { data: profile } = await supabase
     .from('users')
-    .select('campus_id')
+    .select('campus_id, name')
     .eq('id', user.id)
     .single()
 
@@ -90,6 +90,34 @@ export async function POST(request: NextRequest) {
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+
+  // 원장 이메일 조회 후 발송
+  const { data: campusAdmin } = await supabase
+    .from('users')
+    .select('email, name')
+    .eq('campus_id', profile!.campus_id)
+    .eq('role', 'campus_admin')
+    .eq('is_active', true)
+    .single()
+
+  if (campusAdmin?.email) {
+    const { leaveRequestEmailHtml, sendEmail } = await import('@/lib/email')
+    const { LEAVE_TYPE_LABELS } = await import('@/lib/types')
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+    await sendEmail({
+      to: [{ email: campusAdmin.email, name: campusAdmin.name }],
+      subject: `[연차 신청] ${profile!.name}님의 연차 신청`,
+      htmlContent: leaveRequestEmailHtml({
+        employeeName: profile!.name ?? '',
+        leaveType: LEAVE_TYPE_LABELS[type as LeaveType],
+        startDate: start_date,
+        endDate: end_date,
+        daysUsed: days_used,
+        reason: reason ?? null,
+        approvalUrl: `${baseUrl}/campus/approvals`,
+      }),
+    })
+  }
 
   return NextResponse.json({ request: data })
 }
