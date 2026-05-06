@@ -27,7 +27,7 @@ const TOOLS_NAV: NavDef[] = [
   { href: '/campus/class-roster', label: '개설반 현황' },
   { href: '/campus/vehicles', label: '차량 관리' },
   { href: '/campus/direct-entry', label: '연차 직접입력' },
-  { href: '/campus/calendar', label: '전사 캘린더' },
+  { href: '/campus/calendar', label: '캠퍼스 캘린더' },
   { href: '/campus/staff', label: '캠퍼스 직원 현황' },
 ]
 const MANAGE_NAV: NavDef[] = [

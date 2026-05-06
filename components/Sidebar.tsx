@@ -69,7 +69,7 @@ export default function Sidebar({ userName, userPosition }: { userName: string; 
       <nav className="flex-1 p-3 overflow-y-auto space-y-4">
         <div>
           <p className="text-[10px] font-semibold text-[#94A3B8] uppercase tracking-wider px-3 mb-1">공통</p>
-          <NavItem href="/calendar" label="전사 캘린더" icon="📅" />
+          <NavItem href="/calendar" label="캠퍼스 캘린더" icon="📅" />
         </div>
         <div>
           <p className="text-[10px] font-semibold text-[#94A3B8] uppercase tracking-wider px-3 mb-1">개인</p>
