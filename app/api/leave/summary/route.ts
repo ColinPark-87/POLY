@@ -1,21 +1,22 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 
 export async function GET() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
 
+  const service = createServiceClient()
   const year = new Date().getFullYear()
 
-  const { data: grant } = await supabase
+  const { data: grant } = await service
     .from('leave_grants')
     .select('*')
     .eq('user_id', user.id)
     .eq('year', year)
     .single()
 
-  const { data: requests } = await supabase
+  const { data: requests } = await service
     .from('leave_requests')
     .select('days_used, status, type, start_date, end_date, created_at')
     .eq('user_id', user.id)
@@ -24,7 +25,7 @@ export async function GET() {
     .order('created_at', { ascending: false })
     .limit(5)
 
-  const { data: pending } = await supabase
+  const { data: pending } = await service
     .from('leave_requests')
     .select('id, type, start_date, end_date, days_used, created_at')
     .eq('user_id', user.id)

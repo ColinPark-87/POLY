@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useState } from 'react'
 
@@ -55,7 +55,7 @@ export default function SettingsPage() {
                 value={form[field as keyof typeof form]}
                 onChange={e => setForm(f => ({ ...f, [field]: e.target.value }))}
                 required
-                className="w-full border border-[#E2E8F0] rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#4F7EF7]"
+                className="w-full border border-[#E2E8F0] rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]"
               />
             </div>
           ))}
@@ -70,7 +70,7 @@ export default function SettingsPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-[#4F7EF7] hover:bg-[#3B6AE8] text-white font-semibold py-3 rounded-xl transition-colors disabled:opacity-50"
+            className="w-full bg-[#004EA2] hover:bg-[#003E83] text-white font-semibold py-3 rounded-xl transition-colors disabled:opacity-50"
           >
             {loading ? '변경 중...' : '변경하기'}
           </button>

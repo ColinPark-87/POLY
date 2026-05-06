@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
@@ -9,7 +9,7 @@ import { LEAVE_TYPE_LABELS, type LeaveRequest } from '@/lib/types'
 function Spinner() {
   return (
     <div className="flex justify-center py-16">
-      <div className="w-8 h-8 border-4 border-[#4F7EF7] border-t-transparent rounded-full animate-spin" />
+      <div className="w-8 h-8 border-4 border-[#004EA2] border-t-transparent rounded-full animate-spin" />
     </div>
   )
 }
@@ -19,12 +19,28 @@ function HistoryContent() {
   const [requests, setRequests] = useState<LeaveRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedSig, setSelectedSig] = useState<string | null>(null)
+  const [cancellingId, setCancellingId] = useState<string | null>(null)
 
-  useEffect(() => {
+  function load() {
     fetch('/api/leave')
       .then(r => r.json())
       .then(d => { setRequests(d.requests ?? []); setLoading(false) })
-  }, [])
+  }
+
+  useEffect(() => { load() }, [])
+
+  async function handleCancel(id: string) {
+    if (!confirm('이 연차 신청을 취소하시겠습니까?')) return
+    setCancellingId(id)
+    const res = await fetch(`/api/leave/${id}`, { method: 'DELETE' })
+    setCancellingId(null)
+    if (res.ok) {
+      load()
+    } else {
+      const d = await res.json()
+      alert(d.error ?? '취소 실패')
+    }
+  }
 
   if (loading) return <Spinner />
 
@@ -52,7 +68,7 @@ function HistoryContent() {
                   <div>
                     <span className="font-semibold text-sm">{LEAVE_TYPE_LABELS[r.type]}</span>
                     <p className="text-xs text-[#64748B] mt-0.5">
-                      {r.start_date}{r.start_date !== r.end_date ? ` ~ ${r.end_date}` : ''} · {r.days_used}일
+                      {r.start_date}{r.start_date !== r.end_date ? ` ~ ${r.end_date}` : ''} · {r.type === 'quarter' ? 0.25 : r.days_used}일
                     </p>
                   </div>
                   <LeaveStatusBadge status={r.status} />
@@ -60,14 +76,25 @@ function HistoryContent() {
                 {r.reason && <p className="text-xs text-[#64748B] mb-2">{r.reason}</p>}
                 <div className="flex justify-between items-center">
                   <span className="text-xs text-[#94A3B8]">{r.created_at.slice(0, 10)}</span>
-                  {r.signature_data_url && (
-                    <button
-                      onClick={() => setSelectedSig(r.signature_data_url!)}
-                      className="text-xs text-[#4F7EF7] underline"
-                    >
-                      서명 보기
-                    </button>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {r.signature_data_url && (
+                      <button
+                        onClick={() => setSelectedSig(r.signature_data_url!)}
+                        className="text-xs text-[#004EA2] underline"
+                      >
+                        서명 보기
+                      </button>
+                    )}
+                    {(r.status === 'pending' || r.status === 'approved') && (
+                      <button
+                        onClick={() => handleCancel(r.id)}
+                        disabled={cancellingId === r.id}
+                        className="text-xs bg-[#FEE2E2] text-[#DC2626] hover:bg-[#FECACA] px-2 py-0.5 rounded font-semibold disabled:opacity-50"
+                      >
+                        {cancellingId === r.id ? '취소 중...' : '취소'}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
@@ -76,26 +103,37 @@ function HistoryContent() {
           {/* Desktop: table */}
           <div className="hidden md:block bg-white rounded-2xl shadow-sm border border-[#E2E8F0] overflow-hidden">
             <table className="w-full text-sm">
-              <thead className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
+              <thead className="bg-[#F7F8FA] border-b border-[#E2E8F0]">
                 <tr>
-                  {['신청일','종류','기간','일수','상태','사유','서명'].map(h => (
+                  {['신청일','종류','기간','일수','상태','사유','서명','취소'].map(h => (
                     <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-[#64748B] uppercase tracking-wide">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#F1F5F9]">
                 {requests.map(r => (
-                  <tr key={r.id} className="hover:bg-[#F8FAFC] transition-colors">
+                  <tr key={r.id} className="hover:bg-[#F7F8FA] transition-colors">
                     <td className="px-4 py-3 text-[#64748B]">{r.created_at.slice(0, 10)}</td>
                     <td className="px-4 py-3 font-medium">{LEAVE_TYPE_LABELS[r.type]}</td>
                     <td className="px-4 py-3 text-[#64748B]">{r.start_date}{r.start_date !== r.end_date ? ` ~ ${r.end_date}` : ''}</td>
-                    <td className="px-4 py-3">{r.days_used}일</td>
+                    <td className="px-4 py-3">{r.type === 'quarter' ? 0.25 : r.days_used}일</td>
                     <td className="px-4 py-3"><LeaveStatusBadge status={r.status} /></td>
                     <td className="px-4 py-3 text-[#64748B] max-w-[120px] truncate">{r.reason ?? '-'}</td>
                     <td className="px-4 py-3">
                       {r.signature_data_url ? (
-                        <button onClick={() => setSelectedSig(r.signature_data_url!)} className="text-xs text-[#4F7EF7] underline">보기</button>
+                        <button onClick={() => setSelectedSig(r.signature_data_url!)} className="text-xs text-[#004EA2] underline">보기</button>
                       ) : '-'}
+                    </td>
+                    <td className="px-4 py-3">
+                      {(r.status === 'pending' || r.status === 'approved') ? (
+                        <button
+                          onClick={() => handleCancel(r.id)}
+                          disabled={cancellingId === r.id}
+                          className="text-xs bg-[#FEE2E2] text-[#DC2626] hover:bg-[#FECACA] px-2.5 py-1 rounded-lg font-semibold disabled:opacity-50"
+                        >
+                          {cancellingId === r.id ? '취소 중...' : '취소'}
+                        </button>
+                      ) : <span className="text-[#CBD5E1]">-</span>}
                     </td>
                   </tr>
                 ))}

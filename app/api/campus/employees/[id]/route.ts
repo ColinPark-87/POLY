@@ -11,7 +11,7 @@ export async function PATCH(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
 
-  const { data: me } = await supabase.from('users').select('campus_id').eq('id', user.id).single()
+  const { data: me } = await service.from('users').select('campus_id').eq('id', user.id).single()
   const body = await request.json()
 
   const { error } = await service

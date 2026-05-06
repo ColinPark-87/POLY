@@ -5,9 +5,9 @@ export async function GET() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
-  if (user.app_metadata?.user_role !== 'hq_admin') return NextResponse.json({ error: '권한 없음' }, { status: 403 })
-
-  const service = await createServiceClient()
+  const service = createServiceClient()
+  const { data: me } = await service.from('users').select('role').eq('id', user.id).single()
+  if (me?.role !== 'hq_admin') return NextResponse.json({ error: '권한 없음' }, { status: 403 })
   const { data } = await service.from('campuses').select('*').order('name')
   return NextResponse.json({ campuses: data ?? [] })
 }
@@ -16,9 +16,9 @@ export async function POST(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
-  if (user.app_metadata?.user_role !== 'hq_admin') return NextResponse.json({ error: '권한 없음' }, { status: 403 })
-
-  const service = await createServiceClient()
+  const service = createServiceClient()
+  const { data: me } = await service.from('users').select('role').eq('id', user.id).single()
+  if (me?.role !== 'hq_admin') return NextResponse.json({ error: '권한 없음' }, { status: 403 })
   const { name, code, principal_email, principal_name } = await request.json()
 
   if (!name || !code) return NextResponse.json({ error: '이름과 코드는 필수입니다.' }, { status: 400 })
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
 
   let tempPassword: string | null = null
   if (principal_email && principal_name) {
-    tempPassword = Math.random().toString(36).slice(2, 10)
+    tempPassword = 'poly7659**'
     const { data: authData, error: authErr } = await service.auth.admin.createUser({
       email: principal_email,
       password: tempPassword,
@@ -47,7 +47,6 @@ export async function POST(request: NextRequest) {
         name: principal_name,
         position: '원장',
         role: 'campus_admin',
-        needs_password_change: true,
       })
       await service.from('campuses').update({ principal_id: authData.user.id }).eq('id', campus.id)
     }

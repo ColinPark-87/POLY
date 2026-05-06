@@ -9,7 +9,7 @@ export type LeaveType =
   | 'event'
   | 'other'
 
-export type LeaveStatus = 'pending' | 'approved' | 'rejected'
+export type LeaveStatus = 'pending' | 'approved' | 'rejected' | 'cancelled'
 
 export interface Campus {
   id: string

@@ -9,10 +9,10 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
 
-  const { data: me } = await supabase.from('users').select('campus_id').eq('id', user.id).single()
+  const { data: me } = await service.from('users').select('campus_id').eq('id', user.id).single()
   const { user_id, type, start_date, end_date, reason } = await request.json()
 
-  const { data: holidays } = await supabase
+  const { data: holidays } = await service
     .from('holidays')
     .select('date')
     .or(`campus_id.is.null,campus_id.eq.${me?.campus_id ?? ''}`)

@@ -111,6 +111,40 @@ export function leaveApprovedEmailHtml(params: {
 </html>`
 }
 
+export function leaveCancelEmailHtml(params: {
+  employeeName: string
+  leaveType: string
+  startDate: string
+  endDate: string
+  daysUsed: number
+  previousStatus: string
+}) {
+  const statusLabel = params.previousStatus === 'approved' ? '(이미 승인된 건)' : ''
+  return `
+<!DOCTYPE html>
+<html lang="ko">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#F8FAFC;font-family:'Apple SD Gothic Neo','Noto Sans KR',sans-serif;">
+  <div style="max-width:560px;margin:40px auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+    <div style="background:#F59E0B;padding:32px 40px;">
+      <h1 style="color:#fff;margin:0;font-size:20px;">연차 신청 취소 알림</h1>
+      <p style="color:rgba(255,255,255,0.8);margin:8px 0 0;font-size:14px;">${params.employeeName}님이 연차 신청을 취소했습니다 ${statusLabel}</p>
+    </div>
+    <div style="padding:32px 40px;">
+      <table style="width:100%;border-collapse:collapse;">
+        <tr><td style="padding:10px 0;color:#64748B;font-size:14px;width:100px;">신청자</td><td style="padding:10px 0;font-size:14px;font-weight:600;">${params.employeeName}</td></tr>
+        <tr><td style="padding:10px 0;color:#64748B;font-size:14px;">휴무 종류</td><td style="padding:10px 0;font-size:14px;">${params.leaveType}</td></tr>
+        <tr><td style="padding:10px 0;color:#64748B;font-size:14px;">기간</td><td style="padding:10px 0;font-size:14px;">${params.startDate} ~ ${params.endDate} (${params.daysUsed}일)</td></tr>
+      </table>
+    </div>
+    <div style="padding:20px 40px;background:#F8FAFC;border-top:1px solid #E2E8F0;">
+      <p style="margin:0;font-size:12px;color:#94A3B8;">연차 관리 시스템 자동 발송 메일입니다.</p>
+    </div>
+  </div>
+</body>
+</html>`
+}
+
 export function leaveRejectedEmailHtml(params: {
   employeeName: string
   leaveType: string

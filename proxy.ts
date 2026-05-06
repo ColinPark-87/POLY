@@ -1,4 +1,5 @@
 import { createServerClient } from '@supabase/ssr'
+import { createClient } from '@supabase/supabase-js'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function proxy(request: NextRequest) {
@@ -23,23 +24,25 @@ export async function proxy(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser()
   const path = request.nextUrl.pathname
-  const isAuthPage = path.startsWith('/login') || path.startsWith('/setup')
+  const isAuthPage = path.startsWith('/login') || path.startsWith('/setup') || path.startsWith('/api/public')
 
   if (!user && !isAuthPage) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  if (user && path === '/login') {
-    return NextResponse.redirect(new URL('/dashboard', request.url))
-  }
-
   if (user && !isAuthPage) {
-    const role = user.app_metadata?.user_role
-    const needsSetup = user.app_metadata?.needs_password_change
+    const adminClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    )
+    const { data: profile } = await adminClient
+      .from('users')
+      .select('role')
+      .eq('id', user.id)
+      .single()
 
-    if (needsSetup && path !== '/setup') {
-      return NextResponse.redirect(new URL('/setup', request.url))
-    }
+    const role = profile?.role
 
     if (path.startsWith('/campus') && role !== 'campus_admin' && role !== 'hq_admin') {
       return NextResponse.redirect(new URL('/dashboard', request.url))
@@ -48,6 +51,10 @@ export async function proxy(request: NextRequest) {
     if (path.startsWith('/hq') && role !== 'hq_admin') {
       return NextResponse.redirect(new URL('/dashboard', request.url))
     }
+  }
+
+  if (user && path === '/login') {
+    return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 
   return supabaseResponse

@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
@@ -24,7 +24,7 @@ export default function BottomNav() {
             key={item.href}
             href={item.href}
             className={`flex-1 flex flex-col items-center py-2.5 gap-0.5 text-xs transition-colors ${
-              active ? 'text-[#4F7EF7]' : 'text-[#94A3B8]'
+              active ? 'text-[#004EA2]' : 'text-[#94A3B8]'
             }`}
           >
             <span className="text-xl leading-none">{item.icon}</span>

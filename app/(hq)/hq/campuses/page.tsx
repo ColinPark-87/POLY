@@ -1,6 +1,6 @@
-'use client'
+﻿'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 
 interface Campus {
@@ -23,6 +23,10 @@ export default function HqCampusesPage() {
   const [addLoading, setAddLoading] = useState(false)
   const [tempPassword, setTempPassword] = useState<string | null>(null)
   const [error, setError] = useState('')
+  // Import file state for modal
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [importResult, setImportResult] = useState<{ success: number; skipped: number } | null>(null)
 
   async function load() {
     setLoading(true)
@@ -44,11 +48,23 @@ export default function HqCampusesPage() {
       body: JSON.stringify(form),
     })
     const d = await res.json()
-    setAddLoading(false)
-    if (!res.ok) { setError(d.error); return }
+    if (!res.ok) { setError(d.error); setAddLoading(false); return }
     if (d.tempPassword) setTempPassword(d.tempPassword)
+
+    // If file selected, upload import
+    if (importFile && d.campusId) {
+      const formData = new FormData()
+      formData.append('file', importFile)
+      formData.append('campus_id', d.campusId)
+      const ir = await fetch('/api/campus/import', { method: 'POST', body: formData })
+      const id = await ir.json()
+      if (ir.ok) setImportResult({ success: id.success, skipped: id.skipped })
+    }
+
+    setAddLoading(false)
     setShowAdd(false)
     setForm({ name: '', code: '', principal_email: '', principal_name: '' })
+    setImportFile(null)
     load()
   }
 
@@ -60,6 +76,17 @@ export default function HqCampusesPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ is_active: !is_active }),
     })
+    load()
+  }
+
+  async function handleDelete(id: string, name: string) {
+    if (!confirm(`'${name}' 캠퍼스를 완전히 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) return
+    const res = await fetch(`/api/hq/campuses/${id}`, { method: 'DELETE' })
+    if (!res.ok) {
+      const d = await res.json()
+      alert(d.error ?? '삭제 실패')
+      return
+    }
     load()
   }
 
@@ -79,14 +106,15 @@ export default function HqCampusesPage() {
         <div className="mb-4 bg-[#D1FAE5] border border-[#6EE7B7] rounded-2xl p-4">
           <p className="font-semibold text-[#059669] mb-1">캠퍼스 추가 완료</p>
           <p className="text-sm text-[#065F46]">원장 임시 비밀번호: <code className="bg-white px-2 py-0.5 rounded font-mono font-bold">{tempPassword}</code></p>
-          <button onClick={() => setTempPassword(null)} className="text-xs text-[#047857] underline mt-2">닫기</button>
+          {importResult && <p className="text-sm text-[#065F46] mt-1">연차대장 Import: 성공 {importResult.success}명 / 건너뜀 {importResult.skipped}명</p>}
+          <button onClick={() => { setTempPassword(null); setImportResult(null) }} className="text-xs text-[#047857] underline mt-2">닫기</button>
         </div>
       )}
 
       {loading ? <Spinner /> : (
         <div className="bg-white rounded-2xl shadow-sm border border-[#E2E8F0] overflow-hidden">
           <table className="w-full text-sm">
-            <thead className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
+            <thead className="bg-[#F7F8FA] border-b border-[#E2E8F0]">
               <tr>
                 {['캠퍼스명', '코드', '상태', '액션'].map(h => (
                   <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-[#64748B]">{h}</th>
@@ -95,9 +123,9 @@ export default function HqCampusesPage() {
             </thead>
             <tbody className="divide-y divide-[#F1F5F9]">
               {campuses.map(c => (
-                <tr key={c.id} className={`hover:bg-[#F8FAFC] ${!c.is_active ? 'opacity-60' : ''}`}>
+                <tr key={c.id} className={`hover:bg-[#F7F8FA] ${!c.is_active ? 'opacity-60' : ''}`}>
                   <td className="px-4 py-3 font-medium">
-                    <Link href={`/hq/campuses/${c.id}`} className="text-[#4F7EF7] hover:underline">{c.name}</Link>
+                    <Link href={`/hq/campuses/${c.id}`} className="text-[#004EA2] hover:underline">{c.name}</Link>
                   </td>
                   <td className="px-4 py-3 text-[#64748B] font-mono">{c.code}</td>
                   <td className="px-4 py-3">
@@ -107,12 +135,18 @@ export default function HqCampusesPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex gap-2">
-                      <Link href={`/hq/campuses/${c.id}`} className="text-xs px-2.5 py-1 rounded-lg border border-[#E2E8F0] text-[#64748B] hover:bg-[#F8FAFC]">상세 보기</Link>
+                      <Link href={`/hq/campuses/${c.id}`} className="text-xs px-2.5 py-1 rounded-lg border border-[#E2E8F0] text-[#64748B] hover:bg-[#F7F8FA]">상세 보기</Link>
                       <button
                         onClick={() => handleToggle(c.id, c.is_active)}
                         className={`text-xs px-2.5 py-1 rounded-lg ${c.is_active ? 'border border-[#FCA5A5] text-[#DC2626]' : 'border border-[#6EE7B7] text-[#059669]'}`}
                       >
                         {c.is_active ? '비활성화' : '복구'}
+                      </button>
+                      <button
+                        onClick={() => handleDelete(c.id, c.name)}
+                        className="text-xs px-2.5 py-1 rounded-lg bg-[#FEE2E2] text-[#DC2626] hover:bg-[#FECACA]"
+                      >
+                        삭제
                       </button>
                     </div>
                   </td>
@@ -145,11 +179,28 @@ export default function HqCampusesPage() {
                   />
                 </div>
               ))}
+
+              {/* Import section */}
+              <div className="border-t border-[#E2E8F0] pt-4">
+                <label className="block text-sm font-semibold text-[#1E293B] mb-2">캠퍼스 연차대장 업로드 <span className="text-[#94A3B8] font-normal">(선택사항)</span></label>
+                <div
+                  className="border-2 border-dashed border-[#E2E8F0] rounded-xl p-4 text-center cursor-pointer hover:border-[#004EA2] transition-colors"
+                  onClick={() => fileRef.current?.click()}
+                >
+                  <p className="text-sm text-[#64748B]">{importFile ? importFile.name : '연차관리대장 Excel 파일 클릭하여 선택'}</p>
+                  <p className="text-xs text-[#94A3B8] mt-1">캠퍼스 생성 후 자동으로 Import됩니다</p>
+                  <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={e => setImportFile(e.target.files?.[0] ?? null)} />
+                </div>
+                {importFile && (
+                  <button type="button" onClick={() => { setImportFile(null); if (fileRef.current) fileRef.current.value = '' }} className="text-xs text-[#64748B] underline mt-1">파일 제거</button>
+                )}
+              </div>
+
               {error && <p className="text-[#EF4444] text-sm">{error}</p>}
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={() => setShowAdd(false)} className="flex-1 border border-[#E2E8F0] text-[#64748B] font-semibold py-2.5 rounded-xl text-sm">취소</button>
                 <button type="submit" disabled={addLoading} className="flex-1 bg-[#0F172A] text-white font-semibold py-2.5 rounded-xl text-sm disabled:opacity-50">
-                  {addLoading ? '추가 중...' : '추가'}
+                  {addLoading ? '처리 중...' : importFile ? '추가 + Import' : '추가'}
                 </button>
               </div>
             </form>

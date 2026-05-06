@@ -19,22 +19,29 @@ function getTextColor(hex: string): string {
   return (0.299*r + 0.587*g + 0.114*b) / 255 > 0.5 ? '#1a1a1a' : '#ffffff'
 }
 
-function getRunColor(sessName: string) {
+function getRunColor(sessName: string, dir?: 'arr'|'dep') {
+  // 방과후(유치부 방과후 포함): 하원→매일반 파랑, 등원→유치부 주황
+  if (sessName.includes('방과후')) return dir === 'dep' ? '#2196F3' : '#FF6B35'
   if (sessName.includes('매일반')) return '#2196F3'
   if (sessName.includes('월수금')||sessName.includes('3일반')) return '#4CAF50'
   if (sessName.includes('화목')||sessName.includes('2일반')) return '#9C27B0'
-  if (sessName.includes('방과후')) return '#FF9800'
   if (sessName.includes('유치부')) return '#FF6B35'
   return '#64748B'
 }
 function getRunLabel(sessName: string, dir: 'arr'|'dep') {
   const d = dir === 'arr' ? '등원' : '하원'
+  // 방과후(유치부 방과후 포함): 하원→매일반 하원, 등원→유치부 등원
+  if (sessName.includes('방과후')) return dir === 'dep' ? `매일반 ${d}` : `유치부 ${d}`
   if (sessName.includes('매일반')) return `매일반 ${d}`
   if (sessName.includes('월수금')||sessName.includes('3일반')) return `3일반 ${d}`
   if (sessName.includes('화목')||sessName.includes('2일반')) return `2일반 ${d}`
-  if (sessName.includes('방과후')) return `방과후 ${d}`
   if (sessName.includes('유치부')) return `유치부 ${d}`
   return `${sessName} ${d}`
+}
+function parseTimeMin(t: string): number {
+  const m = t.match(/(\d{1,2}):(\d{2})/)
+  if (!m) return 9999
+  return parseInt(m[1]) * 60 + parseInt(m[2])
 }
 function normalizeTime(t: string): string {
   const m = t.match(/^(\d{1,2}):(\d{2})$/)
@@ -51,21 +58,25 @@ function getRunTime(timeRange: string, dir: 'arr'|'dep') {
   const t = dir === 'arr' ? (p[0]?.trim() ?? '') : (p[1]?.trim() ?? '')
   return t || timeRange.trim()  // split 실패 시 전체 time_range 반환
 }
-function getSessPriority(sessName: string): number {
-  if (sessName.includes('유치부') && !sessName.includes('방과후')) return 1
-  if (sessName.includes('방과후')) return 2
-  if (sessName.includes('매일반') && !sessName.includes('유치부')) return 3
-  if (sessName.includes('월수금') || (sessName.includes('3일반') && !sessName.includes('유치부'))) return 4
-  if (sessName.includes('화목') || (sessName.includes('2일반') && !sessName.includes('유치부'))) return 5
+function getSessPriority(sessName: string, dir?: 'arr'|'dep'): number {
+  // 방과후(유치부 방과후 포함): 하원→매일반(2), 등원→유치부(1)
+  if (sessName.includes('방과후')) return dir === 'dep' ? 2 : 1
+  if (sessName.includes('유치부')) return 1
+  if (sessName.includes('매일반')) return 2
+  if (sessName.includes('월수금') || sessName.includes('3일반')) return 3
+  if (sessName.includes('화목') || sessName.includes('2일반')) return 4
   return 9
 }
-function sessMatchesFilter(sessName: string, filter: string) {
+function sessMatchesFilter(sessName: string, filter: string, dir?: 'arr'|'dep') {
   if (filter === '전체') return true
-  if (filter === '유치부') return sessName.includes('유치부') && !sessName.includes('방과후')
-  if (filter === '방과후') return sessName.includes('방과후')
-  if (filter === '매일반') return sessName.includes('매일반') && !sessName.includes('유치부')
-  if (filter === '3일반') return sessName.includes('월수금') || (sessName.includes('3일반') && !sessName.includes('유치부'))
-  if (filter === '2일반') return sessName.includes('화목') || (sessName.includes('2일반') && !sessName.includes('유치부'))
+  // 방과후(유치부 방과후 포함): 하원→매일반 필터, 등원→유치부 필터
+  if (sessName.includes('방과후')) {
+    return dir === 'dep' ? filter === '매일반' : filter === '유치부'
+  }
+  if (filter === '유치부') return sessName.includes('유치부')
+  if (filter === '매일반') return sessName.includes('매일반')
+  if (filter === '3일반') return sessName.includes('월수금') || sessName.includes('3일반')
+  if (filter === '2일반') return sessName.includes('화목') || sessName.includes('2일반')
   return true
 }
 
@@ -150,7 +161,7 @@ export default function VehiclesPage() {
   const [addBusModal, setAddBusModal] = useState(false)
   const [newBusName, setNewBusName] = useState('')
   const [editBusModal, setEditBusModal] = useState<Bus|null>(null)
-  const [editBusForm, setEditBusForm] = useState({ driver:'', driver_phone:'', safety:'', safety_phone:'', kt_name:'', kt_phone:'' })
+  const [editBusForm, setEditBusForm] = useState({ name:'', driver:'', driver_phone:'', safety:'', safety_phone:'', kt_name:'', kt_phone:'' })
   const [safetyStaff, setSafetyStaff] = useState<{id:string; name:string}[]>([])
 
   // ── 스케줄 편집 (차량관리 탭) ─────────────────────────────────
@@ -319,6 +330,7 @@ export default function VehiclesPage() {
 
   async function openEditBus(bus: Bus) {
     setEditBusForm({
+      name: bus.name,
       driver: bus.driver ?? '', driver_phone: bus.driver_phone ?? '',
       safety: bus.safety ?? '', safety_phone: bus.safety_phone ?? '',
       kt_name: bus.kt_name ?? '', kt_phone: bus.kt_phone ?? '',
@@ -327,7 +339,7 @@ export default function VehiclesPage() {
     if (safetyStaff.length === 0) {
       const res = await fetch('/api/campus/employees')
       const d = await res.json()
-      setSafetyStaff((d.employees ?? []).filter((e: {is_active:boolean}) => e.is_active).map((e: {id:string; name:string}) => ({ id: e.id, name: e.name })))
+      setSafetyStaff((d.employees ?? []).filter((e: {is_active:boolean; position:string}) => e.is_active && (e.position?.includes('안전') || e.position?.includes('POLY'))).map((e: {id:string; name:string}) => ({ id: e.id, name: e.name })))
     }
   }
 
@@ -342,8 +354,9 @@ export default function VehiclesPage() {
     const d = await res.json()
     setSaving(false)
     if (!res.ok) { alert(d.error ?? '오류'); return }
-    setBuses(prev => prev.map(b => b.id === editBusModal.id ? { ...b, ...editBusForm } : b))
+    setBuses(prev => prev.map(b => b.id === editBusModal.id ? { ...b, ...editBusForm, name: editBusForm.name || b.name } : b))
     setEditBusModal(null)
+    loadMaster()
   }
 
   function openEditSched(student: StudentEntry, currentBus: string, busLocs: Record<string,string[]>, defaultTime?: string, sessionName?: string) {
@@ -693,7 +706,7 @@ export default function VehiclesPage() {
   function SessSection({ group, dir, showAddRider }: { group: TimeGroup; dir: 'arr'|'dep'; showAddRider?: boolean }) {
     const label = getRunLabel(group.session_name, dir)
     const runTime = getRunTime(group.time_range, dir)
-    const color = getRunColor(group.session_name)
+    const color = getRunColor(group.session_name, dir)
     const groupBusNames = [...new Set([...allBusNames.filter(n => group.busMap[n]), ...Object.keys(group.busMap)])]
       .sort((a, b) => {
         const ao = busOrderMap[a] ?? 999, bo = busOrderMap[b] ?? 999
@@ -743,7 +756,11 @@ export default function VehiclesPage() {
     }
     return filtered
   }).filter(g => Object.keys(g.busMap).length > 0)
-    .sort((a, b) => getSessPriority(a.session_name) - getSessPriority(b.session_name))
+    .sort((a, b) => {
+      const pa = getSessPriority(a.session_name, todayDir), pb = getSessPriority(b.session_name, todayDir)
+      if (pa !== pb) return pa - pb
+      return parseTimeMin(getRunTime(a.time_range, todayDir)) - parseTimeMin(getRunTime(b.time_range, todayDir))
+    })
 
   return (
     <div className="max-w-full">
@@ -794,7 +811,7 @@ export default function VehiclesPage() {
             ))}
             <div className="w-px bg-[#E2E8F0] mx-1"/>
             {/* 세션 타입 필터 */}
-            {['전체','유치부','방과후','매일반','3일반','2일반'].map(f => (
+            {['전체','유치부','매일반','3일반','2일반'].map(f => (
               <button key={f} onClick={() => setSessFilter(f)}
                 className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors border ${
                   sessFilter===f ? 'bg-[#004EA2] text-white border-[#004EA2]' : 'bg-white text-[#64748B] border-[#E2E8F0]'}`}>
@@ -806,15 +823,19 @@ export default function VehiclesPage() {
           {masterLoading ? <Spinner /> : (
             <div className="space-y-6">
               {masterGroups
-                .filter(g => sessMatchesFilter(g.session_name, sessFilter))
+                .filter(g => sessMatchesFilter(g.session_name, sessFilter, masterDir))
                 .length === 0 ? (
                 <div className="text-center py-16 text-[#94A3B8]">
                   <p className="text-2xl mb-2">🚌</p>
                   <p className="text-sm">데이터가 없습니다.</p>
                 </div>
               ) : masterGroups
-                .filter(g => sessMatchesFilter(g.session_name, sessFilter))
-                .sort((a, b) => getSessPriority(a.session_name) - getSessPriority(b.session_name))
+                .filter(g => sessMatchesFilter(g.session_name, sessFilter, masterDir))
+                .sort((a, b) => {
+                  const pa = getSessPriority(a.session_name, masterDir), pb = getSessPriority(b.session_name, masterDir)
+                  if (pa !== pb) return pa - pb
+                  return parseTimeMin(getRunTime(a.time_range, masterDir)) - parseTimeMin(getRunTime(b.time_range, masterDir))
+                })
                 .map(group => (
                   <SessSection key={group.time_range} group={group} dir={masterDir} showAddRider />
                 ))}
@@ -1474,11 +1495,11 @@ export default function VehiclesPage() {
                 )].sort()
                 // 선택된 시간의 장소 목록 (없으면 버스 전체 장소)
                 const locsAtTime = riderTime
-                  ? [...new Set(srcGroups.flatMap(g =>
-                      (g.busMap[bus] ?? []).filter(s => s.pickup_time === riderTime).map(s => s.location).filter((x): x is string => x != null)
+                  ? [...new Set([...srcGroups, ...masterGroups].flatMap(g =>
+                      (g.busMap[bus] ?? []).filter(s => normalizeTime(s.pickup_time ?? '') === riderTime).map(s => s.location).filter((x): x is string => x != null)
                     ))]
                   : []
-                const allLocs = (tab === 'today' ? {} : masterBusLocMap)[bus] ?? []
+                const allLocs = masterBusLocMap[bus] ?? []
                 const existLocs = locsAtTime.length > 0 ? locsAtTime : allLocs
                 return (
                   <>
@@ -1613,6 +1634,13 @@ export default function VehiclesPage() {
               <button onClick={() => setEditBusModal(null)} className="text-[#94A3B8] text-xl">✕</button>
             </div>
             <form onSubmit={handleEditBus} className="space-y-3">
+              <div>
+                <label className="text-[10px] font-bold text-[#64748B] mb-1 block">차량 이름</label>
+                <input value={editBusForm.name} onChange={e => setEditBusForm(f=>({...f, name: e.target.value}))}
+                  placeholder="예: 1호차, 마미버스, 개별하원"
+                  className="w-full border border-[#E2E8F0] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]"/>
+                <p className="text-[9px] text-[#F59E0B] mt-0.5">이름을 바꾸면 모든 탑승 스케줄에 자동 반영됩니다</p>
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="text-[10px] font-bold text-[#64748B] mb-1 block">기사 이름</label>

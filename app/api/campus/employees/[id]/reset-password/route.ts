@@ -24,7 +24,5 @@ export async function POST(
   const { error } = await service.auth.admin.updateUserById(id, { password: tempPassword })
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
 
-  await service.from('users').update({ needs_password_change: true }).eq('id', id)
-
   return NextResponse.json({ ok: true, tempPassword })
 }

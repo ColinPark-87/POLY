@@ -1,54 +1,56 @@
-import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
 
-  const { data: profile } = await supabase
-    .from('users')
-    .select('campus_id')
-    .eq('id', user.id)
-    .single()
-
+  const service = createServiceClient()
+  const { data: profile } = await service.from('users').select('campus_id').eq('id', user.id).single()
   const campusId = profile?.campus_id
   if (!campusId) return NextResponse.json({ error: '캠퍼스 없음' }, { status: 400 })
 
-  const today = new Date().toISOString().slice(0, 10)
+  const { searchParams } = new URL(request.url)
+  const year = parseInt(searchParams.get('year') ?? String(new Date().getFullYear()))
 
   const [
-    { count: totalEmployees },
-    { count: pendingCount },
-    { data: onLeaveToday },
-    { data: recentRequests },
+    { data: employees },
+    { data: grants },
+    { data: approvedLeave },
+    { data: pendingRequests },
   ] = await Promise.all([
-    supabase.from('users').select('*', { count: 'exact', head: true })
-      .eq('campus_id', campusId).eq('is_active', true).eq('role', 'employee'),
-    supabase.from('leave_requests').select('*', { count: 'exact', head: true })
-      .eq('campus_id', campusId).eq('status', 'pending'),
-    supabase.from('leave_requests')
-      .select('user_id, users(name)')
-      .eq('campus_id', campusId)
-      .eq('status', 'approved')
-      .lte('start_date', today)
-      .gte('end_date', today),
-    supabase.from('leave_requests')
-      .select('id, type, start_date, end_date, days_used, status, created_at, users(name)')
-      .eq('campus_id', campusId)
-      .order('created_at', { ascending: false })
-      .limit(5),
+    service.from('users').select('id, position, role, is_active').eq('campus_id', campusId).eq('is_active', true),
+    service.from('leave_grants').select('user_id, total_days, carried_over, extra_days').eq('campus_id', campusId).eq('year', year),
+    service.from('leave_requests').select('user_id, type, days_used').eq('campus_id', campusId).eq('status', 'approved').gte('start_date', `${year}-01-01`).lte('start_date', `${year}-12-31`),
+    service.from('leave_requests').select('id, type, start_date, end_date, days_used, reason, signature_data_url, created_at, users!user_id(name, position)').eq('campus_id', campusId).eq('status', 'pending').order('created_at', { ascending: true }),
   ])
 
-  return NextResponse.json({
-    totalEmployees: totalEmployees ?? 0,
-    pendingCount: pendingCount ?? 0,
-    onLeaveTodayCount: (onLeaveToday ?? []).length,
-    onLeaveTodayNames: (onLeaveToday ?? []).map((r: { users: unknown }) => {
-      const u = r.users
-      if (Array.isArray(u)) return (u[0] as { name: string } | undefined)?.name ?? ''
-      return (u as { name: string } | null)?.name ?? ''
-    }).filter(Boolean),
-    recentRequests: recentRequests ?? [],
-  })
+  const totalEmployees = (employees ?? []).filter(e => e.role === 'employee').length
+  const pendingCount = (pendingRequests ?? []).length
+
+  const grantByUser: Record<string, number> = {}
+  for (const g of grants ?? []) {
+    grantByUser[g.user_id] = g.total_days + g.carried_over + g.extra_days
+  }
+
+  const usedByUser: Record<string, number> = {}
+  for (const r of approvedLeave ?? []) {
+    const days = r.type === 'quarter' ? 0.25 : r.days_used
+    usedByUser[r.user_id] = (usedByUser[r.user_id] ?? 0) + days
+  }
+
+  // Group by position (dept)
+  const deptMap: Record<string, { count: number; grantedDays: number; usedDays: number }> = {}
+  for (const emp of employees ?? []) {
+    const dept = emp.role === 'campus_admin' ? '원장' : (emp.position || '기타')
+    if (!deptMap[dept]) deptMap[dept] = { count: 0, grantedDays: 0, usedDays: 0 }
+    deptMap[dept].count++
+    deptMap[dept].grantedDays += grantByUser[emp.id] ?? 0
+    deptMap[dept].usedDays += usedByUser[emp.id] ?? 0
+  }
+
+  const deptStats = Object.entries(deptMap).map(([dept, stats]) => ({ dept, ...stats }))
+
+  return NextResponse.json({ year, totalEmployees, pendingCount, deptStats, pendingRequests: pendingRequests ?? [] })
 }

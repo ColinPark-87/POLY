@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useRouter } from 'next/navigation'
 
@@ -21,7 +21,7 @@ export default function HqMobileHeader({ userName }: { userName: string }) {
       </div>
       <button
         onClick={handleLogout}
-        className="text-xs text-[#64748B] px-3 py-1.5 rounded-lg border border-[#E2E8F0] hover:bg-[#F8FAFC] shrink-0"
+        className="text-xs text-[#64748B] px-3 py-1.5 rounded-lg border border-[#E2E8F0] hover:bg-[#F7F8FA] shrink-0"
       >
         로그아웃
       </button>

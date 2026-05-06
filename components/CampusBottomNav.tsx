@@ -1,14 +1,14 @@
-'use client'
+﻿'use client'
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
 const navItems = [
   { href: '/campus/dashboard', label: '홈', icon: '📊' },
-  { href: '/campus/approvals', label: '승인', icon: '✅' },
-  { href: '/campus/overview', label: '현황', icon: '📋' },
-  { href: '/campus/employees', label: '직원', icon: '👥' },
-  { href: '/campus/calendar', label: '캘린더', icon: '📅' },
+  { href: '/campus/approvals', label: '연차', icon: '✅' },
+  { href: '/campus/class-roster', label: '반편성', icon: '🏫' },
+  { href: '/campus/vehicles', label: '등하원', icon: '🚌' },
+  { href: '/campus/settings', label: '설정', icon: '⚙️' },
 ]
 
 export default function CampusBottomNav() {
@@ -26,7 +26,7 @@ export default function CampusBottomNav() {
             key={item.href}
             href={item.href}
             className={`flex-1 flex flex-col items-center py-2.5 gap-0.5 text-xs transition-colors ${
-              active ? 'text-[#7C3AED]' : 'text-[#94A3B8]'
+              active ? 'text-[#004EA2]' : 'text-[#94A3B8]'
             }`}
           >
             <span className="text-xl leading-none">{item.icon}</span>

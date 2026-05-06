@@ -14,25 +14,25 @@ export async function PATCH(
   if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
 
   const { status, reviewer_note } = await request.json()
-  if (status !== 'approved' && status !== 'rejected') {
+  if (!['approved', 'rejected', 'cancelled'].includes(status)) {
     return NextResponse.json({ error: '유효하지 않은 상태' }, { status: 400 })
   }
 
-  const { data: me } = await supabase
+  const service = createServiceClient()
+  const { data: me } = await service
     .from('users').select('campus_id, name').eq('id', user.id).single()
 
   // 해당 신청 조회
-  const { data: req, error: fetchErr } = await supabase
+  const { data: req, error: fetchErr } = await service
     .from('leave_requests')
     .select(`id, type, start_date, end_date, days_used, campus_id, user_id,
-             users(name, email)`)
+             users!user_id(name, email)`)
     .eq('id', id)
     .eq('campus_id', me?.campus_id ?? '')
     .single()
 
   if (fetchErr || !req) return NextResponse.json({ error: '신청을 찾을 수 없습니다.' }, { status: 404 })
 
-  const service = await createServiceClient()
   const { error: updateErr } = await service
     .from('leave_requests')
     .update({

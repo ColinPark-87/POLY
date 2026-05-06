@@ -8,6 +8,8 @@ const navItems = [
   { href: '/hq/campuses', label: '캠퍼스', icon: '🏫' },
   { href: '/hq/employees', label: '직원', icon: '👥' },
   { href: '/hq/calendar', label: '캘린더', icon: '📅' },
+  { href: '/hq/leaves', label: '신청이력', icon: '📄' },
+  { href: '/hq/settings', label: '설정', icon: '⚙️' },
 ]
 
 export default function HqBottomNav() {

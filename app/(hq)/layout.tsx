@@ -1,5 +1,5 @@
-import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+﻿import { redirect } from 'next/navigation'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import HqSidebar from '@/components/HqSidebar'
 import HqBottomNav from '@/components/HqBottomNav'
 import HqMobileHeader from '@/components/HqMobileHeader'
@@ -9,19 +9,19 @@ export default async function HqLayout({ children }: { children: React.ReactNode
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const role = user.app_metadata?.user_role
-  if (role !== 'hq_admin') redirect('/dashboard')
-
-  const { data: profile } = await supabase
+  const service = createServiceClient()
+  const { data: profile } = await service
     .from('users')
-    .select('name')
+    .select('name, role')
     .eq('id', user.id)
     .single()
+
+  if (profile?.role !== 'hq_admin') redirect('/dashboard')
 
   const userName = profile?.name ?? 'HQ 관리자'
 
   return (
-    <div className="flex min-h-screen bg-[#F8FAFC]">
+    <div className="flex min-h-screen bg-[#F7F8FA]">
       <HqSidebar userName={userName} />
       <div className="flex-1 flex flex-col min-w-0">
         <HqMobileHeader userName={userName} />

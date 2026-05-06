@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
@@ -17,7 +17,7 @@ interface Summary {
 function Spinner() {
   return (
     <div className="flex justify-center py-16">
-      <div className="w-8 h-8 border-4 border-[#4F7EF7] border-t-transparent rounded-full animate-spin" />
+      <div className="w-8 h-8 border-4 border-[#004EA2] border-t-transparent rounded-full animate-spin" />
     </div>
   )
 }
@@ -43,7 +43,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-3 gap-2 md:gap-4">
         {[
           { label: '총 연차', value: `${summary.totalDays}일`, color: 'text-[#1E293B]' },
-          { label: '사용', value: `${summary.usedDays}일`, color: 'text-[#4F7EF7]' },
+          { label: '사용', value: `${summary.usedDays}일`, color: 'text-[#004EA2]' },
           { label: '잔여', value: `${summary.remainingDays}일`, color: 'text-[#10B981]' },
         ].map(card => (
           <div key={card.label} className="bg-white rounded-2xl p-3 md:p-6 shadow-sm border border-[#E2E8F0] text-center md:text-left">
@@ -61,7 +61,7 @@ export default function DashboardPage() {
         </div>
         <div className="h-3 bg-[#F1F5F9] rounded-full overflow-hidden">
           <div
-            className="h-full bg-[#4F7EF7] rounded-full transition-all duration-500"
+            className="h-full bg-[#004EA2] rounded-full transition-all duration-500"
             style={{ width: `${usedPercent}%` }}
           />
         </div>
@@ -70,7 +70,7 @@ export default function DashboardPage() {
       {/* 빠른 신청 버튼 (모바일 UX) */}
       <Link
         href="/apply"
-        className="flex items-center justify-center gap-2 w-full bg-[#4F7EF7] hover:bg-[#3B6AE8] text-white font-semibold py-3.5 rounded-2xl transition-colors md:hidden"
+        className="flex items-center justify-center gap-2 w-full bg-[#004EA2] hover:bg-[#003E83] text-white font-semibold py-3.5 rounded-2xl transition-colors md:hidden"
       >
         <span>✏️</span>
         <span>연차 신청하기</span>
@@ -107,7 +107,7 @@ export default function DashboardPage() {
                   <span className="text-sm font-medium">{LEAVE_TYPE_LABELS[r.type]}</span>
                   <p className="text-xs text-[#64748B]">{r.start_date}{r.start_date !== r.end_date ? ` ~ ${r.end_date}` : ''}</p>
                 </div>
-                <span className="text-sm text-[#64748B] shrink-0">{r.days_used}일</span>
+                <span className="text-sm text-[#64748B] shrink-0">{r.type === 'quarter' ? 0.25 : r.days_used}일</span>
               </div>
             ))}
           </div>

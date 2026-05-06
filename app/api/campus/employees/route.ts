@@ -1,18 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
 
-  const { data: me } = await supabase.from('users').select('campus_id').eq('id', user.id).single()
+  const service = createServiceClient()
+  const { data: me } = await service.from('users').select('campus_id').eq('id', user.id).single()
 
-  const { data } = await supabase
+  const showAll = request.nextUrl.searchParams.get('all') === 'true'
+
+  let query = service
     .from('users')
-    .select('id, name, email, position, role, is_active, company_hired_at, campus_hired_at, created_at')
+    .select('id, name, email, position, role, is_active, company_hired_at, campus_hired_at, terminated_at, created_at')
     .eq('campus_id', me?.campus_id ?? '')
     .order('created_at', { ascending: true })
+
+  if (!showAll) query = query.eq('is_active', true)
+
+  const { data } = await query
 
   return NextResponse.json({ employees: data ?? [] })
 }
@@ -23,7 +30,7 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
 
-  const { data: me } = await supabase.from('users').select('campus_id').eq('id', user.id).single()
+  const { data: me } = await service.from('users').select('campus_id').eq('id', user.id).single()
 
   const body = await request.json()
   const { email, name, position, company_hired_at, campus_hired_at } = body
@@ -52,7 +59,7 @@ export async function POST(request: NextRequest) {
     role: 'employee',
     company_hired_at: company_hired_at ?? null,
     campus_hired_at: campus_hired_at ?? null,
-    needs_password_change: true,
+    is_active: true,
   })
 
   if (profileErr) return NextResponse.json({ error: profileErr.message }, { status: 400 })

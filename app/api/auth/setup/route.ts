@@ -14,8 +14,5 @@ export async function POST(request: NextRequest) {
   const { error } = await supabase.auth.updateUser({ password })
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
 
-  const service = await createServiceClient()
-  await service.from('users').update({ needs_password_change: false }).eq('id', user.id)
-
   return NextResponse.json({ ok: true })
 }
