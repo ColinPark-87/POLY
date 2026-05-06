@@ -21,47 +21,34 @@ const LEAVE_NAV: NavDef[] = [
   { href: '/campus/approvals', label: '연차 신청 관리' },
   { href: '/campus/overview', label: '전체 연차 현황' },
   { href: '/campus/balances', label: '연차 잔여 관리' },
+  { href: '/campus/direct-entry', label: '연차 직접입력' },
   { href: '/campus/my-history', label: '나의 연차 내역', employeeOnly: true },
 ]
 const TOOLS_NAV: NavDef[] = [
   { href: '/campus/class-roster', label: '개설반 현황' },
   { href: '/campus/vehicles', label: '차량 관리' },
-  { href: '/campus/direct-entry', label: '연차 직접입력' },
   { href: '/campus/calendar', label: '캠퍼스 캘린더' },
   { href: '/campus/staff', label: '캠퍼스 직원 현황' },
 ]
+const UPLOAD_NAV: NavDef[] = [
+  { href: '/campus/import', label: '연차 업로드' },
+  { href: '/campus/class-roster', label: '개설반 업로드' },
+]
 const MANAGE_NAV: NavDef[] = [
   { href: '/campus/employees', label: '직원 관리' },
-  { href: '/campus/settings', label: '내 설정' },
-]
-const SETUP_NAV: NavDef[] = [
-  { href: '/campus/import', label: '연차 업로드' },
-  { href: '/campus/class-roster', label: '반편성·차량 업로드' },
-]
-const HOLIDAY_NAV: NavDef[] = [
   { href: '/campus/holidays', label: '공휴일 설정' },
+  { href: '/campus/settings', label: '내 설정' },
 ]
 
 const ALL_SECTIONS = [
   { id: 'dashboard', label: '대시보드',   items: DASHBOARD_NAV, noCollapse: true },
   { id: 'leave',     label: '연차관리',   items: LEAVE_NAV },
-  { id: 'setup',     label: '세팅/업로드', items: SETUP_NAV },
-  { id: 'holiday',   label: '공휴일',     items: HOLIDAY_NAV },
+  { id: 'tools',     label: '캠퍼스 도구', items: TOOLS_NAV },
+  { id: 'upload',    label: '업로드',     items: UPLOAD_NAV },
   { id: 'manage',    label: '관리',       items: MANAGE_NAV },
 ]
 
-// 대시보드 아래 자유 배치 가능한 전체 아이템
-const ALL_ORDERABLE: NavDef[] = [
-  ...TOOLS_NAV,
-  ...LEAVE_NAV,
-  ...SETUP_NAV,
-  ...HOLIDAY_NAV,
-  ...MANAGE_NAV,
-]
-const DEFAULT_ORDER = ALL_ORDERABLE.map(i => i.href)
-
 const PREFS_KEY = 'campus-sidebar-hidden'
-const ORDER_KEY  = 'campus-sidebar-order'
 
 export default function CampusSidebar({ userName, campusName, role }: { userName: string; campusName: string; role: string }) {
   const isAdmin = role === 'campus_admin' || role === 'hq_admin'
@@ -69,46 +56,18 @@ export default function CampusSidebar({ userName, campusName, role }: { userName
   const router = useRouter()
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(
-    Object.fromEntries(ALL_SECTIONS.map(s => [s.id, true]))
+    Object.fromEntries(ALL_SECTIONS.map(s => [s.id, false]))
   )
   const [settingsMode, setSettingsMode] = useState(false)
   const [hiddenHrefs, setHiddenHrefs] = useState<string[]>([])
   const [draftHidden, setDraftHidden] = useState<string[]>([])
-  const [itemOrder, setItemOrder] = useState<string[]>(DEFAULT_ORDER)
-  const [draggingHref, setDraggingHref] = useState<string | null>(null)
-  const [dragOverHref, setDragOverHref] = useState<string | null>(null)
 
   useEffect(() => {
     try {
       const saved = localStorage.getItem(PREFS_KEY)
       if (saved) setHiddenHrefs(JSON.parse(saved))
     } catch {}
-    try {
-      const savedOrder = localStorage.getItem(ORDER_KEY)
-      if (savedOrder) {
-        const parsed: string[] = JSON.parse(savedOrder)
-        // 저장된 순서 + 새로 추가된 항목은 뒤에 붙임
-        const merged = [
-          ...parsed.filter(h => DEFAULT_ORDER.includes(h)),
-          ...DEFAULT_ORDER.filter(h => !parsed.includes(h)),
-        ]
-        setItemOrder(merged)
-      }
-    } catch {}
   }, [])
-
-  function handleDragDrop(targetHref: string) {
-    if (!draggingHref || draggingHref === targetHref) return
-    const next = [...itemOrder]
-    const fi = next.indexOf(draggingHref)
-    const ti = next.indexOf(targetHref)
-    next.splice(fi, 1)
-    next.splice(ti, 0, draggingHref)
-    setItemOrder(next)
-    localStorage.setItem(ORDER_KEY, JSON.stringify(next))
-    setDraggingHref(null)
-    setDragOverHref(null)
-  }
 
   function openSettings() {
     setDraftHidden([...hiddenHrefs])
@@ -295,46 +254,10 @@ export default function CampusSidebar({ userName, campusName, role }: { userName
       ) : (
         /* ── 일반 네비게이션 ── */
         <nav className={`flex-1 overflow-y-auto ${sidebarOpen ? 'p-3' : 'py-3 px-1'}`}>
-          {/* 대시보드 (고정) */}
-          <div className="mb-3">
-            <Section key="dashboard" id="dashboard" label="대시보드" items={DASHBOARD_NAV} noCollapse={true} />
-          </div>
-
-          {/* 나머지 아이템 — 드래그로 순서 변경 */}
-          <div className="space-y-0.5">
-            {itemOrder
-              .map(href => ALL_ORDERABLE.find(i => i.href === href))
-              .filter((item): item is NavDef => !!item && !hiddenHrefs.includes(item.href) && !(isAdmin && item.employeeOnly === true))
-              .map(item => {
-                const active = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href))
-                const isDragging = draggingHref === item.href
-                const isOver = dragOverHref === item.href && draggingHref !== item.href
-                return (
-                  <div
-                    key={item.href}
-                    draggable
-                    onDragStart={() => setDraggingHref(item.href)}
-                    onDragEnd={() => { setDraggingHref(null); setDragOverHref(null) }}
-                    onDragOver={e => { e.preventDefault(); setDragOverHref(item.href) }}
-                    onDrop={() => handleDragDrop(item.href)}
-                    className={`group flex items-center rounded-lg transition-all ${
-                      isOver ? 'ring-1 ring-[#004EA2] ring-offset-1' : ''
-                    } ${isDragging ? 'opacity-30' : ''}`}
-                  >
-                    {sidebarOpen && (
-                      <div className="w-4 flex justify-center cursor-grab shrink-0 text-[#CBD5E1] group-hover:text-[#94A3B8]">
-                        <svg className="w-2.5 h-4" viewBox="0 0 8 16" fill="currentColor">
-                          <circle cx="2" cy="4" r="1.2"/><circle cx="6" cy="4" r="1.2"/>
-                          <circle cx="2" cy="8" r="1.2"/><circle cx="6" cy="8" r="1.2"/>
-                          <circle cx="2" cy="12" r="1.2"/><circle cx="6" cy="12" r="1.2"/>
-                        </svg>
-                      </div>
-                    )}
-                    <NavItem href={item.href} label={item.label} />
-                  </div>
-                )
-              })
-            }
+          <div className="space-y-1">
+            {ALL_SECTIONS.map(sec => (
+              <Section key={sec.id} id={sec.id} label={sec.label} items={sec.items} noCollapse={sec.noCollapse} />
+            ))}
           </div>
         </nav>
       )}
