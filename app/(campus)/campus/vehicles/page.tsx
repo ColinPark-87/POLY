@@ -571,10 +571,11 @@ export default function VehiclesPage() {
     return parseInt(m[1]) * 60 + parseInt(m[2])
   }
 
-  function BusCard({ name, students, locations, bi, showAddRider, groupBusLocs, defaultTime, sessionName }: {
+  function BusCard({ name, students, locations, bi, showAddRider, groupBusLocs, defaultTime, sessionName, dir }: {
     name: string; students: StudentEntry[]; locations: string[]; bi: number; showAddRider?: boolean
-    groupBusLocs?: Record<string,string[]>; defaultTime?: string; sessionName?: string
+    groupBusLocs?: Record<string,string[]>; defaultTime?: string; sessionName?: string; dir?: 'arr'|'dep'
   }) {
+    const isBangwaHu = !!sessionName?.includes('방과후')
     const color = getBusColor(name, bi)
     const txtColor = getTextColor(color)
     const collapsed = collapsedBuses.has(name)
@@ -629,8 +630,8 @@ export default function VehiclesPage() {
               <div className="text-center text-[#CBD5E1] text-[11px] py-4">탑승 없음</div>
             ) : sorted.map((stu, i) => (
               <div key={`${stu.student_id}-${i}`}
-                className={`grid items-center gap-x-1 px-2 py-1.5 border-b border-[#f5f5f5] cursor-pointer ${
-                  i%2===0?'bg-[#fafafa]':'bg-white'} hover:bg-blue-50`}
+                className={`grid items-center gap-x-1 px-2 py-1.5 border-b border-[#f5f5f5] cursor-pointer hover:bg-blue-50 ${
+                  isBangwaHu && dir === 'dep' ? 'bg-orange-50 border-l-2 border-l-orange-400' : i%2===0?'bg-[#fafafa]':'bg-white'}`}
                 style={{ gridTemplateColumns: tab === 'master' ? '14px 32px 1fr 1fr 46px 52px' : '14px 32px 1fr 1fr 46px' }}
                 onClick={() => tab === 'master'
                   ? openEditSched(stu, name, groupBusLocs ?? {}, defaultTime, sessionName)
@@ -644,6 +645,9 @@ export default function VehiclesPage() {
                 <div className="min-w-0">
                   <div className="flex items-center gap-1 flex-wrap">
                     <span className="text-[11px] font-semibold text-[#1a1a1a] truncate">{stu.name}</span>
+                    {isBangwaHu && dir === 'dep' && (
+                      <span className="text-[8px] font-bold px-1 rounded" style={{ color: '#FF6B35', background: '#FF6B3520' }}>유치</span>
+                    )}
                     {stu.override && (
                       <span className="text-[8px] font-bold px-1 rounded" style={{ color, background: `${color}22` }}>변경</span>
                     )}
@@ -729,7 +733,7 @@ export default function VehiclesPage() {
             <BusCard key={n} name={n} students={group.busMap[n]??[]}
               locations={group.busLocations[n]??[]} bi={globalBusIndex[n]??0}
               showAddRider={showAddRider} groupBusLocs={group.busLocations}
-              defaultTime={runTime} sessionName={group.session_name}/>
+              defaultTime={runTime} sessionName={group.session_name} dir={dir}/>
           ))}
         </div>
       </div>
