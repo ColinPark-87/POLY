@@ -11,47 +11,43 @@ function getAvatarColor(name: string) {
   return AVATAR_COLORS[code % AVATAR_COLORS.length]
 }
 
-interface NavDef { href: string; label: string; required?: boolean; employeeOnly?: boolean }
+interface NavDef { href: string; label: string; required?: boolean; employeeOnly?: boolean; counselorAllowed?: boolean }
 
 const DASHBOARD_NAV: NavDef[] = [
   { href: '/campus/dashboard', label: '캠퍼스 대시보드', required: true },
   { href: '/campus/my-dashboard', label: '내 대시보드', employeeOnly: true },
+  { href: '/campus/staff', label: '캠퍼스 직원 현황' },
 ]
 const LEAVE_NAV: NavDef[] = [
-  { href: '/campus/approvals', label: '연차 신청 관리' },
-  { href: '/campus/overview', label: '전체 연차 현황' },
-  { href: '/campus/balances', label: '연차 잔여 관리' },
-  { href: '/campus/direct-entry', label: '연차 직접입력' },
+  { href: '/campus/overview', label: '통합 연차관리' },
   { href: '/campus/my-history', label: '나의 연차 내역', employeeOnly: true },
 ]
 const TOOLS_NAV: NavDef[] = [
-  { href: '/campus/class-roster', label: '개설반 현황' },
-  { href: '/campus/vehicles', label: '차량 관리' },
+  { href: '/campus/class-roster', label: '개설반 현황', counselorAllowed: true },
+  { href: '/campus/vehicles', label: '차량 관리', counselorAllowed: true },
   { href: '/campus/calendar', label: '캠퍼스 캘린더' },
-  { href: '/campus/staff', label: '캠퍼스 직원 현황' },
 ]
 const UPLOAD_NAV: NavDef[] = [
-  { href: '/campus/import', label: '연차 업로드' },
-  { href: '/campus/class-roster', label: '개설반 업로드' },
+  { href: '/campus/import', label: '업로드' },
 ]
 const MANAGE_NAV: NavDef[] = [
-  { href: '/campus/employees', label: '직원 관리' },
-  { href: '/campus/holidays', label: '공휴일 설정' },
-  { href: '/campus/settings', label: '내 설정' },
+  { href: '/campus/settings', label: '내 설정', counselorAllowed: true },
 ]
 
 const ALL_SECTIONS = [
   { id: 'dashboard', label: '대시보드',   items: DASHBOARD_NAV, noCollapse: true },
-  { id: 'leave',     label: '연차관리',   items: LEAVE_NAV },
-  { id: 'tools',     label: '캠퍼스 도구', items: TOOLS_NAV },
-  { id: 'upload',    label: '업로드',     items: UPLOAD_NAV },
-  { id: 'manage',    label: '관리',       items: MANAGE_NAV },
+  { id: 'leave',     label: '연차관리',   items: LEAVE_NAV,     noCollapse: true },
+  { id: 'tools',     label: '캠퍼스 도구', items: TOOLS_NAV,    noCollapse: true },
+  { id: 'upload',    label: '업로드',     items: UPLOAD_NAV,    noCollapse: true },
+  { id: 'manage',    label: '관리',       items: MANAGE_NAV,    noCollapse: true },
 ]
 
 const PREFS_KEY = 'campus-sidebar-hidden'
 
-export default function CampusSidebar({ userName, campusName, role }: { userName: string; campusName: string; role: string }) {
+export default function CampusSidebar({ userName, campusName, role, position }: { userName: string; campusName: string; role: string; position?: string }) {
   const isAdmin = role === 'campus_admin' || role === 'hq_admin'
+  const isCounselor = !isAdmin && (position?.includes('상담') ?? false)
+  const roleLabel = isCounselor ? '상담부' : (role === 'hq_admin' ? '본사 관리자' : '원장')
   const pathname = usePathname()
   const router = useRouter()
   const [sidebarOpen, setSidebarOpen] = useState(true)
@@ -117,7 +113,11 @@ export default function CampusSidebar({ userName, campusName, role }: { userName
 
   function Section({ id, label, items, noCollapse }: { id: string; label: string; items: NavDef[]; noCollapse?: boolean }) {
     const open = noCollapse || !collapsed[id]
-    const visibleItems = items.filter(item => !hiddenHrefs.includes(item.href) && !(isAdmin && item.employeeOnly))
+    const visibleItems = items.filter(item =>
+      !hiddenHrefs.includes(item.href) &&
+      !(isAdmin && item.employeeOnly) &&
+      !(isCounselor && !item.counselorAllowed)
+    )
     if (visibleItems.length === 0) return null
     const hasActive = visibleItems.some(item => pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href)))
 
@@ -199,7 +199,7 @@ export default function CampusSidebar({ userName, campusName, role }: { userName
           {sidebarOpen && (
             <div className="min-w-0">
               <p className="text-sm font-semibold text-[#1E293B] truncate">{userName}</p>
-              <p className="text-xs text-[#64748B]">원장</p>
+              <p className="text-xs text-[#64748B]">{roleLabel}</p>
             </div>
           )}
         </div>
@@ -218,7 +218,7 @@ export default function CampusSidebar({ userName, campusName, role }: { userName
               <div key={sec.id}>
                 <p className="text-[9px] font-bold uppercase tracking-wider text-[#94A3B8] px-2 mb-1">{sec.label}</p>
                 <div className="space-y-0.5">
-                  {sec.items.filter(item => !(isAdmin && item.employeeOnly)).map(item => {
+                  {sec.items.filter(item => !(isAdmin && item.employeeOnly) && !(isCounselor && !item.counselorAllowed)).map(item => {
                     const isHidden = draftHidden.includes(item.href)
                     const isRequired = item.required
                     return (

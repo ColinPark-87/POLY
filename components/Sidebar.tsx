@@ -77,6 +77,12 @@ export default function Sidebar({ userName, userPosition }: { userName: string; 
           <NavItem href="/apply" label="연차 신청" icon="✏️" />
           <NavItem href="/history" label="나의 연차 내역" icon="🕐" />
         </div>
+        {(userPosition?.includes('안전') || userPosition?.includes('POLY')) && (
+          <div>
+            <p className="text-[10px] font-semibold text-[#94A3B8] uppercase tracking-wider px-3 mb-1">차량</p>
+            <NavItem href="/vehicles" label="오늘 등하원" icon="🚌" />
+          </div>
+        )}
         <div>
           <p className="text-[10px] font-semibold text-[#94A3B8] uppercase tracking-wider px-3 mb-1">계정</p>
           <NavItem href="/settings" label="내 설정" icon="⚙️" />

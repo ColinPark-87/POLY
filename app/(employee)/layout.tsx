@@ -31,7 +31,7 @@ export default async function EmployeeLayout({ children }: { children: React.Rea
           {children}
         </main>
       </div>
-      <BottomNav />
+      <BottomNav userPosition={userPosition} />
     </div>
   )
 }

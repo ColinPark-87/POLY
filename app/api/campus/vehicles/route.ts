@@ -4,6 +4,14 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 const DAYS = ['월', '화', '수', '목', '금'] as const
 type Day = typeof DAYS[number]
 
+// 세션 이름에서 수업 가능 요일 반환 (빈 배열 = 필터 없음)
+function getClassDays(sessionName: string | null): Day[] {
+  if (!sessionName) return []
+  if (/화목|2일반/.test(sessionName)) return ['화', '목']
+  if (/월수금|3일반/.test(sessionName)) return ['월', '수', '금']
+  return []
+}
+
 // 세션 이름에서 그룹 레이블 추출 (유치부/초등부 구분용)
 // 방과후(유치부 방과후 포함): 하원(dep)→매일반, 등원(arr)→유치부
 function getSessionLabel(name: string | null, dir: 'arr' | 'dep' = 'arr'): string {
@@ -14,6 +22,37 @@ function getSessionLabel(name: string | null, dir: 'arr' | 'dep' = 'arr'): strin
   if (name.includes('월수금') || name.includes('3일반')) return '3일반'
   if (name.includes('화목') || name.includes('2일반')) return '2일반'
   return name
+}
+
+// 시간 문자열을 24시간 기준 분으로 변환 (8 미만 시는 오후로 간주 +12)
+function parseTimeMinNorm(t: string | null): number {
+  if (!t) return 9999
+  const m = t.match(/(\d{1,2}):(\d{2})/)
+  if (!m) return 9999
+  let h = parseInt(m[1])
+  if (h < 8) h += 12
+  return h * 60 + parseInt(m[2])
+}
+
+// 세션별 최소 하원 시간(분) — 이보다 이른 _time은 등원 시간이 잘못 기록된 것으로 판단
+function getMinDepTime(sessionName: string | null): number {
+  if (!sessionName) return 0
+  if (sessionName.includes('2일반') || sessionName.includes('화목')) return 18 * 60 + 50  // 18:50
+  if (sessionName.includes('3일반') || sessionName.includes('월수금')) return 18 * 60 + 5   // 18:05
+  if (sessionName.includes('매일반') || sessionName.includes('방과후')) return 16 * 60 + 30  // 16:30
+  if (sessionName.includes('유치부')) return 14 * 60 + 30  // 14:30
+  return 0
+}
+
+// 세션별 최소 등원 시간(분) — 이보다 이른 _time은 하원 시간이 잘못 기록된 것으로 판단
+// 유치부: 아침 등원 정상 → 검사 안 함
+// 초등부 (매일반/화목/월수금): 학교 끝나고 오므로 13:00 이후
+function getMinArrTime(sessionName: string | null): number {
+  if (!sessionName) return 0
+  if (sessionName.includes('유치부')) return 0  // 아침 등원 정상
+  if (sessionName.includes('초등부') || sessionName.includes('매일반') ||
+      sessionName.includes('화목') || sessionName.includes('월수금')) return 13 * 60  // 13:00
+  return 0
 }
 
 // 장소 문자열 앞에 붙은 시간 파싱: "08:57 중계1동 어린이집" → { time: "08:57", cleanLoc: "중계1동 어린이집" }
@@ -91,6 +130,7 @@ export async function GET(request: NextRequest) {
     override?: boolean; location: string | null
     days: string[]  // 해당 방향으로 탑승하는 요일 목록
     pickup_time: string | null  // arr_schedule["_time"] / dep_schedule["_time"]
+    is_bangwaHu?: boolean  // 방과후 세션 + 하원 여부 (매일반 탭 내 유치 배지용)
   }
 
   interface TimeGroupRaw {
@@ -110,10 +150,20 @@ export async function GET(request: NextRequest) {
     const time_range = sess?.time_range ?? null
     const session_name = sess?.name ?? null
     // _time, time 키 모두 확인 (마이그레이션 데이터에 따라 키 이름 다를 수 있음)
-    const pickup_time: string | null =
+    const rawPickupTime: string | null =
       (sched?.['_time'] as string | undefined) ||
       (sched?.['time'] as string | undefined) ||
       null
+    // 방향별 최소 시간 미만이면 반대 방향 시간이 잘못 기록된 것으로 판단 → null 처리
+    let pickup_time: string | null = rawPickupTime
+    if (rawPickupTime) {
+      if (direction === 'dep') {
+        pickup_time = parseTimeMinNorm(rawPickupTime) >= getMinDepTime(session_name) ? rawPickupTime : null
+      } else {
+        const minArr = getMinArrTime(session_name)
+        if (minArr > 0) pickup_time = parseTimeMinNorm(rawPickupTime) >= minArr ? rawPickupTime : null
+      }
+    }
 
     if (master) {
       // ── 마스터 모드: 요일별 버스 배정 집계 (오늘 무관) ──────────────
@@ -145,6 +195,7 @@ export async function GET(request: NextRequest) {
           location,
           days: assignedDays,
           pickup_time: resolvedTime,
+          is_bangwaHu: !!(session_name?.includes('방과후') && direction === 'dep'),
         }
         if (!busMap[busName]) busMap[busName] = []
         busMap[busName].push(entry)
@@ -201,6 +252,7 @@ export async function GET(request: NextRequest) {
         location: finalLocation,
         days: scheduleDays,
         pickup_time: finalTime,
+        is_bangwaHu: !!(session_name?.includes('방과후') && direction === 'dep'),
       }
 
       if (!busMap[busName]) busMap[busName] = []
@@ -309,11 +361,20 @@ export async function POST(request: NextRequest) {
   const campusId = profile?.campus_id
   if (!campusId) return NextResponse.json({ error: '캠퍼스 없음' }, { status: 400 })
 
-  const isEditor = profile?.role === 'campus_admin' || /상담|차량/.test(profile?.position ?? '')
+  const isEditor = profile?.role === 'campus_admin' || /상담|차량|안전/.test(profile?.position ?? '')
   if (!isEditor) return NextResponse.json({ error: '권한 없음' }, { status: 403 })
 
   const body = await request.json()
   const { action } = body
+
+  // 세션명 기준 등하원 시간 유효성 검사
+  function validatePickupTime(session_name: string | null, pickup_time: string | null, dir: 'arr' | 'dep'): boolean {
+    if (!pickup_time || !session_name) return true
+    if (dir === 'dep') return parseTimeMinNorm(pickup_time) >= getMinDepTime(session_name)
+    const minArr = getMinArrTime(session_name)
+    if (minArr === 0) return true  // 유치부 등 검사 안 함
+    return parseTimeMinNorm(pickup_time) >= minArr
+  }
 
   if (action === 'set_override') {
     const { student_id, date, direction, bus_name, is_absent, location, pickup_time } = body
@@ -396,11 +457,27 @@ export async function POST(request: NextRequest) {
   if (action === 'update_enrollment_schedule') {
     const { student_id, class_id, direction: dir, days, bus_name, location, pickup_time } = body
     const { data: enr } = await service.from('class_enrollments')
-      .select('arr_schedule, dep_schedule')
+      .select('arr_schedule, dep_schedule, class_id')
       .eq('student_id', student_id).eq('class_id', class_id).single()
     if (!enr) return NextResponse.json({ error: '수강 없음' }, { status: 404 })
+
+    // 등하원 시간 유효성 검사
+    if (pickup_time) {
+      const { data: cls } = await service.from('classes').select('session_id').eq('id', class_id).single()
+      if (cls) {
+        const { data: sess } = await service.from('class_sessions').select('name').eq('id', cls.session_id).single()
+        const sessName = sess?.name ?? null
+        if (!validatePickupTime(sessName, pickup_time, dir)) {
+          const minMin = dir === 'dep' ? getMinDepTime(sessName) : getMinArrTime(sessName)
+          const minStr = `${Math.floor(minMin / 60)}:${String(minMin % 60).padStart(2, '0')}`
+          const label = dir === 'dep' ? '하원' : '등원'
+          return NextResponse.json({ error: `${label} 시간 오류: ${sessName} 세션의 최소 ${label} 시간(${minStr}) 이후여야 합니다.` }, { status: 400 })
+        }
+      }
+    }
+
     const schedKey = dir === 'arr' ? 'arr_schedule' : 'dep_schedule'
-    const sched = { ...(enr[schedKey] ?? {}) }
+    const sched = { ...(enr[schedKey as keyof typeof enr] as Record<string,string> ?? {}) }
     const dayList: string[] = Array.isArray(days) ? days : []
     for (const d of dayList) {
       if (bus_name) sched[d] = bus_name

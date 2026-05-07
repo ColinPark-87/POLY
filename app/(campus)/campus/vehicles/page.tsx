@@ -58,6 +58,35 @@ function getRunTime(timeRange: string, dir: 'arr'|'dep') {
   const t = dir === 'arr' ? (p[0]?.trim() ?? '') : (p[1]?.trim() ?? '')
   return t || timeRange.trim()  // split 실패 시 전체 time_range 반환
 }
+// 같은 레이블(예: '매일반 하원')을 가진 timeGroups를 하나로 병합
+// 방과후+dep와 매일반+dep가 각각 다른 time_range로 분리되는 문제 해결
+function mergeGroupsByLabel(groups: TimeGroup[], dir: 'arr'|'dep'): TimeGroup[] {
+  const merged: TimeGroup[] = []
+  for (const group of groups) {
+    const label = getRunLabel(group.session_name, dir)
+    const existing = merged.find(g => getRunLabel(g.session_name, dir) === label)
+    if (existing) {
+      // 방과후보다 매일반 session_name 우선 유지 (카드 스타일/레이블 정확도)
+      if (existing.session_name.includes('방과후') && !group.session_name.includes('방과후')) {
+        existing.session_name = group.session_name
+        existing.time_range = group.time_range
+      }
+      for (const [bus, students] of Object.entries(group.busMap)) {
+        if (!existing.busMap[bus]) existing.busMap[bus] = []
+        existing.busMap[bus].push(...students)
+        if (group.busLocations[bus]) {
+          const locSet = new Set(existing.busLocations[bus] ?? [])
+          for (const loc of group.busLocations[bus]) locSet.add(loc)
+          existing.busLocations[bus] = [...locSet]
+        }
+      }
+    } else {
+      merged.push({ ...group, busMap: { ...group.busMap }, busLocations: { ...group.busLocations } })
+    }
+  }
+  return merged
+}
+
 function getSessPriority(sessName: string, dir?: 'arr'|'dep'): number {
   // 방과후(유치부 방과후 포함): 하원→매일반(2), 등원→유치부(1)
   if (sessName.includes('방과후')) return dir === 'dep' ? 2 : 1
@@ -92,6 +121,7 @@ interface StudentEntry {
   student_id: string; name: string; english_name: string|null
   class_id: string
   override?: boolean; location: string|null; days: string[]; pickup_time: string|null
+  is_bangwaHu?: boolean  // 방과후 세션 + 하원 → 매일반 탭 내 유치 배지용
 }
 interface AbsentEntry { student_id: string; name: string }
 interface TimeGroup {
@@ -166,7 +196,7 @@ export default function VehiclesPage() {
 
   // ── 스케줄 편집 (차량관리 탭) ─────────────────────────────────
   const [editSchedModal, setEditSchedModal] = useState<{
-    student: StudentEntry; currentBus: string; busLocs: Record<string,string[]>; sessionName: string
+    student: StudentEntry; currentBus: string; busLocs: Record<string,string[]>; sessionName: string; defaultTime: string
   }|null>(null)
   const [editSchedBus, setEditSchedBus] = useState('')
   const [editSchedLoc, setEditSchedLoc] = useState('')
@@ -282,7 +312,8 @@ export default function VehiclesPage() {
     setOverrideTime(student.pickup_time ?? '')
     setPermMode(false)
     setPermDays([...student.days])
-    setReqFormOpen(false); setReqBus(''); setReqDays([]); setReqNote('')
+    setReqFormOpen(false); setReqBus(''); setReqDays([...student.days]); setReqNote('')
+    setReqStudent(student)
   }
 
   async function doOverride(studentId: string, busName: string|null, isAbsent: boolean, location?: string, pickupTime?: string) {
@@ -362,12 +393,12 @@ export default function VehiclesPage() {
   function openEditSched(student: StudentEntry, currentBus: string, busLocs: Record<string,string[]>, defaultTime?: string, sessionName?: string) {
     setEditSchedBus(currentBus)
     setEditSchedLoc(student.location ?? '')
-    setEditSchedTime(student.pickup_time ?? defaultTime ?? '')
+    setEditSchedTime(student.pickup_time ?? '')
     setEditSchedDays([...student.days])
     setEditLocIsNew(false)
     setEditTimeEditing(false)
     setEditTimeDraft('')
-    setEditSchedModal({ student, currentBus, busLocs, sessionName: sessionName ?? '' })
+    setEditSchedModal({ student, currentBus, busLocs, sessionName: sessionName ?? '', defaultTime: defaultTime ?? '' })
   }
 
   async function handleSaveEditSched() {
@@ -575,6 +606,8 @@ export default function VehiclesPage() {
     name: string; students: StudentEntry[]; locations: string[]; bi: number; showAddRider?: boolean
     groupBusLocs?: Record<string,string[]>; defaultTime?: string; sessionName?: string; dir?: 'arr'|'dep'
   }) {
+    // 카드 전체 스타일은 병합된 session_name 기준 (매일반 우선)
+    // 개별 학생 배지는 stu.is_bangwaHu로 판단
     const isBangwaHu = !!sessionName?.includes('방과후')
     const color = getBusColor(name, bi)
     const txtColor = getTextColor(color)
@@ -645,7 +678,7 @@ export default function VehiclesPage() {
                 <div className="min-w-0">
                   <div className="flex items-center gap-1 flex-wrap">
                     <span className="text-[11px] font-semibold text-[#1a1a1a] truncate">{stu.name}</span>
-                    {isBangwaHu && dir === 'dep' && (
+                    {stu.is_bangwaHu && (
                       <span className="text-[8px] font-bold px-1 rounded" style={{ color: '#FF6B35', background: '#FF6B3520' }}>유치</span>
                     )}
                     {stu.override && (
@@ -750,16 +783,17 @@ export default function VehiclesPage() {
       return (parseInt(a) || 9999) - (parseInt(b) || 9999)
     })
 
-  // 오늘 등하원 - 호차 필터된 그룹
-  const filteredTodayGroups = todayGroups.map(g => {
-    if (busFilter === '전체') return g
-    const filtered: typeof g = { ...g, busMap: {}, busLocations: {} }
-    if (g.busMap[busFilter]) {
-      filtered.busMap[busFilter] = g.busMap[busFilter]
-      filtered.busLocations[busFilter] = g.busLocations[busFilter] ?? []
-    }
-    return filtered
-  }).filter(g => Object.keys(g.busMap).length > 0)
+  // 오늘 등하원 - 호차 필터된 그룹 (같은 레이블 병합 후 필터)
+  const filteredTodayGroups = mergeGroupsByLabel(todayGroups, todayDir)
+    .map(g => {
+      if (busFilter === '전체') return g
+      const filtered: typeof g = { ...g, busMap: {}, busLocations: {} }
+      if (g.busMap[busFilter]) {
+        filtered.busMap[busFilter] = g.busMap[busFilter]
+        filtered.busLocations[busFilter] = g.busLocations[busFilter] ?? []
+      }
+      return filtered
+    }).filter(g => Object.keys(g.busMap).length > 0)
     .sort((a, b) => {
       const pa = getSessPriority(a.session_name, todayDir), pb = getSessPriority(b.session_name, todayDir)
       if (pa !== pb) return pa - pb
@@ -826,14 +860,14 @@ export default function VehiclesPage() {
 
           {masterLoading ? <Spinner /> : (
             <div className="space-y-6">
-              {masterGroups
+              {mergeGroupsByLabel(masterGroups, masterDir)
                 .filter(g => sessMatchesFilter(g.session_name, sessFilter, masterDir))
                 .length === 0 ? (
                 <div className="text-center py-16 text-[#94A3B8]">
                   <p className="text-2xl mb-2">🚌</p>
                   <p className="text-sm">데이터가 없습니다.</p>
                 </div>
-              ) : masterGroups
+              ) : mergeGroupsByLabel(masterGroups, masterDir)
                 .filter(g => sessMatchesFilter(g.session_name, sessFilter, masterDir))
                 .sort((a, b) => {
                   const pa = getSessPriority(a.session_name, masterDir), pb = getSessPriority(b.session_name, masterDir)
@@ -841,7 +875,7 @@ export default function VehiclesPage() {
                   return parseTimeMin(getRunTime(a.time_range, masterDir)) - parseTimeMin(getRunTime(b.time_range, masterDir))
                 })
                 .map(group => (
-                  <SessSection key={group.time_range} group={group} dir={masterDir} showAddRider />
+                  <SessSection key={getRunLabel(group.session_name, masterDir)} group={group} dir={masterDir} showAddRider />
                 ))}
             </div>
           )}
@@ -894,7 +928,7 @@ export default function VehiclesPage() {
           {todayLoading ? <Spinner /> : (
             <div className="space-y-6">
               {filteredTodayGroups.map(group => (
-                <SessSection key={group.time_range} group={group} dir={todayDir} showAddRider />
+                <SessSection key={getRunLabel(group.session_name, todayDir)} group={group} dir={todayDir} showAddRider />
               ))}
 
               {/* 결석 */}
@@ -1254,7 +1288,7 @@ export default function VehiclesPage() {
                   <p className="text-[10px] font-bold text-[#64748B] mb-1.5">승차 시간</p>
                   <input value={editSchedTime} onChange={e => setEditSchedTime(e.target.value)}
                     onBlur={e => setEditSchedTime(normalizeTime(e.target.value))}
-                    placeholder="예: 08:40"
+                    placeholder={editSchedModal?.defaultTime ? `세션 기본 ${editSchedModal.defaultTime}` : '예: 08:40'}
                     className="w-full border border-[#E2E8F0] rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]"/>
                 </>
               )}
@@ -1344,7 +1378,23 @@ export default function VehiclesPage() {
                     <div className="flex flex-wrap gap-1.5 mb-1.5">
                       {availLocs.map(loc => (
                         <button key={loc}
-                          onClick={() => setOverrideLoc(loc)}
+                          onClick={() => {
+                            setOverrideLoc(loc)
+                            // 장소 선택 시 해당 버스+장소의 대표 시간 자동 설정 (오늘 그룹 우선, 없으면 마스터)
+                            let times = filteredTodayGroups.flatMap(g =>
+                              (g.busMap[overrideBus] ?? []).filter(s => s.location === loc && s.pickup_time).map(s => s.pickup_time as string)
+                            )
+                            if (times.length === 0) {
+                              times = masterGroups.flatMap(g =>
+                                (g.busMap[overrideBus] ?? []).filter(s => s.location === loc && s.pickup_time).map(s => s.pickup_time as string)
+                              )
+                            }
+                            if (times.length > 0) {
+                              const freq: Record<string, number> = {}
+                              times.forEach(t => { freq[t] = (freq[t] ?? 0) + 1 })
+                              setOverrideTime(normalizeTime(Object.entries(freq).sort((a, b) => b[1] - a[1])[0][0]))
+                            }
+                          }}
                           className="text-[10px] px-2.5 py-1 rounded-lg border transition-colors"
                           style={overrideLoc === loc
                             ? { background: '#004EA2', color: '#fff', borderColor: '#004EA2' }
@@ -1428,7 +1478,7 @@ export default function VehiclesPage() {
                 </div>
               )}
 
-              {/* 결석 / 되돌리기 / 오늘만 추가 */}
+              {/* 결석 / 되돌리기 */}
               <div className="flex gap-2">
                 <button onClick={() => doOverride(overrideModal.student.student_id, null, true)} disabled={saving}
                   className="flex-1 px-3 py-2 rounded-xl text-xs font-semibold border border-[#FECACA] text-[#EF4444]">
@@ -1439,6 +1489,76 @@ export default function VehiclesPage() {
                     className="flex-1 px-3 py-2 rounded-xl text-xs font-semibold border border-[#E2E8F0] text-[#64748B]">
                     ↩ 원래대로
                   </button>
+                )}
+              </div>
+
+              {/* 변경 승인 요청 섹션 */}
+              <div className="border-t border-[#E2E8F0] pt-3 mt-1">
+                <button
+                  onClick={() => setReqFormOpen(o => !o)}
+                  className="w-full text-left text-xs font-semibold text-[#004EA2] flex items-center gap-1.5 py-1">
+                  📋 변경 승인 요청 {reqFormOpen ? '▲' : '▼'}
+                </button>
+                {reqFormOpen && (
+                  <div className="mt-2 bg-[#F0F7FF] rounded-xl p-3 space-y-2.5">
+                    <p className="text-[10px] text-[#64748B]">학부모 요청 사항을 기록한 뒤 승인 탭에서 처리하세요.</p>
+
+                    {/* 변경할 호차 */}
+                    <div>
+                      <p className="text-[10px] font-bold text-[#94A3B8] mb-1">변경할 호차</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {allBusNames.filter(n => n !== overrideBus).map(name => {
+                          const color = getBusColor(name, globalBusIndex[name] ?? 0)
+                          return (
+                            <button key={name}
+                              onClick={() => setReqBus(name)}
+                              className="px-2.5 py-1 rounded-lg text-xs font-bold border transition-colors"
+                              style={reqBus === name
+                                ? { background: color, color: getTextColor(color), borderColor: color }
+                                : { background: '#fff', color: '#475569', borderColor: '#E2E8F0' }}>
+                              {name}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+
+                    {/* 적용 요일 */}
+                    <div>
+                      <p className="text-[10px] font-bold text-[#94A3B8] mb-1">적용 요일</p>
+                      <div className="flex gap-1">
+                        {DAYS.map((d, di) => {
+                          const active = reqDays.includes(d)
+                          return (
+                            <button key={d}
+                              onClick={() => setReqDays(prev => active ? prev.filter(x => x !== d) : [...prev, d])}
+                              className="flex-1 py-1.5 rounded-lg text-xs font-bold transition-colors"
+                              style={active
+                                ? { background: DAY_DOT_COLOR[di], color: '#fff' }
+                                : { background: '#fff', color: '#94A3B8', border: '1px solid #E2E8F0' }}>
+                              {d}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+
+                    {/* 메모 */}
+                    <input
+                      value={reqNote}
+                      onChange={e => setReqNote(e.target.value)}
+                      placeholder="학부모 요청 메모 (선택)"
+                      className="w-full border border-[#E2E8F0] rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#004EA2]"
+                    />
+
+                    {/* 제출 */}
+                    <button
+                      onClick={submitChangeRequest}
+                      disabled={saving || !reqBus || reqDays.length === 0}
+                      className="w-full bg-[#004EA2] text-white py-2 rounded-xl text-xs font-bold disabled:opacity-40">
+                      {saving ? '제출 중...' : '변경 요청 제출 → 승인 대기'}
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
