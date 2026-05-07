@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import RouteMapView from './RouteMapView'
 
 const DAYS = ['월', '화', '수', '목', '금'] as const
 const DAY_DOT_COLOR = ['#2196F3','#9C27B0','#4CAF50','#FF9800','#E91E63']
@@ -154,7 +155,7 @@ export default function VehiclesPage() {
   const today = new Date()
   const todayStr = [today.getFullYear(), String(today.getMonth()+1).padStart(2,'0'), String(today.getDate()).padStart(2,'0')].join('-')
 
-  const [tab, setTab] = useState<'master'|'today'|'approval'|'history'|'settings'>('master')
+  const [tab, setTab] = useState<'master'|'today'|'approval'|'history'|'map'|'settings'>('master')
 
   // ── 공통 ─────────────────────────────────────────────────────
   const [month, setMonth] = useState('')
@@ -818,7 +819,7 @@ export default function VehiclesPage() {
 
       {/* 4탭 */}
       <div className="flex gap-0 border-b border-[#E2E8F0] mb-4 overflow-x-auto">
-        {([['master','차량 관리'],['today','오늘 등하원'],['approval','변경 승인'],['history','변경기록'],['settings','차량 설정']] as const).map(([k, label]) => (
+        {([['master','차량 관리'],['today','오늘 등하원'],['approval','변경 승인'],['history','변경기록'],['map','노선 지도'],['settings','차량 설정']] as const).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)}
             className={`relative flex-shrink-0 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
               tab===k ? 'border-[#004EA2] text-[#004EA2]' : 'border-transparent text-[#64748B] hover:text-[#1E293B]'}`}>
@@ -1105,6 +1106,9 @@ export default function VehiclesPage() {
           })()}
         </div>
       )}
+
+      {/* ═══ 노선 지도 탭 ════════════════════════════════════════ */}
+      {tab === 'map' && <RouteMapView />}
 
       {/* ═══ 차량 설정 탭 ════════════════════════════════════════ */}
       {tab === 'settings' && (

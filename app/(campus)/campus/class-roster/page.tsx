@@ -132,7 +132,7 @@ export default function ClassRosterPage() {
   const [importModal, setImportModal] = useState(false)
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importLoading, setImportLoading] = useState(false)
-  const [importResult, setImportResult] = useState<{ ok: boolean; sessions_created: number; classes_created: number; students_created: number; enrollments: number; buses: number; errors: string[] } | null>(null)
+  const [importResult, setImportResult] = useState<{ ok: boolean; sessions_created: number; classes_created: number; students_created: number; enrollments: number; buses: number; errors: string[]; stopCoords?: Record<string, { lat: number; lng: number }> } | null>(null)
   // Undo/redo
   const [undoStack, setUndoStack] = useState<{ student_id: string; class_id: string; arr_schedule: Record<string,string>; dep_schedule: Record<string,string>; label: string }[]>([])
   const [redoStack, setRedoStack] = useState<typeof undoStack>([])
@@ -444,6 +444,10 @@ export default function ClassRosterPage() {
           </button>
           <button onClick={() => setAddStudentModal(true)} className="text-sm bg-white border border-[#E2E8F0] text-[#1E293B] px-3 py-2 rounded-lg hover:bg-[#F7F8FA] transition-colors">+ 학생</button>
           <button onClick={() => setAddSessionModal(true)} className="text-sm bg-[#1e3a5f] text-white px-3 py-2 rounded-lg hover:bg-[#2c5f8a] transition-colors">+ 세션</button>
+          <a href="/api/campus/class-roster/template" download
+            className="text-sm bg-white border border-[#E2E8F0] text-[#64748B] px-3 py-2 rounded-lg hover:bg-[#F7F8FA] transition-colors">
+            양식 다운로드
+          </a>
           <button onClick={() => { setImportModal(true); setImportFile(null); setImportResult(null) }}
             className="text-sm bg-white border border-[#E2E8F0] text-[#64748B] px-3 py-2 rounded-lg hover:bg-[#F7F8FA] transition-colors">
             엑셀 업로드
@@ -613,7 +617,7 @@ export default function ClassRosterPage() {
             <div className="bg-[#EAF2FB] rounded-xl px-4 py-3 flex items-center justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold text-[#004EA2]">엑셀 템플릿 다운로드</p>
-                <p className="text-xs text-[#64748B] mt-0.5">①세션설정 ②반편성_차량 ③차량정보 3개 시트</p>
+                <p className="text-xs text-[#64748B] mt-0.5">①세션설정 ②반편성_차량 ③차량정보 ④정류장좌표 4개 시트</p>
               </div>
               <a href="/api/campus/class-roster/template" download
                 className="text-sm bg-[#004EA2] text-white px-4 py-2 rounded-xl hover:bg-[#003d82] whitespace-nowrap">
@@ -643,6 +647,11 @@ export default function ClassRosterPage() {
                   <div className="space-y-1 text-[#166534]">
                     <p className="font-semibold">업로드 완료</p>
                     <p className="text-xs">세션 {importResult.sessions_created}개 · 반 {importResult.classes_created}개 · 신규학생 {importResult.students_created}명 · 수강배정 {importResult.enrollments}건 · 차량 {importResult.buses}개</p>
+                    {importResult.stopCoords && Object.keys(importResult.stopCoords).length > 0 && (
+                      <p className="text-xs font-semibold text-[#0369A1]">
+                        📍 정류장 좌표 {Object.keys(importResult.stopCoords).length}개 노선 지도에 반영됨
+                      </p>
+                    )}
                   </div>
                 )}
                 {importResult.errors.length > 0 && (
@@ -669,7 +678,16 @@ export default function ClassRosterPage() {
                   const d = await res.json()
                   setImportResult(d)
                   setImportLoading(false)
-                  if (d.ok) load()
+                  if (d.ok) {
+                    load()
+                    // 정류장 좌표 → localStorage 저장
+                    if (d.stopCoords && Object.keys(d.stopCoords).length > 0) {
+                      try {
+                        const existing = JSON.parse(localStorage.getItem('shuttle-stop-coords') ?? '{}')
+                        localStorage.setItem('shuttle-stop-coords', JSON.stringify({ ...existing, ...d.stopCoords }))
+                      } catch {}
+                    }
+                  }
                 }}
                 className="flex-1 bg-[#004EA2] text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40">
                 {importLoading ? '처리 중...' : '업로드'}

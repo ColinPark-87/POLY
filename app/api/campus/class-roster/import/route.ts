@@ -177,5 +177,45 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true, ...stats })
+  // ── 시트 4: 정류장좌표 ────────────────────────────────────────
+  const stopCoords: Record<string, { lat: number; lng: number }> = {}
+  const ws4 = wb.Sheets['④정류장좌표']
+  if (ws4) {
+    const coordRows = XLSX.utils.sheet_to_json(ws4) as Record<string, unknown>[]
+    const toGeocode: { name: string; address: string }[] = []
+
+    for (const row of coordRows) {
+      const name = str(row['정류장명'])
+      if (!name) continue
+      const lat = parseFloat(str(row['위도']))
+      const lng = parseFloat(str(row['경도']))
+      if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
+        stopCoords[name] = { lat, lng }
+      } else {
+        // '주소 (입력시 위도경도 자동변환)' 또는 '주소' 컬럼 모두 허용
+        const address = str(row['주소 (입력시 위도경도 자동변환)']) || str(row['주소'])
+        if (address) toGeocode.push({ name, address })
+      }
+    }
+
+    // 주소 → 카카오 지오코딩 (서버사이드)
+    const kakaoKey = process.env.KAKAO_REST_API_KEY
+    if (kakaoKey && toGeocode.length > 0) {
+      for (const item of toGeocode) {
+        try {
+          const res = await fetch(
+            `https://dapi.kakao.com/v2/local/search/keyword.json?query=${encodeURIComponent(item.address)}&size=1`,
+            { headers: { Authorization: `KakaoAK ${kakaoKey}` } }
+          )
+          if (res.ok) {
+            const data = await res.json()
+            const doc = data.documents?.[0]
+            if (doc) stopCoords[item.name] = { lat: parseFloat(doc.y), lng: parseFloat(doc.x) }
+          }
+        } catch {}
+      }
+    }
+  }
+
+  return NextResponse.json({ ok: true, ...stats, stopCoords })
 }
