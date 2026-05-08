@@ -410,38 +410,61 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === 'add_rider') {
-    // 차량에 임시 탑승자 추가: pickup_override로 처리
-    const { student_id, date, direction: dir, bus_name, pickup_time, pickup_location, days } = body
-    // 스케줄 업데이트: 해당 요일들에 버스 배정
+    // 차량에 탑승자 추가: class_enrollment 스케줄 영구 업데이트 + 오늘 override
+    const { student_id, date, direction: dir, bus_name, pickup_time, pickup_location, days, session_name } = body
     // class_enrollments에 campus_id 컬럼이 없으므로 sessions→classes 경유 필터링
-    const { data: campusSessions } = await service.from('class_sessions').select('id').eq('campus_id', campusId)
-    const campusSessionIds = (campusSessions ?? []).map((s: { id: string }) => s.id)
-    const { data: campusClasses } = await service.from('classes').select('id').in('session_id', campusSessionIds)
-    const campusClassIds = (campusClasses ?? []).map((c: { id: string }) => c.id)
+    // session_name을 이용해 올바른 세션의 enrollment 선택
+    const { data: campusSessions } = await service.from('class_sessions')
+      .select('id, name').eq('campus_id', campusId)
+    const allSessRows = (campusSessions ?? []) as { id: string; name: string }[]
 
-    const { data: enrList } = campusClassIds.length
+    // session_name이 있으면 해당 세션 유형으로 필터링
+    let targetSessionIds: string[]
+    if (session_name) {
+      const matched = allSessRows.filter(s => {
+        if (session_name.includes('방과후')) return s.name.includes('방과후')
+        if (session_name.includes('유치부')) return s.name.includes('유치부') && !s.name.includes('방과후')
+        if (session_name.includes('매일반')) return s.name.includes('매일반')
+        if (session_name.includes('월수금') || session_name.includes('3일반')) return s.name.includes('월수금') || s.name.includes('3일반')
+        if (session_name.includes('화목') || session_name.includes('2일반')) return s.name.includes('화목') || s.name.includes('2일반')
+        return s.name === session_name
+      })
+      targetSessionIds = matched.length > 0 ? matched.map(s => s.id) : allSessRows.map(s => s.id)
+    } else {
+      targetSessionIds = allSessRows.map(s => s.id)
+    }
+
+    const { data: targetClasses } = targetSessionIds.length
+      ? await service.from('classes').select('id').in('session_id', targetSessionIds)
+      : { data: null }
+    const targetClassIds = (targetClasses ?? []).map((c: { id: string }) => c.id)
+
+    const { data: enrList } = targetClassIds.length
       ? await service.from('class_enrollments')
           .select('class_id, arr_schedule, dep_schedule')
           .eq('student_id', student_id)
-          .in('class_id', campusClassIds)
+          .in('class_id', targetClassIds)
           .eq('is_waitlist', false)
       : { data: null }
 
-    if (enrList?.length) {
-      const enr = enrList[0]
-      const schedKey = dir === 'arr' ? 'arr_schedule' : 'dep_schedule'
-      const currentSched = { ...(enr[schedKey] ?? {}) }
-      const dayList: string[] = Array.isArray(days) ? days : []
-      for (const d of dayList) {
-        currentSched[d] = bus_name
-        if (pickup_location) currentSched[d + '_loc'] = pickup_location
-      }
-      if (pickup_time) currentSched['_time'] = pickup_time
-      await service.from('class_enrollments')
-        .update({ [schedKey]: currentSched })
-        .eq('student_id', student_id)
-        .eq('class_id', enr.class_id)
+    if (!enrList?.length) {
+      return NextResponse.json({ error: '수강 데이터를 찾을 수 없습니다. 해당 학생의 수강 등록을 확인해주세요.' }, { status: 404 })
     }
+
+    const enr = enrList[0]
+    const schedKey = dir === 'arr' ? 'arr_schedule' : 'dep_schedule'
+    const currentSched = { ...(enr[schedKey] ?? {}) } as Record<string, string>
+    const dayList: string[] = Array.isArray(days) ? days : []
+    for (const d of dayList) {
+      currentSched[d] = bus_name
+      if (pickup_location) currentSched[d + '_loc'] = pickup_location
+    }
+    if (pickup_time) currentSched['_time'] = pickup_time
+    const { error: updateError } = await service.from('class_enrollments')
+      .update({ [schedKey]: currentSched })
+      .eq('student_id', student_id)
+      .eq('class_id', enr.class_id)
+    if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 })
 
     // 오늘 날짜 override도 생성 (location, pickup_time 포함)
     const { data, error } = await service.from('pickup_overrides').upsert({
@@ -452,7 +475,7 @@ export async function POST(request: NextRequest) {
       created_by: user.id,
     }, { onConflict: 'student_id,date,direction' }).select().single()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    return NextResponse.json({ override: data })
+    return NextResponse.json({ override: data, enrollment_updated: true })
   }
 
   if (action === 'add_bus') {

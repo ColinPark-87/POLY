@@ -505,7 +505,7 @@ export default function VehiclesPage() {
   }
   async function handleAddRider() {
     if (!riderSelected || !addRiderModal) return
-    setSaving(true)
+    setSaving(true); setFormError('')
     if (addRiderMode === 'today') {
       // 오늘 하루만 override (임시 배정)
       await fetch('/api/campus/vehicles', {
@@ -518,16 +518,20 @@ export default function VehiclesPage() {
       setSaving(false); setAddRiderModal(null); resetRiderForm(); loadToday()
     } else {
       // 영구: 스케줄 영구 변경
-      const dir = tab === 'today' ? todayDir : masterDir
-      await fetch('/api/campus/vehicles', {
+      const dir = addRiderModal.sessionDir ?? (tab === 'today' ? todayDir : masterDir)
+      const res = await fetch('/api/campus/vehicles', {
         method: 'POST', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({
           action: 'add_rider', student_id: riderSelected.id,
           date: selectedDate, direction: dir, bus_name: addRiderModal.bus,
+          session_name: addRiderModal.sessionName,
           pickup_time: riderTime || undefined, pickup_location: riderLocation || undefined, days: riderDays,
         }),
       })
-      setSaving(false); setAddRiderModal(null); resetRiderForm()
+      const d = await res.json()
+      setSaving(false)
+      if (!res.ok) { setFormError(d.error ?? '추가 실패'); return }
+      setAddRiderModal(null); resetRiderForm()
       if (tab === 'today') loadToday(); else loadMaster()
     }
   }
@@ -1760,7 +1764,10 @@ export default function VehiclesPage() {
                 </div>
               )}
               <div className="flex gap-2 pt-1">
-                <button onClick={() => { setAddRiderModal(null); resetRiderForm() }}
+                {formError && (
+                <p className="text-[11px] text-[#EF4444] bg-[#FEF2F2] rounded-xl px-3 py-2">{formError}</p>
+              )}
+              <button onClick={() => { setAddRiderModal(null); resetRiderForm(); setFormError('') }}
                   className="flex-1 border border-[#E2E8F0] text-[#64748B] py-2.5 rounded-xl text-sm">취소</button>
                 <button onClick={handleAddRider} disabled={!riderSelected || (addRiderMode !== 'today' && riderDays.length === 0) || saving}
                   className="flex-1 bg-[#004EA2] text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40">
