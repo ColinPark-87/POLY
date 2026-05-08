@@ -69,11 +69,12 @@ export async function GET(request: NextRequest) {
   if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
 
   const service = createServiceClient()
-  const { data: profile } = await service.from('users').select('campus_id').eq('id', user.id).single()
-  const campusId = profile?.campus_id
+  const { data: profile } = await service.from('users').select('campus_id, role').eq('id', user.id).single()
+  const { searchParams } = new URL(request.url)
+  let campusId: string | null | undefined = profile?.campus_id
+  if (!campusId && profile?.role === 'hq_admin') campusId = searchParams.get('campus_id')
   if (!campusId) return NextResponse.json({ error: '캠퍼스 없음' }, { status: 400 })
 
-  const { searchParams } = new URL(request.url)
   const dateStr = searchParams.get('date') ?? new Date().toISOString().slice(0, 10)
   const direction = (searchParams.get('direction') ?? 'dep') as 'arr' | 'dep'
   const month = searchParams.get('month') ?? ''
@@ -199,18 +200,16 @@ export async function GET(request: NextRequest) {
         }
         if (!busMap[busName]) busMap[busName] = []
         busMap[busName].push(entry)
-        if (time_range) {
-          const groupKey = getSessionLabel(session_name, direction) + '|' + time_range
-          if (!timeGroupRaw[groupKey]) {
-            timeGroupRaw[groupKey] = { session_name: session_name ?? '', time_range, busMap: {}, busLocationSets: {} }
-          }
-          const tg = timeGroupRaw[groupKey]
-          if (!tg.busMap[busName]) tg.busMap[busName] = []
-          tg.busMap[busName].push(entry)
-          if (location) {
-            if (!tg.busLocationSets[busName]) tg.busLocationSets[busName] = new Set()
-            tg.busLocationSets[busName].add(location)
-          }
+        const groupKey = getSessionLabel(session_name, direction) + '|' + (time_range ?? '')
+        if (!timeGroupRaw[groupKey]) {
+          timeGroupRaw[groupKey] = { session_name: session_name ?? '', time_range: time_range ?? '', busMap: {}, busLocationSets: {} }
+        }
+        const tg = timeGroupRaw[groupKey]
+        if (!tg.busMap[busName]) tg.busMap[busName] = []
+        tg.busMap[busName].push(entry)
+        if (location) {
+          if (!tg.busLocationSets[busName]) tg.busLocationSets[busName] = new Set()
+          tg.busLocationSets[busName].add(location)
         }
         if (location) {
           if (!busLocationSets[busName]) busLocationSets[busName] = new Set()
@@ -258,18 +257,16 @@ export async function GET(request: NextRequest) {
       if (!busMap[busName]) busMap[busName] = []
       busMap[busName].push(entry)
 
-      if (time_range) {
-        const groupKey = getSessionLabel(session_name, direction) + '|' + time_range
-        if (!timeGroupRaw[groupKey]) {
-          timeGroupRaw[groupKey] = { session_name: session_name ?? '', time_range, busMap: {}, busLocationSets: {} }
-        }
-        const tg = timeGroupRaw[groupKey]
-        if (!tg.busMap[busName]) tg.busMap[busName] = []
-        tg.busMap[busName].push(entry)
-        if (location) {
-          if (!tg.busLocationSets[busName]) tg.busLocationSets[busName] = new Set()
-          tg.busLocationSets[busName].add(location)
-        }
+      const groupKey = getSessionLabel(session_name, direction) + '|' + (time_range ?? '')
+      if (!timeGroupRaw[groupKey]) {
+        timeGroupRaw[groupKey] = { session_name: session_name ?? '', time_range: time_range ?? '', busMap: {}, busLocationSets: {} }
+      }
+      const tg = timeGroupRaw[groupKey]
+      if (!tg.busMap[busName]) tg.busMap[busName] = []
+      tg.busMap[busName].push(entry)
+      if (location) {
+        if (!tg.busLocationSets[busName]) tg.busLocationSets[busName] = new Set()
+        tg.busLocationSets[busName].add(location)
       }
       if (location) {
         if (!busLocationSets[busName]) busLocationSets[busName] = new Set()
