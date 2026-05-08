@@ -3,6 +3,17 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 
+type Category = '유치부' | '초등부'
+
+interface StudentChange {
+  student_id: string
+  name: string
+  campus_id: string
+  campus_name: string
+  group: Category
+  type: 'added' | 'removed'
+}
+
 interface CampusSummary {
   id: string
   name: string
@@ -15,6 +26,8 @@ interface CampusSummary {
   usageRate: number | null
   studentCount: number
   studentByGroup: Record<string, number>
+  studentByCategory: Record<Category, number>
+  prevStudentByCategory: Record<Category, number>
   todayArr: number
   todayDep: number
 }
@@ -29,6 +42,10 @@ interface Stats {
   year: number
   totalStudents: number
   totalStudentByGroup: Record<string, number>
+  totalStudentsByCategory: Record<Category, number>
+  prevTotalStudentsByCategory: Record<Category, number>
+  studentChanges: StudentChange[]
+  prevMonthLabel: string | null
   todayDay: string | null
   totalTodayArr: number
   totalTodayDep: number
@@ -45,10 +62,15 @@ function rateColor(rate: number) {
 export default function HqDashboardPage() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [sortBy, setSortBy] = useState<'rate' | 'name'>('rate')
+  const [changeModal, setChangeModal] = useState<{ filter: Category | 'all'; campus_id?: string } | null>(null)
 
   useEffect(() => {
     fetch('/api/hq/stats').then(r => r.json()).then(setStats)
   }, [])
+
+  const GROUP_COLORS: Record<string, string> = { '유치부': '#FF6B35', '매일반': '#2196F3', '3일반': '#4CAF50', '2일반': '#9C27B0' }
+  const GROUPS = ['유치부', '매일반', '3일반', '2일반']
+  const CAT_COLORS: Record<Category, string> = { '유치부': '#FF6B35', '초등부': '#2196F3' }
 
   if (!stats) {
     return (
@@ -57,9 +79,6 @@ export default function HqDashboardPage() {
       </div>
     )
   }
-
-  const GROUP_COLORS: Record<string, string> = { '유치부': '#FF6B35', '매일반': '#2196F3', '3일반': '#4CAF50', '2일반': '#9C27B0' }
-  const GROUPS = ['유치부', '매일반', '3일반', '2일반']
 
   const totalGrantedAll = stats.campusSummaries.reduce((s, c) => s + c.totalGranted, 0)
   const totalUsedAll = stats.campusSummaries.reduce((s, c) => s + c.totalUsed, 0)
@@ -100,6 +119,49 @@ export default function HqDashboardPage() {
               strokeDasharray={`${(overallRate / 100) * 2 * Math.PI * 24} ${2 * Math.PI * 24}`}
               strokeLinecap="round" />
           </svg>
+        </div>
+      </div>
+
+      {/* ── 전체 학생 현황 히어로 ── */}
+      <div className="bg-gradient-to-r from-[#0F172A] to-[#1E3A5F] rounded-2xl p-5 text-white">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <p className="text-xs text-[#94A3B8] mb-1">
+              전체 학생 현황 · 최근 월 기준
+              {stats.prevMonthLabel && <span className="ml-1">· 직전월: {stats.prevMonthLabel}</span>}
+            </p>
+            <div className="flex items-end gap-2">
+              <p className="text-5xl font-black leading-none">{stats.totalStudents}</p>
+              <p className="text-xl text-[#94A3B8] mb-1">명</p>
+            </div>
+          </div>
+          <div className="flex gap-3">
+            {(['유치부', '초등부'] as Category[]).map(cat => {
+              const curr = stats.totalStudentsByCategory?.[cat] ?? 0
+              const prev = stats.prevTotalStudentsByCategory?.[cat] ?? 0
+              const delta = curr - prev
+              const hasChanges = delta !== 0 && prev > 0 && (stats.studentChanges ?? []).some(c => c.group === cat)
+              return (
+                <div key={cat} className="rounded-2xl px-5 py-3 min-w-[100px] text-center"
+                  style={{ background: CAT_COLORS[cat] + '30', border: `1px solid ${CAT_COLORS[cat]}50` }}>
+                  <p className="text-xs font-bold mb-1" style={{ color: CAT_COLORS[cat] }}>{cat}</p>
+                  <p className="text-3xl font-black leading-none">{curr}</p>
+                  <p className="text-[10px] text-[#94A3B8] mb-1">명</p>
+                  {hasChanges ? (
+                    <button
+                      onClick={() => setChangeModal({ filter: cat })}
+                      className="text-[10px] font-bold px-2 py-0.5 rounded-lg transition-colors hover:opacity-80"
+                      style={{ background: delta > 0 ? '#16A34A33' : '#DC262633', color: delta > 0 ? '#86EFAC' : '#FCA5A5' }}
+                    >
+                      {delta > 0 ? `▲ ${delta}명` : `▼ ${Math.abs(delta)}명`}
+                    </button>
+                  ) : prev > 0 ? (
+                    <p className="text-[10px] text-[#64748B]">변동 없음</p>
+                  ) : null}
+                </div>
+              )
+            })}
+          </div>
         </div>
       </div>
 
@@ -152,104 +214,67 @@ export default function HqDashboardPage() {
         ))}
       </div>
 
-      {/* ── 학생 현황 + 오늘 차량 현황 ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        {/* 학생 현황 */}
-        <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-sm p-5">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="font-bold text-[#0F172A]">전체 학생 현황</h2>
-              <p className="text-[10px] text-[#94A3B8] mt-0.5">최근 월 기준 · 전체 {stats.totalStudents}명</p>
-            </div>
-            <div className="flex gap-1.5">
-              {GROUPS.map(g => {
-                const count = stats.totalStudentByGroup[g] ?? 0
-                if (!count) return null
-                return (
-                  <div key={g} className="text-center px-2 py-1 rounded-xl" style={{ background: GROUP_COLORS[g] + '18' }}>
-                    <div className="text-[10px] font-bold" style={{ color: GROUP_COLORS[g] }}>{g}</div>
-                    <div className="text-sm font-black" style={{ color: GROUP_COLORS[g] }}>{count}</div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-          {/* 캠퍼스별 학생 바 */}
-          <div className="space-y-2">
-            {[...stats.campusSummaries].filter(c => c.is_active && c.studentCount > 0)
-              .sort((a, b) => b.studentCount - a.studentCount)
-              .map(c => {
-                const pct = stats.totalStudents > 0 ? Math.round(c.studentCount / stats.totalStudents * 100) : 0
-                return (
-                  <div key={c.id}>
-                    <div className="flex items-center justify-between text-[10px] mb-0.5">
-                      <Link href={`/hq/campuses/${c.id}/roster`} className="font-semibold text-[#1E293B] truncate max-w-[120px] hover:text-[#004EA2] hover:underline">{c.name}</Link>
-                      <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-                        {GROUPS.map(g => c.studentByGroup[g] ? (
-                          <span key={g} className="font-bold" style={{ color: GROUP_COLORS[g] }}>
-                            {g.slice(0, 2)} {c.studentByGroup[g]}
-                          </span>
-                        ) : null)}
-                        <span className="font-black text-[#1E293B]">{c.studentCount}명</span>
-                      </div>
-                    </div>
-                    <div className="h-1.5 bg-[#F1F5F9] rounded-full overflow-hidden">
-                      <div className="h-full rounded-full bg-[#004EA2]" style={{ width: `${pct}%` }} />
-                    </div>
-                  </div>
-                )
-              })}
-          </div>
-        </div>
-
-        {/* 오늘 차량 현황 */}
-        <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-sm p-5">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="font-bold text-[#0F172A]">오늘 차량 현황</h2>
-              <p className="text-[10px] text-[#94A3B8] mt-0.5">
-                {stats.todayDay ? `${stats.todayDay}요일 기준` : '주말 — 수업 없음'}
-              </p>
-            </div>
-            {stats.todayDay && (
-              <div className="flex gap-2">
-                <div className="text-center px-3 py-1.5 rounded-xl bg-[#EFF6FF]">
-                  <div className="text-[10px] font-bold text-[#2563eb]">등원</div>
-                  <div className="text-lg font-black text-[#2563eb]">{stats.totalTodayArr}</div>
+      {/* ── 증감 모달 ── */}
+      {changeModal && (() => {
+        const filtered = (stats.studentChanges ?? []).filter(ch =>
+          (changeModal.filter === 'all' || ch.group === changeModal.filter) &&
+          (!changeModal.campus_id || ch.campus_id === changeModal.campus_id)
+        )
+        const added = filtered.filter(c => c.type === 'added')
+        const removed = filtered.filter(c => c.type === 'removed')
+        const title = changeModal.filter === 'all' ? '전체' : changeModal.filter
+        const campusName = changeModal.campus_id ? stats.campusSummaries.find(c => c.id === changeModal.campus_id)?.name : null
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4" onClick={() => setChangeModal(null)}>
+            <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="font-bold text-[#0F172A] text-lg">
+                    {campusName ? `${campusName} · ` : ''}{title} 학생 증감
+                  </h3>
+                  <p className="text-[11px] text-[#94A3B8] mt-0.5">
+                    직전월 대비 · 추가 {added.length}명 / 이탈 {removed.length}명
+                  </p>
                 </div>
-                <div className="text-center px-3 py-1.5 rounded-xl bg-[#FFF1F2]">
-                  <div className="text-[10px] font-bold text-[#dc2626]">하원</div>
-                  <div className="text-lg font-black text-[#dc2626]">{stats.totalTodayDep}</div>
-                </div>
+                <button onClick={() => setChangeModal(null)} className="text-[#94A3B8] hover:text-[#1E293B] text-xl font-light">✕</button>
               </div>
-            )}
-          </div>
-          {!stats.todayDay ? (
-            <div className="flex items-center justify-center py-8 text-[#94A3B8] text-sm">주말 — 수업 없음</div>
-          ) : (
-            <div className="space-y-1.5">
-              {[...stats.campusSummaries].filter(c => c.is_active && (c.todayArr > 0 || c.todayDep > 0))
-                .sort((a, b) => (b.todayArr + b.todayDep) - (a.todayArr + a.todayDep))
-                .map(c => (
-                  <div key={c.id} className="flex items-center gap-3 px-3 py-2 rounded-xl bg-[#F7F8FA]">
-                    <span className="text-[11px] font-semibold text-[#1E293B] flex-1 truncate">{c.name}</span>
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
-                      <span className="text-[10px] px-2 py-0.5 rounded-lg font-bold bg-[#EFF6FF] text-[#2563eb]">
-                        등 {c.todayArr}
-                      </span>
-                      <span className="text-[10px] px-2 py-0.5 rounded-lg font-bold bg-[#FFF1F2] text-[#dc2626]">
-                        하 {c.todayDep}
-                      </span>
+              <div className="overflow-y-auto flex-1 space-y-3">
+                {added.length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-bold text-[#16A34A] mb-1.5 uppercase tracking-wider">▲ 신규 추가 {added.length}명</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {added.map((s, i) => (
+                        <div key={i} className="flex items-center gap-1 bg-[#F0FDF4] border border-[#BBF7D0] rounded-xl px-2.5 py-1.5">
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-lg" style={{ background: CAT_COLORS[s.group] + '20', color: CAT_COLORS[s.group] }}>{s.group}</span>
+                          <span className="text-[12px] font-semibold text-[#1E293B]">{s.name}</span>
+                          {!changeModal.campus_id && <span className="text-[9px] text-[#94A3B8]">{s.campus_name}</span>}
+                        </div>
+                      ))}
                     </div>
                   </div>
-                ))}
-              {stats.campusSummaries.every(c => !c.todayArr && !c.todayDep) && (
-                <div className="flex items-center justify-center py-6 text-[#94A3B8] text-sm">오늘 탑승 데이터 없음</div>
-              )}
+                )}
+                {removed.length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-bold text-[#DC2626] mb-1.5 uppercase tracking-wider">▼ 이탈 {removed.length}명</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {removed.map((s, i) => (
+                        <div key={i} className="flex items-center gap-1 bg-[#FEF2F2] border border-[#FECACA] rounded-xl px-2.5 py-1.5">
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-lg" style={{ background: CAT_COLORS[s.group] + '20', color: CAT_COLORS[s.group] }}>{s.group}</span>
+                          <span className="text-[12px] font-semibold text-[#1E293B]">{s.name}</span>
+                          {!changeModal.campus_id && <span className="text-[9px] text-[#94A3B8]">{s.campus_name}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {filtered.length === 0 && (
+                  <p className="text-sm text-[#94A3B8] text-center py-8">변경 사항 없음</p>
+                )}
+              </div>
             </div>
-          )}
-        </div>
-      </div>
+          </div>
+        )
+      })()}
 
       {/* ── 세로 막대 차트 ── */}
       <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-sm p-5">
@@ -344,13 +369,13 @@ export default function HqDashboardPage() {
               const rate = c.usageRate ?? 0
               const col = c.totalGranted > 0 ? rateColor(rate) : null
               return (
-                <Link
+                <div
                   key={c.id}
-                  href={`/hq/campuses/${c.id}`}
-                  className={`group bg-white rounded-2xl border p-4 hover:shadow-lg transition-all hover:border-[#004EA2] ${
+                  className={`group bg-white rounded-2xl border p-4 hover:shadow-lg transition-all hover:border-[#004EA2] flex flex-col ${
                     !c.is_active ? 'opacity-50 border-[#E2E8F0]' : col ? col.border : 'border-[#E2E8F0]'
                   }`}
                 >
+                <Link href={`/hq/campuses/${c.id}`} className="flex-1 flex flex-col">
                   {/* 카드 헤더 */}
                   <div className="flex items-start justify-between mb-3">
                     <div className="min-w-0 flex-1">
@@ -406,6 +431,41 @@ export default function HqDashboardPage() {
                     </div>
                   </div>
 
+                  {/* 유치부 / 초등부 인원 변동 */}
+                  {(() => {
+                    const campusChanges = (stats.studentChanges ?? []).filter(ch => ch.campus_id === c.id)
+                    const hasPrev = Object.values(c.prevStudentByCategory ?? {}).some(v => v > 0)
+                    return (
+                      <div className="flex gap-1.5 mt-2">
+                        {(['유치부', '초등부'] as Category[]).map(cat => {
+                          const cnt = c.studentByCategory?.[cat] ?? 0
+                          if (!cnt && !(c.prevStudentByCategory?.[cat])) return null
+                          const prev = c.prevStudentByCategory?.[cat] ?? 0
+                          const d = cnt - prev
+                          const hasChange = hasPrev && d !== 0 && campusChanges.some(ch => ch.group === cat)
+                          return (
+                            <div key={cat} className="flex-1 rounded-xl py-2 text-center"
+                              style={{ background: CAT_COLORS[cat] + '15' }}>
+                              <p className="text-[9px] font-bold" style={{ color: CAT_COLORS[cat] }}>{cat}</p>
+                              <p className="text-sm font-black" style={{ color: CAT_COLORS[cat] }}>{cnt}</p>
+                              {hasChange ? (
+                                <button
+                                  onClick={e => { e.preventDefault(); setChangeModal({ filter: cat, campus_id: c.id }) }}
+                                  className="text-[9px] font-bold px-1.5 py-0.5 rounded-lg mt-0.5"
+                                  style={{ background: d > 0 ? '#DCFCE7' : '#FEE2E2', color: d > 0 ? '#16A34A' : '#DC2626' }}
+                                >
+                                  {d > 0 ? `▲${d}` : `▼${Math.abs(d)}`}
+                                </button>
+                              ) : hasPrev ? (
+                                <p className="text-[9px] text-[#CBD5E1] mt-0.5">±0</p>
+                              ) : null}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
+                  })()}
+
                   {/* 연차 요약 */}
                   <div className="flex justify-between text-[10px] text-[#CBD5E1] mt-2">
                     <span>부여 {fmtDays(c.totalGranted)}일</span>
@@ -413,6 +473,14 @@ export default function HqDashboardPage() {
                     <span className={c.remaining < 0 ? 'text-[#EF4444]' : ''}>잔여 {fmtDays(c.remaining)}일</span>
                   </div>
                 </Link>
+                {/* 차량 바로가기 */}
+                <Link
+                  href={`/hq/campuses/${c.id}/vehicles`}
+                  className="mt-2 w-full flex items-center justify-center gap-1.5 py-2 rounded-xl text-[11px] font-semibold border border-[#E2E8F0] text-[#64748B] hover:border-[#004EA2] hover:text-[#004EA2] hover:bg-[#EAF2FB] transition-colors"
+                >
+                  🚌 차량 운행 보기
+                </Link>
+                </div>
               )
             })}
         </div>
