@@ -100,26 +100,9 @@ export default function HqDashboardPage() {
     <div className="space-y-5 max-w-full">
 
       {/* ── 헤더 ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <p className="text-xs text-[#94A3B8] mb-0.5">{today} · {stats.year}년 연차 현황</p>
-          <h1 className="text-2xl font-black text-[#0F172A] tracking-tight">통합 대시보드</h1>
-        </div>
-        {/* 전체 소진율 히어로 */}
-        <div className={`${overallCol.bg} rounded-2xl px-5 py-3 flex items-center gap-4 border ${overallCol.border}`}>
-          <div>
-            <p className="text-xs text-[#64748B] mb-0.5">전체 평균 소진율</p>
-            <p className={`text-4xl font-black ${overallCol.text} leading-none`}>{overallRate}%</p>
-            <p className="text-[10px] text-[#94A3B8] mt-1">{fmtDays(totalUsedAll)}일 사용 / {fmtDays(totalGrantedAll)}일 부여</p>
-          </div>
-          {/* 원형 게이지 */}
-          <svg width="60" height="60" className="-rotate-90 shrink-0">
-            <circle cx="30" cy="30" r="24" fill="none" stroke="#E2E8F0" strokeWidth="6" />
-            <circle cx="30" cy="30" r="24" fill="none" stroke={overallCol.bar} strokeWidth="6"
-              strokeDasharray={`${(overallRate / 100) * 2 * Math.PI * 24} ${2 * Math.PI * 24}`}
-              strokeLinecap="round" />
-          </svg>
-        </div>
+      <div>
+        <p className="text-xs text-[#94A3B8] mb-0.5">{today} · {stats.year}년 연차 현황</p>
+        <h1 className="text-2xl font-black text-[#0F172A] tracking-tight">통합 대시보드</h1>
       </div>
 
       {/* ── 전체 학생 현황 히어로 ── */}
@@ -290,7 +273,22 @@ export default function HqDashboardPage() {
               ))}
             </div>
           </div>
-          <div className="flex items-center gap-1 bg-[#F7F8FA] rounded-xl p-1 self-start sm:self-auto">
+          <div className="flex items-center gap-3 self-start sm:self-auto">
+            {/* 전체 평균 소진율 */}
+            <div className={`${overallCol.bg} rounded-2xl px-4 py-2.5 flex items-center gap-3 border ${overallCol.border}`}>
+              <div>
+                <p className="text-[10px] text-[#64748B] mb-0.5">전체 평균 소진율</p>
+                <p className={`text-2xl font-black ${overallCol.text} leading-none`}>{overallRate}%</p>
+                <p className="text-[9px] text-[#94A3B8] mt-0.5">{fmtDays(totalUsedAll)}일 / {fmtDays(totalGrantedAll)}일</p>
+              </div>
+              <svg width="44" height="44" className="-rotate-90 shrink-0">
+                <circle cx="22" cy="22" r="17" fill="none" stroke="#E2E8F0" strokeWidth="5" />
+                <circle cx="22" cy="22" r="17" fill="none" stroke={overallCol.bar} strokeWidth="5"
+                  strokeDasharray={`${(overallRate / 100) * 2 * Math.PI * 17} ${2 * Math.PI * 17}`}
+                  strokeLinecap="round" />
+              </svg>
+            </div>
+            <div className="flex items-center gap-1 bg-[#F7F8FA] rounded-xl p-1">
             <button onClick={() => setSortBy('rate')}
               className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${sortBy === 'rate' ? 'bg-white text-[#0F172A] shadow-sm' : 'text-[#94A3B8]'}`}>
               소진율순
@@ -299,6 +297,7 @@ export default function HqDashboardPage() {
               className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${sortBy === 'name' ? 'bg-white text-[#0F172A] shadow-sm' : 'text-[#94A3B8]'}`}>
               이름순
             </button>
+          </div>
           </div>
         </div>
 
