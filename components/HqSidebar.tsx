@@ -9,6 +9,7 @@ const navItems = [
   { href: '/hq/employees', label: '전체 직원', icon: '👥' },
   { href: '/hq/calendar', label: '통합 캘린더', icon: '📅' },
   { href: '/hq/leaves', label: '연차 신청 이력', icon: '📄' },
+  { href: '/hq/import', label: '캠퍼스파일 업로드/다운로드', icon: '📂' },
   { href: '/hq/settings', label: '설정', icon: '⚙️' },
 ]
 
