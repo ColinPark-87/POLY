@@ -200,16 +200,18 @@ export async function GET(request: NextRequest) {
         }
         if (!busMap[busName]) busMap[busName] = []
         busMap[busName].push(entry)
-        const groupKey = getSessionLabel(session_name, direction) + '|' + (time_range ?? '')
-        if (!timeGroupRaw[groupKey]) {
-          timeGroupRaw[groupKey] = { session_name: session_name ?? '', time_range: time_range ?? '', busMap: {}, busLocationSets: {} }
-        }
-        const tg = timeGroupRaw[groupKey]
-        if (!tg.busMap[busName]) tg.busMap[busName] = []
-        tg.busMap[busName].push(entry)
-        if (location) {
-          if (!tg.busLocationSets[busName]) tg.busLocationSets[busName] = new Set()
-          tg.busLocationSets[busName].add(location)
+        if (time_range) {
+          const groupKey = getSessionLabel(session_name, direction) + '|' + time_range
+          if (!timeGroupRaw[groupKey]) {
+            timeGroupRaw[groupKey] = { session_name: session_name ?? '', time_range, busMap: {}, busLocationSets: {} }
+          }
+          const tg = timeGroupRaw[groupKey]
+          if (!tg.busMap[busName]) tg.busMap[busName] = []
+          tg.busMap[busName].push(entry)
+          if (location) {
+            if (!tg.busLocationSets[busName]) tg.busLocationSets[busName] = new Set()
+            tg.busLocationSets[busName].add(location)
+          }
         }
         if (location) {
           if (!busLocationSets[busName]) busLocationSets[busName] = new Set()
@@ -257,16 +259,18 @@ export async function GET(request: NextRequest) {
       if (!busMap[busName]) busMap[busName] = []
       busMap[busName].push(entry)
 
-      const groupKey = getSessionLabel(session_name, direction) + '|' + (time_range ?? '')
-      if (!timeGroupRaw[groupKey]) {
-        timeGroupRaw[groupKey] = { session_name: session_name ?? '', time_range: time_range ?? '', busMap: {}, busLocationSets: {} }
-      }
-      const tg = timeGroupRaw[groupKey]
-      if (!tg.busMap[busName]) tg.busMap[busName] = []
-      tg.busMap[busName].push(entry)
-      if (location) {
-        if (!tg.busLocationSets[busName]) tg.busLocationSets[busName] = new Set()
-        tg.busLocationSets[busName].add(location)
+      if (time_range) {
+        const groupKey = getSessionLabel(session_name, direction) + '|' + time_range
+        if (!timeGroupRaw[groupKey]) {
+          timeGroupRaw[groupKey] = { session_name: session_name ?? '', time_range, busMap: {}, busLocationSets: {} }
+        }
+        const tg = timeGroupRaw[groupKey]
+        if (!tg.busMap[busName]) tg.busMap[busName] = []
+        tg.busMap[busName].push(entry)
+        if (location) {
+          if (!tg.busLocationSets[busName]) tg.busLocationSets[busName] = new Set()
+          tg.busLocationSets[busName].add(location)
+        }
       }
       if (location) {
         if (!busLocationSets[busName]) busLocationSets[busName] = new Set()
