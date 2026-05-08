@@ -129,10 +129,6 @@ export default function ClassRosterPage() {
   const [waitlistAddModal, setWaitlistAddModal] = useState<{ classId: string; classLevel: string } | null>(null)
   const [newStudentModal, setNewStudentModal] = useState<{ classId: string; classLevel: string } | null>(null)
   const [addStudentModal, setAddStudentModal] = useState(false)
-  const [importModal, setImportModal] = useState(false)
-  const [importFile, setImportFile] = useState<File | null>(null)
-  const [importLoading, setImportLoading] = useState(false)
-  const [importResult, setImportResult] = useState<{ ok: boolean; sessions_created: number; classes_created: number; students_created: number; enrollments: number; buses: number; errors: string[]; stopCoords?: Record<string, { lat: number; lng: number }> } | null>(null)
   // Undo/redo
   const [undoStack, setUndoStack] = useState<{ student_id: string; class_id: string; arr_schedule: Record<string,string>; dep_schedule: Record<string,string>; label: string }[]>([])
   const [redoStack, setRedoStack] = useState<typeof undoStack>([])
@@ -444,14 +440,6 @@ export default function ClassRosterPage() {
           </button>
           <button onClick={() => setAddStudentModal(true)} className="text-sm bg-white border border-[#E2E8F0] text-[#1E293B] px-3 py-2 rounded-lg hover:bg-[#F7F8FA] transition-colors">+ 학생</button>
           <button onClick={() => setAddSessionModal(true)} className="text-sm bg-[#1e3a5f] text-white px-3 py-2 rounded-lg hover:bg-[#2c5f8a] transition-colors">+ 세션</button>
-          <a href="/api/campus/class-roster/template" download
-            className="text-sm bg-white border border-[#E2E8F0] text-[#64748B] px-3 py-2 rounded-lg hover:bg-[#F7F8FA] transition-colors">
-            양식 다운로드
-          </a>
-          <button onClick={() => { setImportModal(true); setImportFile(null); setImportResult(null) }}
-            className="text-sm bg-white border border-[#E2E8F0] text-[#64748B] px-3 py-2 rounded-lg hover:bg-[#F7F8FA] transition-colors">
-            엑셀 업로드
-          </button>
         </div>
       </div>
 
@@ -609,93 +597,6 @@ export default function ClassRosterPage() {
         </Modal>
       )}
 
-      {/* ── 엑셀 업로드 모달 ── */}
-      {importModal && (
-        <Modal title="반편성·차량 엑셀 업로드" onClose={() => setImportModal(false)}>
-          <div className="space-y-4">
-            {/* 템플릿 다운로드 */}
-            <div className="bg-[#EAF2FB] rounded-xl px-4 py-3 flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-[#004EA2]">엑셀 템플릿 다운로드</p>
-                <p className="text-xs text-[#64748B] mt-0.5">①세션설정 ②반편성_차량 ③차량정보 ④정류장좌표 4개 시트</p>
-              </div>
-              <a href="/api/campus/class-roster/template" download
-                className="text-sm bg-[#004EA2] text-white px-4 py-2 rounded-xl hover:bg-[#003d82] whitespace-nowrap">
-                다운로드
-              </a>
-            </div>
-
-            {/* 파일 선택 */}
-            <div>
-              <label className="block text-sm font-semibold text-[#1E293B] mb-2">작성된 엑셀 파일 선택</label>
-              <div
-                className="border-2 border-dashed border-[#E2E8F0] rounded-xl p-6 text-center cursor-pointer hover:border-[#004EA2] transition-colors"
-                onClick={() => document.getElementById('roster-import-file')?.click()}
-              >
-                <p className="text-2xl mb-1">📊</p>
-                <p className="text-sm font-medium text-[#1E293B]">{importFile ? importFile.name : '파일 클릭하여 선택'}</p>
-                <p className="text-xs text-[#94A3B8] mt-1">반편성_차량_템플릿.xlsx</p>
-                <input id="roster-import-file" type="file" accept=".xlsx,.xls" className="hidden"
-                  onChange={e => { setImportFile(e.target.files?.[0] ?? null); setImportResult(null) }} />
-              </div>
-            </div>
-
-            {/* 결과 */}
-            {importResult && (
-              <div className={`rounded-xl px-4 py-3 text-sm ${importResult.ok ? 'bg-[#F0FDF4] border border-[#BBF7D0]' : 'bg-[#FEF2F2] border border-[#FECACA]'}`}>
-                {importResult.ok && (
-                  <div className="space-y-1 text-[#166534]">
-                    <p className="font-semibold">업로드 완료</p>
-                    <p className="text-xs">세션 {importResult.sessions_created}개 · 반 {importResult.classes_created}개 · 신규학생 {importResult.students_created}명 · 수강배정 {importResult.enrollments}건 · 차량 {importResult.buses}개</p>
-                    {importResult.stopCoords && Object.keys(importResult.stopCoords).length > 0 && (
-                      <p className="text-xs font-semibold text-[#0369A1]">
-                        📍 정류장 좌표 {Object.keys(importResult.stopCoords).length}개 노선 지도에 반영됨
-                      </p>
-                    )}
-                  </div>
-                )}
-                {importResult.errors.length > 0 && (
-                  <div className="mt-2">
-                    <p className="text-xs font-semibold text-[#DC2626] mb-1">오류 ({importResult.errors.length}건)</p>
-                    <div className="max-h-28 overflow-y-auto space-y-0.5">
-                      {importResult.errors.map((e, i) => <p key={i} className="text-xs text-[#EF4444]">• {e}</p>)}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="flex gap-2">
-              <button onClick={() => setImportModal(false)}
-                className="flex-1 border border-[#E2E8F0] text-[#64748B] py-2.5 rounded-xl text-sm">취소</button>
-              <button
-                disabled={!importFile || importLoading}
-                onClick={async () => {
-                  if (!importFile) return
-                  setImportLoading(true); setImportResult(null)
-                  const fd = new FormData(); fd.append('file', importFile)
-                  const res = await fetch('/api/campus/class-roster/import', { method: 'POST', body: fd })
-                  const d = await res.json()
-                  setImportResult(d)
-                  setImportLoading(false)
-                  if (d.ok) {
-                    load()
-                    // 정류장 좌표 → localStorage 저장
-                    if (d.stopCoords && Object.keys(d.stopCoords).length > 0) {
-                      try {
-                        const existing = JSON.parse(localStorage.getItem('shuttle-stop-coords') ?? '{}')
-                        localStorage.setItem('shuttle-stop-coords', JSON.stringify({ ...existing, ...d.stopCoords }))
-                      } catch {}
-                    }
-                  }
-                }}
-                className="flex-1 bg-[#004EA2] text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40">
-                {importLoading ? '처리 중...' : '업로드'}
-              </button>
-            </div>
-          </div>
-        </Modal>
-      )}
 
       {addStudentModal && (
         <Modal title="학생 등록" onClose={() => setAddStudentModal(false)}>
