@@ -10,6 +10,11 @@ const CLASS_COLORS = [
   '#E53935','#00897B','#1565C0','#F57C00','#607D8B',
 ]
 
+const TEACHER_COLORS = [
+  '#E53935','#FB8C00','#43A047','#1E88E5','#8E24AA',
+  '#00897B','#6D4C41','#546E7A','#D81B60','#FF6F00',
+]
+
 // Session colors — exact match first (matches HTML SESS_C)
 const SESS_COLORS: Record<string, string> = {
   '유치부': '#FF6B35',
@@ -137,6 +142,12 @@ export default function ClassRosterPage() {
   const [withdrawModal, setWithdrawModal] = useState<{ enrollmentId: string; studentName: string } | null>(null)
   const [withdrawDate, setWithdrawDate] = useState(new Date().toISOString().slice(0, 10))
   const [withdrawNote, setWithdrawNote] = useState('')
+  // 담임반 관리
+  const [teacherColors, setTeacherColors] = useState<Record<string, string>>({})
+  const [editTeacherModal, setEditTeacherModal] = useState<{ originalName: string; name: string; color: string } | null>(null)
+  const [reassignModal, setReassignModal] = useState<{ cls: ClassItem; sess: Session; count: number } | null>(null)
+  const [reassignTarget, setReassignTarget] = useState('')
+  const [homeroomSaving, setHomeroomSaving] = useState(false)
 
   // Forms
   const [sessForm, setSessForm] = useState({ name: '', time_range: '' })
@@ -168,6 +179,13 @@ export default function ClassRosterPage() {
   }, [month])
 
   useEffect(() => { load() }, [month])
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('poly_teacher_colors')
+      if (saved) setTeacherColors(JSON.parse(saved))
+    } catch { /* ignore */ }
+  }, [])
 
   async function handleDeleteMonth(m: string) {
     if (!confirm(`"${m}" 전체 데이터(세션/반/수강생)를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) return
@@ -422,6 +440,47 @@ export default function ClassRosterPage() {
     setEditClassModal(cls)
   }
 
+  function getTeacherColor(teacher: string, index: number): string {
+    return teacherColors[teacher] ?? TEACHER_COLORS[index % TEACHER_COLORS.length]
+  }
+
+  async function handleRenameTeacher(e: React.FormEvent) {
+    e.preventDefault()
+    if (!editTeacherModal) return
+    const { originalName, name, color } = editTeacherModal
+    if (!name.trim()) return
+    setHomeroomSaving(true)
+    const teacherClasses = classes.filter(c => (c.teacher?.trim() || '(미지정)') === originalName)
+    await Promise.all(teacherClasses.map(cls =>
+      fetch('/api/campus/class-roster', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'update_class', class_id: cls.id, level: cls.level, room: cls.room, teacher: name.trim() === '(미지정)' ? null : name.trim(), color: cls.color }),
+      })
+    ))
+    const newColors = { ...teacherColors }
+    delete newColors[originalName]
+    if (name.trim() !== '(미지정)') newColors[name.trim()] = color
+    setTeacherColors(newColors)
+    localStorage.setItem('poly_teacher_colors', JSON.stringify(newColors))
+    setEditTeacherModal(null)
+    setHomeroomSaving(false)
+    load()
+  }
+
+  async function handleReassignClass(e: React.FormEvent) {
+    e.preventDefault()
+    if (!reassignModal) return
+    setHomeroomSaving(true)
+    const { cls } = reassignModal
+    await fetch('/api/campus/class-roster', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'update_class', class_id: cls.id, level: cls.level, room: cls.room, teacher: reassignTarget || null, color: cls.color }),
+    })
+    setReassignModal(null)
+    setHomeroomSaving(false)
+    load()
+  }
+
   return (
     <div className="max-w-full">
       {/* 페이지 헤더 + 최상위 탭 */}
@@ -531,7 +590,6 @@ export default function ClassRosterPage() {
       {pageTab === 'homeroom' && (
         <div className="space-y-4">
           {loading ? <Spinner /> : (() => {
-            // 선생님별 담임반 목록 집계
             const teacherMap: Record<string, { teacher: string; classes: { cls: ClassItem; sess: Session; count: number }[] }> = {}
             for (const cls of classes) {
               const teacher = cls.teacher?.trim() || '(미지정)'
@@ -548,36 +606,39 @@ export default function ClassRosterPage() {
               return <div className="text-center py-20 text-[#94A3B8] text-sm">담임 배정 데이터가 없습니다. 반편성 파일을 업로드해주세요.</div>
             }
             return (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {teachers.map(({ teacher, classes: tClasses }) => {
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                {teachers.map(({ teacher, classes: tClasses }, idx) => {
                   const totalStudents = tClasses.reduce((s, { count }) => s + count, 0)
                   const isUnassigned = teacher === '(미지정)'
+                  const color = isUnassigned ? '#CBD5E1' : getTeacherColor(teacher, idx)
                   return (
-                    <div key={teacher} className={`bg-white rounded-2xl border p-4 shadow-sm ${isUnassigned ? 'border-dashed border-[#CBD5E1]' : 'border-[#E2E8F0]'}`}>
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0 ${isUnassigned ? 'bg-[#CBD5E1]' : 'bg-[#1e3a5f]'}`}>
-                            {isUnassigned ? '?' : teacher[0]}
-                          </div>
-                          <div>
-                            <p className={`text-sm font-bold ${isUnassigned ? 'text-[#94A3B8]' : 'text-[#1E293B]'}`}>{teacher}</p>
-                            <p className="text-[10px] text-[#94A3B8]">{tClasses.length}개 반 · {totalStudents}명</p>
-                          </div>
-                        </div>
+                    <div key={teacher} className="bg-white rounded-xl border border-[#E2E8F0] overflow-hidden shadow-sm">
+                      {/* 선생님 헤더 — 클릭 시 이름/색상 편집 */}
+                      <div
+                        className="px-3 py-2.5 flex justify-between items-center select-none"
+                        style={{ background: color, cursor: isUnassigned ? 'default' : 'pointer' }}
+                        onClick={() => !isUnassigned && setEditTeacherModal({ originalName: teacher, name: teacher, color })}
+                      >
+                        <span className="text-white font-bold text-sm">{teacher}</span>
+                        {!isUnassigned && <span className="text-white text-[10px] opacity-60">편집</span>}
                       </div>
-                      <div className="space-y-1.5">
-                        {tClasses.sort((a, b) => (a.cls.sort_order ?? 99) - (b.cls.sort_order ?? 99)).map(({ cls, sess, count }) => (
-                          <div key={cls.id} className="flex items-center justify-between bg-[#F7F8FA] rounded-xl px-3 py-2">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: cls.color }} />
-                              <div className="min-w-0">
-                                <p className="text-xs font-medium text-[#1E293B] truncate">{cls.level}</p>
-                                <p className="text-[9px] text-[#94A3B8] truncate">{sess.name}</p>
-                              </div>
-                            </div>
-                            <span className="text-xs font-bold text-[#1E293B] shrink-0">{count}명</span>
+                      {/* 반 목록 — 클릭 시 담임 재배정 */}
+                      {tClasses.sort((a, b) => (a.cls.sort_order ?? 99) - (b.cls.sort_order ?? 99)).map(({ cls, sess, count }) => (
+                        <div
+                          key={cls.id}
+                          onClick={() => { setReassignModal({ cls, sess, count }); setReassignTarget(cls.teacher?.trim() ?? '') }}
+                          className="flex justify-between items-center px-3 py-2 border-b border-[#F0F0F0] hover:bg-[#F5F5F5] cursor-pointer"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-[12px] font-semibold text-[#1E293B] truncate">{cls.level}</p>
+                            <p className="text-[10px] text-[#94A3B8] truncate">{sess.name}</p>
                           </div>
-                        ))}
+                          <span className="text-[13px] font-bold text-[#1E293B] shrink-0 ml-2">{count}</span>
+                        </div>
+                      ))}
+                      {/* 합계 */}
+                      <div className="px-3 py-2 text-right text-[14px] font-bold text-[#1E293B] bg-[#F5F5F5] border-t-2 border-[#E0E0E0]">
+                        {totalStudents}
                       </div>
                     </div>
                   )
@@ -585,6 +646,48 @@ export default function ClassRosterPage() {
               </div>
             )
           })()}
+
+          {/* 선생님 편집 모달 */}
+          {editTeacherModal && (
+            <Modal title="선생님 정보" onClose={() => setEditTeacherModal(null)}>
+              <form onSubmit={handleRenameTeacher} className="space-y-3">
+                <Field label="이름" required>
+                  <input required value={editTeacherModal.name}
+                    onChange={e => setEditTeacherModal(m => m ? { ...m, name: e.target.value } : m)}
+                    className={inputCls} />
+                </Field>
+                <Field label="색상">
+                  <div className="flex gap-2 flex-wrap mt-1">
+                    {TEACHER_COLORS.map(c => (
+                      <div key={c}
+                        onClick={() => setEditTeacherModal(m => m ? { ...m, color: c } : m)}
+                        className="w-6 h-6 rounded-full cursor-pointer transition-transform hover:scale-110"
+                        style={{ background: c, border: editTeacherModal.color === c ? '3px solid #333' : '2px solid transparent' }} />
+                    ))}
+                  </div>
+                </Field>
+                <ModalBtns onClose={() => setEditTeacherModal(null)} loading={homeroomSaving} label="저장" />
+              </form>
+            </Modal>
+          )}
+
+          {/* 담임 변경 모달 */}
+          {reassignModal && (
+            <Modal title={`담임 변경 — ${reassignModal.cls.level}`} onClose={() => setReassignModal(null)}>
+              <form onSubmit={handleReassignClass} className="space-y-3">
+                <p className="text-xs text-[#64748B]">{reassignModal.sess.name} · {reassignModal.count}명</p>
+                <Field label="담임 선생님">
+                  <select value={reassignTarget} onChange={e => setReassignTarget(e.target.value)} className={inputCls}>
+                    <option value="">(미지정)</option>
+                    {[...new Set(classes.map(c => c.teacher?.trim()).filter((t): t is string => Boolean(t)))].sort().map(t => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                </Field>
+                <ModalBtns onClose={() => setReassignModal(null)} loading={homeroomSaving} label="변경" />
+              </form>
+            </Modal>
+          )}
         </div>
       )}
 
