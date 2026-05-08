@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
 
   // 반 목록
   const { data: classes, error: clsErr } = await service
-    .from('classes').select('*').in('session_id', sessionIds).order('sort_order').order('level')
+    .from('classes').select('*').in('session_id', sessionIds).order('sort_order').order('created_at')
   if (clsErr) return NextResponse.json({ error: clsErr.message }, { status: 500 })
 
   const classIds = (classes ?? []).map(c => c.id)
