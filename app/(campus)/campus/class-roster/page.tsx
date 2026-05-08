@@ -64,6 +64,8 @@ interface ClassItem {
 interface Session { id: string; name: string; time_range: string | null; month: string; sort_order: number }
 interface Bus { id: string; name: string; sort_order: number }
 interface StudentOnBus { student_id: string; name: string; english_name: string | null; override?: boolean }
+interface KTTeacher { name: string; color: string; classIds: string[] }
+interface EnrollHistoryEntry { type: string; class_name: string; created_at: string }
 
 function Spinner() {
   return <div className="flex justify-center py-16"><div className="w-8 h-8 border-4 border-[#1e3a5f] border-t-transparent rounded-full animate-spin" /></div>
@@ -143,10 +145,10 @@ export default function ClassRosterPage() {
   const [withdrawDate, setWithdrawDate] = useState(new Date().toISOString().slice(0, 10))
   const [withdrawNote, setWithdrawNote] = useState('')
   // 담임반 관리
-  const [teacherColors, setTeacherColors] = useState<Record<string, string>>({})
-  const [editTeacherModal, setEditTeacherModal] = useState<{ originalName: string; name: string; color: string } | null>(null)
-  const [reassignModal, setReassignModal] = useState<{ cls: ClassItem; sess: Session; count: number } | null>(null)
-  const [reassignTarget, setReassignTarget] = useState('')
+  const [ktTeachers, setKtTeachers] = useState<KTTeacher[]>([])
+  const [ktEditModal, setKtEditModal] = useState<{ idx: number; name: string; color: string } | null>(null)
+  const [ktAddClassModal, setKtAddClassModal] = useState<number | null>(null)
+  const [enrollHistory, setEnrollHistory] = useState<EnrollHistoryEntry[]>([])
   const [homeroomSaving, setHomeroomSaving] = useState(false)
 
   // Forms
@@ -182,10 +184,18 @@ export default function ClassRosterPage() {
 
   useEffect(() => {
     try {
-      const saved = localStorage.getItem('poly_teacher_colors')
-      if (saved) setTeacherColors(JSON.parse(saved))
+      const saved = localStorage.getItem('poly_kt_counsel')
+      if (saved) setKtTeachers(JSON.parse(saved))
     } catch { /* ignore */ }
   }, [])
+
+  useEffect(() => {
+    if (pageTab !== 'homeroom') return
+    fetch('/api/campus/class-roster/history')
+      .then(r => r.json())
+      .then(d => setEnrollHistory(d.logs ?? []))
+      .catch(() => {})
+  }, [pageTab])
 
   async function handleDeleteMonth(m: string) {
     if (!confirm(`"${m}" 전체 데이터(세션/반/수강생)를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) return
@@ -440,45 +450,46 @@ export default function ClassRosterPage() {
     setEditClassModal(cls)
   }
 
-  function getTeacherColor(teacher: string, index: number): string {
-    return teacherColors[teacher] ?? TEACHER_COLORS[index % TEACHER_COLORS.length]
+  function saveKt(updated: KTTeacher[]) {
+    setKtTeachers(updated)
+    localStorage.setItem('poly_kt_counsel', JSON.stringify(updated))
   }
 
-  async function handleRenameTeacher(e: React.FormEvent) {
+  function handleKtEditSave(e: React.FormEvent) {
     e.preventDefault()
-    if (!editTeacherModal) return
-    const { originalName, name, color } = editTeacherModal
-    if (!name.trim()) return
-    setHomeroomSaving(true)
-    const teacherClasses = classes.filter(c => (c.teacher?.trim() || '(미지정)') === originalName)
-    await Promise.all(teacherClasses.map(cls =>
-      fetch('/api/campus/class-roster', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'update_class', class_id: cls.id, level: cls.level, room: cls.room, teacher: name.trim() === '(미지정)' ? null : name.trim(), color: cls.color }),
-      })
-    ))
-    const newColors = { ...teacherColors }
-    delete newColors[originalName]
-    if (name.trim() !== '(미지정)') newColors[name.trim()] = color
-    setTeacherColors(newColors)
-    localStorage.setItem('poly_teacher_colors', JSON.stringify(newColors))
-    setEditTeacherModal(null)
-    setHomeroomSaving(false)
-    load()
+    if (!ktEditModal) return
+    const updated = ktTeachers.map((t, i) =>
+      i === ktEditModal.idx ? { ...t, name: ktEditModal.name.trim(), color: ktEditModal.color } : t
+    )
+    saveKt(updated)
+    setKtEditModal(null)
   }
 
-  async function handleReassignClass(e: React.FormEvent) {
-    e.preventDefault()
-    if (!reassignModal) return
-    setHomeroomSaving(true)
-    const { cls } = reassignModal
-    await fetch('/api/campus/class-roster', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'update_class', class_id: cls.id, level: cls.level, room: cls.room, teacher: reassignTarget || null, color: cls.color }),
+  function handleKtDeleteTeacher(idx: number) {
+    if (!confirm(`"${ktTeachers[idx].name}" 선생님을 삭제하시겠습니까?`)) return
+    saveKt(ktTeachers.filter((_, i) => i !== idx))
+    setKtEditModal(null)
+  }
+
+  function handleKtAddTeacher() {
+    saveKt([...ktTeachers, { name: '새 선생님', color: TEACHER_COLORS[ktTeachers.length % TEACHER_COLORS.length], classIds: [] }])
+  }
+
+  function handleKtAddClass(teacherIdx: number, classId: string) {
+    const updated = ktTeachers.map((t, i) => {
+      if (i !== teacherIdx) return t
+      if (t.classIds.includes(classId)) return t
+      return { ...t, classIds: [...t.classIds, classId] }
     })
-    setReassignModal(null)
-    setHomeroomSaving(false)
-    load()
+    saveKt(updated)
+    setKtAddClassModal(null)
+  }
+
+  function handleKtRemoveClass(teacherIdx: number, classId: string) {
+    const updated = ktTeachers.map((t, i) =>
+      i === teacherIdx ? { ...t, classIds: t.classIds.filter(id => id !== classId) } : t
+    )
+    saveKt(updated)
   }
 
   return (
@@ -588,106 +599,204 @@ export default function ClassRosterPage() {
 
       {/* ── 담임반 관리 탭 ── */}
       {pageTab === 'homeroom' && (
-        <div className="space-y-4">
-          {loading ? <Spinner /> : (() => {
-            const teacherMap: Record<string, { teacher: string; classes: { cls: ClassItem; sess: Session; count: number }[] }> = {}
-            for (const cls of classes) {
-              const teacher = cls.teacher?.trim() || '(미지정)'
-              if (!teacherMap[teacher]) teacherMap[teacher] = { teacher, classes: [] }
-              const sess = sessions.find(s => s.id === cls.session_id)
-              if (!sess) continue
-              const count = enrollments.filter(e => e.class_id === cls.id && !e.is_waitlist).length
-              teacherMap[teacher].classes.push({ cls, sess, count })
-            }
-            const teachers = Object.values(teacherMap).sort((a, b) =>
-              a.teacher === '(미지정)' ? 1 : b.teacher === '(미지정)' ? -1 : a.teacher.localeCompare(b.teacher, 'ko')
-            )
-            if (teachers.length === 0) {
-              return <div className="text-center py-20 text-[#94A3B8] text-sm">담임 배정 데이터가 없습니다. 반편성 파일을 업로드해주세요.</div>
-            }
-            return (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                {teachers.map(({ teacher, classes: tClasses }, idx) => {
-                  const totalStudents = tClasses.reduce((s, { count }) => s + count, 0)
-                  const isUnassigned = teacher === '(미지정)'
-                  const color = isUnassigned ? '#CBD5E1' : getTeacherColor(teacher, idx)
+        <div className="space-y-8">
+          {/* ─── 섹션 1: KT 담임 선생님별 상담 배정 ─── */}
+          <div>
+            <p className="text-[11px] text-[#94A3B8] mb-3">
+              선생님별 상담 배정 현황 (클릭하여 편집) — 인원수는 현재 반편성 데이터 기준 자동 반영
+            </p>
+            {loading ? <Spinner /> : (
+              <div className="flex flex-wrap gap-3 items-start">
+                {ktTeachers.map((kt, idx) => {
+                  const assignedClasses = kt.classIds
+                    .map(id => classes.find(c => c.id === id))
+                    .filter((c): c is ClassItem => Boolean(c))
+                  const total = assignedClasses.reduce((s, c) =>
+                    s + enrollments.filter(e => e.class_id === c.id && !e.is_waitlist).length, 0)
                   return (
-                    <div key={teacher} className="bg-white rounded-xl border border-[#E2E8F0] overflow-hidden shadow-sm">
-                      {/* 선생님 헤더 — 클릭 시 이름/색상 편집 */}
+                    <div key={idx} className="bg-white rounded-xl border border-[#E2E8F0] overflow-hidden shadow-sm w-44 flex-shrink-0">
                       <div
-                        className="px-3 py-2.5 flex justify-between items-center select-none"
-                        style={{ background: color, cursor: isUnassigned ? 'default' : 'pointer' }}
-                        onClick={() => !isUnassigned && setEditTeacherModal({ originalName: teacher, name: teacher, color })}
+                        className="px-3 py-2 flex justify-between items-center select-none cursor-pointer"
+                        style={{ background: kt.color }}
+                        onClick={() => setKtEditModal({ idx, name: kt.name, color: kt.color })}
                       >
-                        <span className="text-white font-bold text-sm">{teacher}</span>
-                        {!isUnassigned && <span className="text-white text-[10px] opacity-60">편집</span>}
+                        <span className="text-white font-bold text-sm truncate">{kt.name}</span>
+                        <span className="text-white text-[10px] opacity-60 shrink-0 ml-1">편집</span>
                       </div>
-                      {/* 반 목록 — 클릭 시 담임 재배정 */}
-                      {tClasses.sort((a, b) => (a.cls.sort_order ?? 99) - (b.cls.sort_order ?? 99)).map(({ cls, sess, count }) => (
-                        <div
-                          key={cls.id}
-                          onClick={() => { setReassignModal({ cls, sess, count }); setReassignTarget(cls.teacher?.trim() ?? '') }}
-                          className="flex justify-between items-center px-3 py-2 border-b border-[#F0F0F0] hover:bg-[#F5F5F5] cursor-pointer"
-                        >
-                          <div className="min-w-0">
-                            <p className="text-[12px] font-semibold text-[#1E293B] truncate">{cls.level}</p>
-                            <p className="text-[10px] text-[#94A3B8] truncate">{sess.name}</p>
+                      {assignedClasses.map(cls => {
+                        const count = enrollments.filter(e => e.class_id === cls.id && !e.is_waitlist).length
+                        const sess = sessions.find(s => s.id === cls.session_id)
+                        return (
+                          <div key={cls.id} className="flex justify-between items-center px-3 py-1.5 border-b border-[#F0F0F0] group">
+                            <span className="text-[12px] font-medium text-[#1E293B] truncate">
+                              {cls.level}{sess ? ` (${sess.name.replace(/^.*?([가-힣]+반|[0-9]일반|TT|MWF|매일반).*$/, '$1').slice(0,4)})` : ''}
+                            </span>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <span className="text-[13px] font-bold text-[#1E293B]">{count}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleKtRemoveClass(idx, cls.id)}
+                                className="opacity-0 group-hover:opacity-100 text-[#EF4444] text-[10px] ml-0.5 leading-none hover:text-red-700 transition-opacity"
+                                title="배정 해제"
+                              >✕</button>
+                            </div>
                           </div>
-                          <span className="text-[13px] font-bold text-[#1E293B] shrink-0 ml-2">{count}</span>
-                        </div>
-                      ))}
-                      {/* 합계 */}
-                      <div className="px-3 py-2 text-right text-[14px] font-bold text-[#1E293B] bg-[#F5F5F5] border-t-2 border-[#E0E0E0]">
-                        {totalStudents}
+                        )
+                      })}
+                      <div className="px-3 py-1.5 text-right text-[13px] font-bold text-[#1E293B] bg-[#F5F5F5] border-t-2 border-[#E0E0E0]">
+                        {total}
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => setKtAddClassModal(idx)}
+                        className="w-full text-center py-1.5 text-[11px] text-[#94A3B8] hover:text-[#2196F3] border-t border-dashed border-[#E0E0E0] transition-colors"
+                      >+ 반 추가</button>
                     </div>
                   )
                 })}
+                {/* + 선생님 추가 */}
+                <button
+                  type="button"
+                  onClick={handleKtAddTeacher}
+                  className="w-44 min-h-[80px] flex items-center justify-center border-2 border-dashed border-[#CBD5E1] rounded-xl text-[#94A3B8] text-sm hover:border-[#2196F3] hover:text-[#2196F3] transition-colors flex-shrink-0"
+                >+ 선생님 추가</button>
               </div>
-            )
-          })()}
+            )}
+          </div>
 
-          {/* 선생님 편집 모달 */}
-          {editTeacherModal && (
-            <Modal title="선생님 정보" onClose={() => setEditTeacherModal(null)}>
-              <form onSubmit={handleRenameTeacher} className="space-y-3">
+          {/* ─── 섹션 2: 원어민 선생님별 반 현황 ─── */}
+          <div>
+            <p className="text-[11px] text-[#94A3B8] mb-3">원어민 선생님별 반 현황 — 반편성 현황관리와 연동</p>
+            {loading ? <Spinner /> : (() => {
+              const nativeMap: Record<string, { teacher: string; items: { cls: ClassItem; sess: Session; count: number; enrolled: number; withdrawn: number }[] }> = {}
+              for (const cls of classes) {
+                const teacher = cls.teacher?.trim() || '(미지정)'
+                if (!nativeMap[teacher]) nativeMap[teacher] = { teacher, items: [] }
+                const sess = sessions.find(s => s.id === cls.session_id)
+                if (!sess) continue
+                const count = enrollments.filter(e => e.class_id === cls.id && !e.is_waitlist).length
+                const classLabel = `${sess.name} ${cls.level}`.toLowerCase()
+                const enrolled = enrollHistory.filter(h =>
+                  h.type === 'enrolled' && h.class_name.toLowerCase().includes(cls.level.toLowerCase())
+                ).length
+                const withdrawn = enrollHistory.filter(h =>
+                  h.type === 'withdrawn' && h.class_name.toLowerCase().includes(cls.level.toLowerCase())
+                ).length
+                nativeMap[teacher].items.push({ cls, sess, count, enrolled, withdrawn })
+              }
+              const nativeTeachers = Object.values(nativeMap).sort((a, b) =>
+                a.teacher === '(미지정)' ? 1 : b.teacher === '(미지정)' ? -1 : a.teacher.localeCompare(b.teacher)
+              )
+              if (nativeTeachers.length === 0) {
+                return <div className="text-center py-16 text-[#94A3B8] text-sm">반편성 데이터가 없습니다.</div>
+              }
+              return (
+                <div className="flex flex-wrap gap-3 items-start">
+                  {nativeTeachers.map(({ teacher, items }) => {
+                    const totalCount = items.reduce((s, i) => s + i.count, 0)
+                    const totalEnrolled = items.reduce((s, i) => s + i.enrolled, 0)
+                    const totalWithdrawn = items.reduce((s, i) => s + i.withdrawn, 0)
+                    const isUnassigned = teacher === '(미지정)'
+                    return (
+                      <div key={teacher} className="bg-white rounded-xl border border-[#E2E8F0] overflow-hidden shadow-sm w-52 flex-shrink-0">
+                        <div className={`px-3 py-2 ${isUnassigned ? 'bg-[#CBD5E1]' : 'bg-[#1e3a5f]'}`}>
+                          <p className="text-white font-bold text-sm truncate">{teacher}</p>
+                          <div className="flex gap-2 mt-0.5">
+                            <span className="text-white text-[10px] opacity-70">{items.length}개 반 · {totalCount}명</span>
+                            {(totalEnrolled > 0 || totalWithdrawn > 0) && (
+                              <span className="text-[10px]">
+                                {totalEnrolled > 0 && <span className="text-green-300">+{totalEnrolled}</span>}
+                                {totalEnrolled > 0 && totalWithdrawn > 0 && <span className="text-white opacity-50 mx-0.5">/</span>}
+                                {totalWithdrawn > 0 && <span className="text-red-300">-{totalWithdrawn}</span>}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        {items.sort((a, b) => (a.cls.sort_order ?? 99) - (b.cls.sort_order ?? 99)).map(({ cls, sess, count, enrolled, withdrawn }) => (
+                          <div key={cls.id} className="flex items-center justify-between px-3 py-1.5 border-b border-[#F0F0F0]">
+                            <div className="min-w-0">
+                              <p className="text-[11px] font-semibold text-[#1E293B] truncate">{cls.level}</p>
+                              <p className="text-[9px] text-[#94A3B8] truncate">{sess.name}</p>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0 ml-1">
+                              <span className="text-[12px] font-bold text-[#1E293B]">{count}</span>
+                              {(enrolled > 0 || withdrawn > 0) && (
+                                <span className="text-[9px]">
+                                  {enrolled > 0 && <span className="text-[#22C55E] font-semibold">+{enrolled}</span>}
+                                  {withdrawn > 0 && <span className="text-[#EF4444] font-semibold ml-0.5">-{withdrawn}</span>}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })()}
+          </div>
+
+          {/* KT 선생님 편집 모달 */}
+          {ktEditModal && (
+            <Modal title="선생님 정보" onClose={() => setKtEditModal(null)}>
+              <form onSubmit={handleKtEditSave} className="space-y-3">
                 <Field label="이름" required>
-                  <input required value={editTeacherModal.name}
-                    onChange={e => setEditTeacherModal(m => m ? { ...m, name: e.target.value } : m)}
+                  <input required value={ktEditModal.name}
+                    onChange={e => setKtEditModal(m => m ? { ...m, name: e.target.value } : m)}
                     className={inputCls} />
                 </Field>
                 <Field label="색상">
                   <div className="flex gap-2 flex-wrap mt-1">
                     {TEACHER_COLORS.map(c => (
                       <div key={c}
-                        onClick={() => setEditTeacherModal(m => m ? { ...m, color: c } : m)}
+                        onClick={() => setKtEditModal(m => m ? { ...m, color: c } : m)}
                         className="w-6 h-6 rounded-full cursor-pointer transition-transform hover:scale-110"
-                        style={{ background: c, border: editTeacherModal.color === c ? '3px solid #333' : '2px solid transparent' }} />
+                        style={{ background: c, border: ktEditModal.color === c ? '3px solid #333' : '2px solid transparent' }} />
                     ))}
                   </div>
                 </Field>
-                <ModalBtns onClose={() => setEditTeacherModal(null)} loading={homeroomSaving} label="저장" />
+                <div className="flex gap-2 pt-1">
+                  <button type="button" onClick={() => handleKtDeleteTeacher(ktEditModal.idx)}
+                    className="px-3 py-2 rounded-xl text-sm text-[#EF4444] border border-[#EF4444] hover:bg-red-50">삭제</button>
+                  <button type="button" onClick={() => setKtEditModal(null)}
+                    className="flex-1 border border-[#E2E8F0] text-[#64748B] py-2 rounded-xl text-sm">취소</button>
+                  <button type="submit" disabled={homeroomSaving}
+                    className="flex-1 bg-[#1e3a5f] text-white py-2 rounded-xl text-sm font-semibold disabled:opacity-50">저장</button>
+                </div>
               </form>
             </Modal>
           )}
 
-          {/* 담임 변경 모달 */}
-          {reassignModal && (
-            <Modal title={`담임 변경 — ${reassignModal.cls.level}`} onClose={() => setReassignModal(null)}>
-              <form onSubmit={handleReassignClass} className="space-y-3">
-                <p className="text-xs text-[#64748B]">{reassignModal.sess.name} · {reassignModal.count}명</p>
-                <Field label="담임 선생님">
-                  <select value={reassignTarget} onChange={e => setReassignTarget(e.target.value)} className={inputCls}>
-                    <option value="">(미지정)</option>
-                    {[...new Set(classes.map(c => c.teacher?.trim()).filter((t): t is string => Boolean(t)))].sort().map(t => (
-                      <option key={t} value={t}>{t}</option>
-                    ))}
-                  </select>
-                </Field>
-                <ModalBtns onClose={() => setReassignModal(null)} loading={homeroomSaving} label="변경" />
-              </form>
-            </Modal>
-          )}
+          {/* KT 반 추가 모달 */}
+          {ktAddClassModal !== null && (() => {
+            const assigned = ktTeachers[ktAddClassModal]?.classIds ?? []
+            const available = classes.filter(c => !assigned.includes(c.id))
+            return (
+              <Modal title={`${ktTeachers[ktAddClassModal]?.name} — 반 추가`} onClose={() => setKtAddClassModal(null)}>
+                <div className="max-h-72 overflow-y-auto space-y-1">
+                  {available.length === 0
+                    ? <p className="text-center text-[#94A3B8] text-sm py-8">배정 가능한 반이 없습니다</p>
+                    : available.map(cls => {
+                        const sess = sessions.find(s => s.id === cls.session_id)
+                        const count = enrollments.filter(e => e.class_id === cls.id && !e.is_waitlist).length
+                        return (
+                          <button key={cls.id} type="button"
+                            onClick={() => handleKtAddClass(ktAddClassModal, cls.id)}
+                            className="w-full text-left flex justify-between items-center px-3 py-2 rounded-lg hover:bg-[#EAF2FB] transition-colors">
+                            <div>
+                              <p className="text-sm font-medium text-[#1E293B]">{cls.level}</p>
+                              <p className="text-[10px] text-[#94A3B8]">{sess?.name}</p>
+                            </div>
+                            <span className="text-sm font-bold text-[#64748B]">{count}명</span>
+                          </button>
+                        )
+                      })
+                  }
+                </div>
+              </Modal>
+            )
+          })()}
         </div>
       )}
 
