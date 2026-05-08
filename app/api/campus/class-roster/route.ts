@@ -87,17 +87,33 @@ export async function POST(request: NextRequest) {
   if (action === 'add_class') {
     const { session_id, level, room, teacher, kt_teacher, color } = body
     const { data, error } = await service.from('classes').insert({
-      campus_id: campusId, session_id, level, room, teacher, kt_teacher: kt_teacher || null, color: color ?? '#3b82f6',
+      campus_id: campusId, session_id, level, room, teacher, color: color ?? '#3b82f6',
     }).select().single()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    // kt_teacher RPC로 별도 저장
+    if (kt_teacher && data?.id) {
+      await service.rpc('update_class_kt_teacher', {
+        p_id: data.id,
+        p_campus_id: campusId,
+        p_kt_teacher: kt_teacher,
+      })
+    }
     return NextResponse.json({ class: data })
   }
 
   if (action === 'update_class') {
     const { class_id, level, room, teacher, kt_teacher, color } = body
-    const { data, error } = await service.from('classes').update({ level, room, teacher, kt_teacher: kt_teacher || null, color })
+    const { data, error } = await service.from('classes').update({ level, room, teacher, color })
       .eq('id', class_id).eq('campus_id', campusId).select().single()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    // kt_teacher는 RPC로 별도 업데이트 (schema cache 우회)
+    if (kt_teacher !== undefined) {
+      await service.rpc('update_class_kt_teacher', {
+        p_id: class_id,
+        p_campus_id: campusId,
+        p_kt_teacher: kt_teacher || null,
+      })
+    }
     return NextResponse.json({ class: data })
   }
 
