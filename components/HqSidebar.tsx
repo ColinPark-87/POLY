@@ -3,15 +3,34 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 
-const navItems = [
-  { href: '/hq/dashboard', label: '통합 대시보드', icon: '🏢' },
-  { href: '/hq/campuses', label: '캠퍼스 관리', icon: '🏫' },
-  { href: '/hq/employees', label: '전체 직원', icon: '👥' },
-  { href: '/hq/calendar', label: '통합 캘린더', icon: '📅' },
-  { href: '/hq/leaves', label: '연차 신청 이력', icon: '📄' },
-  { href: '/hq/vehicles', label: '차량 운행현황', icon: '🚌' },
-  { href: '/hq/import', label: '캠퍼스파일 업로드/다운로드', icon: '📂' },
-  { href: '/hq/settings', label: '설정', icon: '⚙️' },
+const navSections = [
+  {
+    items: [
+      { href: '/hq/dashboard', label: '통합 대시보드', icon: '🏢' },
+    ],
+  },
+  {
+    title: '캠퍼스',
+    items: [
+      { href: '/hq/campuses', label: '캠퍼스 관리', icon: '🏫' },
+      { href: '/hq/vehicles', label: '차량 운행현황', icon: '🚌' },
+    ],
+  },
+  {
+    title: '인사 · 연차',
+    items: [
+      { href: '/hq/employees', label: '전체 직원', icon: '👥' },
+      { href: '/hq/calendar', label: '통합 캘린더', icon: '📅' },
+      { href: '/hq/leaves', label: '연차 신청 이력', icon: '📄' },
+    ],
+  },
+  {
+    title: '관리',
+    items: [
+      { href: '/hq/import', label: '파일 업로드/다운로드', icon: '📂' },
+      { href: '/hq/settings', label: '설정', icon: '⚙️' },
+    ],
+  },
 ]
 
 export default function HqSidebar({ userName }: { userName: string }) {
@@ -26,7 +45,8 @@ export default function HqSidebar({ userName }: { userName: string }) {
 
   return (
     <aside className="w-56 min-h-screen bg-white border-r border-[#E2E8F0] flex-col hidden md:flex">
-      <div className="px-4 py-3 border-b border-[#E2E6EC]">
+      {/* 로고 */}
+      <div className="px-4 py-4 border-b border-[#E2E6EC]">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-[#004EA2] flex items-center justify-center shrink-0">
             <span className="text-white text-[11px] font-black tracking-tight">P</span>
@@ -36,38 +56,50 @@ export default function HqSidebar({ userName }: { userName: string }) {
             <p className="text-[10px] text-[#6B7687] leading-tight">본사 (HQ)</p>
           </div>
         </div>
-        <div className="mt-2.5 flex items-center gap-2">
-          <div className="w-6 h-6 rounded-full bg-[#004EA2] flex items-center justify-center text-white text-[10px] font-bold">{userName[0]}</div>
+        <div className="mt-3 flex items-center gap-2">
+          <div className="w-6 h-6 rounded-full bg-[#004EA2] flex items-center justify-center text-white text-[10px] font-bold shrink-0">{userName[0]}</div>
           <p className="text-xs text-[#2E3744] font-medium truncate">{userName}</p>
         </div>
       </div>
 
-      <nav className="flex-1 p-4 space-y-1">
-        {navItems.map(item => {
-          const active = pathname.startsWith(item.href)
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-colors ${
-                active
-                  ? 'bg-[#EAF2FB] text-[#002F65] font-semibold'
-                  : 'text-[#6B7687] hover:bg-[#F7F8FA] hover:text-[#0C1220]'
-              }`}
-            >
-              <span className="text-base">{item.icon}</span>
-              <span>{item.label}</span>
-            </Link>
-          )
-        })}
+      {/* 네비게이션 */}
+      <nav className="flex-1 py-3 px-3 space-y-4 overflow-y-auto">
+        {navSections.map((section, si) => (
+          <div key={si}>
+            {section.title && (
+              <p className="text-[9px] font-bold text-[#CBD5E1] uppercase tracking-widest px-2 mb-1">{section.title}</p>
+            )}
+            <div className="space-y-0.5">
+              {section.items.map(item => {
+                const active = pathname === item.href || (item.href !== '/hq/dashboard' && pathname.startsWith(item.href))
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] transition-colors ${
+                      active
+                        ? 'bg-[#EAF2FB] text-[#002F65] font-semibold'
+                        : 'text-[#6B7687] hover:bg-[#F7F8FA] hover:text-[#0C1220]'
+                    }`}
+                  >
+                    <span className="text-[14px] w-5 text-center leading-none shrink-0">{item.icon}</span>
+                    <span className="truncate">{item.label}</span>
+                  </Link>
+                )
+              })}
+            </div>
+          </div>
+        ))}
       </nav>
 
-      <div className="p-4 border-t border-[#E2E8F0]">
+      {/* 로그아웃 */}
+      <div className="px-3 py-3 border-t border-[#E2E8F0]">
         <button
           onClick={handleLogout}
-          className="w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-[#64748B] hover:bg-[#FEF2F2] hover:text-[#EF4444] transition-colors"
+          className="w-full text-left flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] text-[#94A3B8] hover:bg-[#FEF2F2] hover:text-[#EF4444] transition-colors"
         >
-          <span>🚪</span><span>로그아웃</span>
+          <span className="text-[14px] w-5 text-center shrink-0">🚪</span>
+          <span>로그아웃</span>
         </button>
       </div>
     </aside>
