@@ -32,12 +32,20 @@ interface CampusSummary {
   todayDep: number
 }
 
+interface OnLeaveEntry {
+  user_id: string
+  name: string
+  campus_id: string
+  campus_name: string
+}
+
 interface Stats {
   totalCampuses: number
   activeCampuses: number
   totalEmployees: number
   pendingTotal: number
   onLeaveTodayTotal: number
+  onLeaveTodayList: OnLeaveEntry[]
   campusSummaries: CampusSummary[]
   year: number
   totalStudents: number
@@ -63,6 +71,7 @@ export default function HqDashboardPage() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [sortBy, setSortBy] = useState<'rate' | 'name'>('rate')
   const [changeModal, setChangeModal] = useState<{ filter: Category | 'all'; campus_id?: string } | null>(null)
+  const [leaveModal, setLeaveModal] = useState(false)
 
   useEffect(() => {
     fetch('/api/hq/stats').then(r => r.json()).then(setStats)
@@ -176,13 +185,6 @@ export default function HqDashboardPage() {
             color: stats.pendingTotal > 0 ? 'text-[#F59E0B]' : 'text-[#94A3B8]',
             bg: stats.pendingTotal > 0 ? 'bg-[#FFFBEB]' : 'bg-white',
           },
-          {
-            label: '오늘 휴가', icon: '🏖️',
-            value: stats.onLeaveTodayTotal, unit: '명',
-            sub: '현재 휴가 중',
-            color: stats.onLeaveTodayTotal > 0 ? 'text-[#10B981]' : 'text-[#94A3B8]',
-            bg: stats.onLeaveTodayTotal > 0 ? 'bg-[#F0FDF4]' : 'bg-white',
-          },
         ].map(card => (
           <div key={card.label} className={`${card.bg} rounded-2xl border border-[#E2E8F0] p-4 shadow-sm`}>
             <div className="flex items-center justify-between mb-2">
@@ -195,6 +197,20 @@ export default function HqDashboardPage() {
             <p className="text-[10px] text-[#CBD5E1] mt-1.5">{card.sub}</p>
           </div>
         ))}
+        {/* 오늘 휴가 카드 (클릭 가능) */}
+        <button
+          onClick={() => setLeaveModal(true)}
+          className={`rounded-2xl border border-[#E2E8F0] p-4 shadow-sm text-left transition-all hover:shadow-md hover:border-[#10B981] ${stats.onLeaveTodayTotal > 0 ? 'bg-[#F0FDF4]' : 'bg-white'}`}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs text-[#94A3B8]">오늘 휴가</p>
+            <span className="text-base">🏖️</span>
+          </div>
+          <p className={`text-2xl font-bold leading-none ${stats.onLeaveTodayTotal > 0 ? 'text-[#10B981]' : 'text-[#94A3B8]'}`}>
+            {stats.onLeaveTodayTotal}<span className="text-xs font-normal text-[#94A3B8] ml-0.5">명</span>
+          </p>
+          <p className="text-[10px] text-[#CBD5E1] mt-1.5">{stats.onLeaveTodayTotal > 0 ? '명단 보기 →' : '현재 휴가 없음'}</p>
+        </button>
       </div>
 
       {/* ── 증감 모달 ── */}
@@ -253,6 +269,47 @@ export default function HqDashboardPage() {
                 {filtered.length === 0 && (
                   <p className="text-sm text-[#94A3B8] text-center py-8">변경 사항 없음</p>
                 )}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* ── 오늘 휴가자 모달 ── */}
+      {leaveModal && (() => {
+        const list = stats.onLeaveTodayList ?? []
+        const byCampus: Record<string, { campus_name: string; names: string[] }> = {}
+        for (const e of list) {
+          if (!byCampus[e.campus_id]) byCampus[e.campus_id] = { campus_name: e.campus_name, names: [] }
+          byCampus[e.campus_id].names.push(e.name)
+        }
+        const campusGroups = Object.entries(byCampus).sort((a, b) => a[1].campus_name.localeCompare(b[1].campus_name, 'ko'))
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4" onClick={() => setLeaveModal(false)}>
+            <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="font-bold text-[#0F172A] text-lg">오늘 휴가자 명단</h3>
+                  <p className="text-[11px] text-[#94A3B8] mt-0.5">총 {list.length}명 · 캠퍼스별</p>
+                </div>
+                <button onClick={() => setLeaveModal(false)} className="text-[#94A3B8] hover:text-[#1E293B] text-xl font-light">✕</button>
+              </div>
+              <div className="overflow-y-auto flex-1 space-y-3">
+                {campusGroups.length === 0 && (
+                  <p className="text-sm text-[#94A3B8] text-center py-8">오늘 휴가자 없음</p>
+                )}
+                {campusGroups.map(([cid, { campus_name, names }]) => (
+                  <div key={cid}>
+                    <p className="text-[10px] font-bold text-[#64748B] mb-1.5 uppercase tracking-wider">{campus_name} · {names.length}명</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {names.map((name, i) => (
+                        <div key={i} className="bg-[#F0FDF4] border border-[#BBF7D0] rounded-xl px-2.5 py-1.5">
+                          <span className="text-[12px] font-semibold text-[#1E293B]">{name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
