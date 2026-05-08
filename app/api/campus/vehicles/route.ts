@@ -413,11 +413,19 @@ export async function POST(request: NextRequest) {
     // 차량에 임시 탑승자 추가: pickup_override로 처리
     const { student_id, date, direction: dir, bus_name, pickup_time, pickup_location, days } = body
     // 스케줄 업데이트: 해당 요일들에 버스 배정
-    const { data: enrList } = await service.from('class_enrollments')
-      .select('class_id, arr_schedule, dep_schedule')
-      .eq('student_id', student_id)
-      .eq('campus_id', campusId)
-      .eq('is_waitlist', false)
+    // class_enrollments에 campus_id 컬럼이 없으므로 sessions→classes 경유 필터링
+    const { data: campusSessions } = await service.from('class_sessions').select('id').eq('campus_id', campusId)
+    const campusSessionIds = (campusSessions ?? []).map((s: { id: string }) => s.id)
+    const { data: campusClasses } = await service.from('classes').select('id').in('session_id', campusSessionIds)
+    const campusClassIds = (campusClasses ?? []).map((c: { id: string }) => c.id)
+
+    const { data: enrList } = campusClassIds.length
+      ? await service.from('class_enrollments')
+          .select('class_id, arr_schedule, dep_schedule')
+          .eq('student_id', student_id)
+          .in('class_id', campusClassIds)
+          .eq('is_waitlist', false)
+      : { data: null }
 
     if (enrList?.length) {
       const enr = enrList[0]
@@ -435,10 +443,13 @@ export async function POST(request: NextRequest) {
         .eq('class_id', enr.class_id)
     }
 
-    // 오늘 날짜 override도 생성
+    // 오늘 날짜 override도 생성 (location, pickup_time 포함)
     const { data, error } = await service.from('pickup_overrides').upsert({
       student_id, campus_id: campusId, date, direction: dir,
-      bus_name, is_absent: false, created_by: user.id,
+      bus_name, is_absent: false,
+      location: pickup_location ?? null,
+      pickup_time: pickup_time ?? null,
+      created_by: user.id,
     }, { onConflict: 'student_id,date,direction' }).select().single()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ override: data })
