@@ -1933,7 +1933,7 @@ function ClassForm({ form, setForm, onSubmit, onClose, saving, error, onDelete, 
       <Field label="반 이름" required>
         <input required value={form.level} onChange={e => setForm(f => ({ ...f, level: e.target.value }))} placeholder="GT2, MAG1..." className={inputCls} />
       </Field>
-      <Field label="교실 (나라이름)">
+      <Field label="교실이름">
         <input value={form.room} onChange={e => setForm(f => ({ ...f, room: e.target.value }))} placeholder="America, France..." className={inputCls} />
       </Field>
       <Field label="원어민 담임 (FT)">
