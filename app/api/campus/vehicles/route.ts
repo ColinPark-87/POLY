@@ -13,10 +13,10 @@ function getClassDays(sessionName: string | null): Day[] {
 }
 
 // 세션 이름에서 그룹 레이블 추출 (유치부/초등부 구분용)
-// 방과후(유치부 방과후 포함): 하원(dep)→매일반, 등원(arr)→유치부
+// 방과후(유치부 방과후 포함): 하원(dep)→매일반, 등원(arr)→방과후 (유치부와 분리)
 function getSessionLabel(name: string | null, dir: 'arr' | 'dep' = 'arr'): string {
   if (!name) return ''
-  if (name.includes('방과후')) return dir === 'dep' ? '매일반' : '유치부'
+  if (name.includes('방과후')) return dir === 'dep' ? '매일반' : '방과후'
   if (name.includes('유치부')) return '유치부'
   if (name.includes('매일반')) return '매일반'
   if (name.includes('월수금') || name.includes('3일반')) return '3일반'
@@ -162,7 +162,12 @@ export async function GET(request: NextRequest) {
         pickup_time = parseTimeMinNorm(rawPickupTime) >= getMinDepTime(session_name) ? rawPickupTime : null
       } else {
         const minArr = getMinArrTime(session_name)
-        if (minArr > 0) pickup_time = parseTimeMinNorm(rawPickupTime) >= minArr ? rawPickupTime : null
+        if (minArr > 0) {
+          pickup_time = parseTimeMinNorm(rawPickupTime) >= minArr ? rawPickupTime : null
+        } else if (session_name?.includes('유치부')) {
+          // 유치부 등원: 아침 시간만 허용 (13:00 이후는 하원 시간이 잘못 저장된 것)
+          pickup_time = parseTimeMinNorm(rawPickupTime) < 13 * 60 ? rawPickupTime : null
+        }
       }
     }
 
@@ -311,7 +316,7 @@ export async function GET(request: NextRequest) {
   // 세션 유형 우선순위: 유치부 → 매일반 → 3일반 → 2일반
   // 방과후(유치부 방과후 포함): 하원→매일반(2), 등원→유치부(1)
   function sessPriority(name: string): number {
-    if (name.includes('방과후')) return direction === 'dep' ? 2 : 1
+    if (name.includes('방과후')) return direction === 'dep' ? 2 : 1.5
     if (name.includes('유치부')) return 1
     if (name.includes('매일반')) return 2
     if (name.includes('월수금') || name.includes('3일반')) return 3

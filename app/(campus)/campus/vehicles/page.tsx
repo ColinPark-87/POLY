@@ -21,8 +21,8 @@ function getTextColor(hex: string): string {
 }
 
 function getRunColor(sessName: string, dir?: 'arr'|'dep') {
-  // 방과후(유치부 방과후 포함): 하원→매일반 파랑, 등원→유치부 주황
-  if (sessName.includes('방과후')) return dir === 'dep' ? '#2196F3' : '#FF6B35'
+  // 방과후(유치부 방과후 포함): 하원→매일반 파랑, 등원→방과후 별도 색상
+  if (sessName.includes('방과후')) return dir === 'dep' ? '#2196F3' : '#8B5CF6'
   if (sessName.includes('매일반')) return '#2196F3'
   if (sessName.includes('월수금')||sessName.includes('3일반')) return '#4CAF50'
   if (sessName.includes('화목')||sessName.includes('2일반')) return '#9C27B0'
@@ -31,8 +31,8 @@ function getRunColor(sessName: string, dir?: 'arr'|'dep') {
 }
 function getRunLabel(sessName: string, dir: 'arr'|'dep') {
   const d = dir === 'arr' ? '등원' : '하원'
-  // 방과후(유치부 방과후 포함): 하원→매일반 하원, 등원→유치부 등원
-  if (sessName.includes('방과후')) return dir === 'dep' ? `매일반 ${d}` : `유치부 ${d}`
+  // 방과후(유치부 방과후 포함): 하원→매일반 하원, 등원→방과후 등원 (유치부와 분리)
+  if (sessName.includes('방과후')) return dir === 'dep' ? `매일반 ${d}` : `방과후 ${d}`
   if (sessName.includes('매일반')) return `매일반 ${d}`
   if (sessName.includes('월수금')||sessName.includes('3일반')) return `3일반 ${d}`
   if (sessName.includes('화목')||sessName.includes('2일반')) return `2일반 ${d}`
@@ -42,11 +42,13 @@ function getRunLabel(sessName: string, dir: 'arr'|'dep') {
 function parseTimeMin(t: string): number {
   const m = t.match(/(\d{1,2}):(\d{2})/)
   if (!m) return 9999
-  return parseInt(m[1]) * 60 + parseInt(m[2])
+  let h = parseInt(m[1])
+  if (h < 8) h += 12
+  return h * 60 + parseInt(m[2])
 }
 function normalizeTime(t: string): string {
-  const m = t.match(/^(\d{1,2}):(\d{2})$/)
-  if (!m) return t
+  const m = t.match(/^(\d{1,2}):(\d{2})/)
+  if (!m) return ''
   let h = parseInt(m[1])
   const min = m[2]
   if (h < 8) h += 12
@@ -89,8 +91,8 @@ function mergeGroupsByLabel(groups: TimeGroup[], dir: 'arr'|'dep'): TimeGroup[] 
 }
 
 function getSessPriority(sessName: string, dir?: 'arr'|'dep'): number {
-  // 방과후(유치부 방과후 포함): 하원→매일반(2), 등원→유치부(1)
-  if (sessName.includes('방과후')) return dir === 'dep' ? 2 : 1
+  // 방과후(유치부 방과후 포함): 하원→매일반(2), 등원→유치부(1)과 매일반(2) 사이
+  if (sessName.includes('방과후')) return dir === 'dep' ? 2 : 1.5
   if (sessName.includes('유치부')) return 1
   if (sessName.includes('매일반')) return 2
   if (sessName.includes('월수금') || sessName.includes('3일반')) return 3
@@ -99,9 +101,9 @@ function getSessPriority(sessName: string, dir?: 'arr'|'dep'): number {
 }
 function sessMatchesFilter(sessName: string, filter: string, dir?: 'arr'|'dep') {
   if (filter === '전체') return true
-  // 방과후(유치부 방과후 포함): 하원→매일반 필터, 등원→유치부 필터
+  // 방과후(유치부 방과후 포함): 하원→매일반 필터, 등원→전체/유치부 필터에서 표시
   if (sessName.includes('방과후')) {
-    return dir === 'dep' ? filter === '매일반' : filter === '유치부'
+    return dir === 'dep' ? filter === '매일반' : (filter === '전체' || filter === '유치부')
   }
   if (filter === '유치부') return sessName.includes('유치부')
   if (filter === '매일반') return sessName.includes('매일반')
@@ -224,7 +226,7 @@ export default function VehiclesPage() {
   const [bulkTime, setBulkTime] = useState('')
 
   // ── 탑승자 추가 ───────────────────────────────────────────────
-  const [addRiderModal, setAddRiderModal] = useState<{bus: string}|null>(null)
+  const [addRiderModal, setAddRiderModal] = useState<{bus: string; sessionName?: string; sessionLocs?: string[]; sessionDir?: 'arr'|'dep'}|null>(null)
   const [addRiderMode, setAddRiderMode] = useState<'permanent'|'today'>('permanent')
   const [riderSearch, setRiderSearch] = useState('')
   const [allStudents, setAllStudents] = useState<{id:string;name:string;english_name:string|null}[]>([])
@@ -614,10 +616,13 @@ export default function VehiclesPage() {
     const txtColor = getTextColor(color)
     const collapsed = collapsedBuses.has(name)
     const bus = buses.find(b => b.name === name)
-    // 탑승 시간순 정렬 (시간 없으면 맨 뒤)
+    // 탑승 시간순 정렬 (개인 시간 우선, 파싱 실패/없으면 세션 기본 시간, 그래도 없으면 맨 뒤)
+    const defMin = defaultTime ? parseTimeMin(defaultTime) : 9999
     const sorted = [...students].sort((a, b) => {
-      const ta = parseTimeMin(a.pickup_time ?? defaultTime)
-      const tb = parseTimeMin(b.pickup_time ?? defaultTime)
+      const rawA = a.pickup_time ? parseTimeMin(a.pickup_time) : 9999
+      const rawB = b.pickup_time ? parseTimeMin(b.pickup_time) : 9999
+      const ta = rawA < 9999 ? rawA : defMin
+      const tb = rawB < 9999 ? rawB : defMin
       return ta - tb
     })
     return (
@@ -672,9 +677,12 @@ export default function VehiclesPage() {
                   : openOverrideModal(stu, name)}>
                 <span className="text-[9px] text-[#ccc]">{i+1}</span>
                 <div className="text-center">
-                  {(stu.pickup_time || defaultTime)
-                    ? <span className={`text-[9px] font-bold ${stu.pickup_time ? 'text-[#1E293B]' : 'text-[#94A3B8]'}`}>{normalizeTime(stu.pickup_time || defaultTime || '')}</span>
-                    : <span className="text-[9px] text-[#CBD5E1]">-</span>}
+                  {(() => {
+                    const t = normalizeTime(stu.pickup_time || defaultTime || '')
+                    return t
+                      ? <span className={`text-[9px] font-bold ${stu.pickup_time ? 'text-[#1E293B]' : 'text-[#94A3B8]'}`}>{t}</span>
+                      : <span className="text-[9px] text-[#CBD5E1]">-</span>
+                  })()}
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-1 flex-wrap">
@@ -713,7 +721,12 @@ export default function VehiclesPage() {
             ))}
             {showAddRider && tab === 'master' && (
               <div className="px-2 py-1.5 border-t border-[#F1F5F9]">
-                <button onClick={() => { setAddRiderMode('permanent'); setAddRiderModal({ bus: name }); resetRiderForm(); loadAllStudents() }}
+                <button onClick={() => {
+                  const days = sessionName?.includes('화목') || sessionName?.includes('2일반') ? ['화','목']
+                    : sessionName?.includes('월수금') || sessionName?.includes('3일반') ? ['월','수','금']
+                    : ['월','화','수','목','금']
+                  setAddRiderMode('permanent'); setAddRiderModal({ bus: name, sessionName, sessionLocs: locations, sessionDir: dir }); resetRiderForm(); setRiderDays(days); loadAllStudents()
+                }}
                   className="w-full text-[10px] font-semibold text-[#94A3B8] hover:text-[#004EA2] hover:bg-blue-50 rounded-lg py-1.5 transition-colors border border-dashed border-[#E2E8F0] hover:border-[#004EA2]">
                   + 탑승자 추가
                 </button>
@@ -721,11 +734,16 @@ export default function VehiclesPage() {
             )}
             {showAddRider && tab === 'today' && (
               <div className="px-2 py-1.5 border-t border-[#F1F5F9] flex gap-1.5">
-                <button onClick={() => { setAddRiderMode('permanent'); setAddRiderModal({ bus: name }); resetRiderForm(); loadAllStudents() }}
+                <button onClick={() => {
+                  const days = sessionName?.includes('화목') || sessionName?.includes('2일반') ? ['화','목']
+                    : sessionName?.includes('월수금') || sessionName?.includes('3일반') ? ['월','수','금']
+                    : ['월','화','수','목','금']
+                  setAddRiderMode('permanent'); setAddRiderModal({ bus: name, sessionName, sessionLocs: locations, sessionDir: dir }); resetRiderForm(); setRiderDays(days); loadAllStudents()
+                }}
                   className="flex-1 text-[10px] font-semibold text-[#004EA2] hover:bg-blue-50 rounded-lg py-1.5 transition-colors border border-[#004EA2]">
                   + 신규 탑승자 추가
                 </button>
-                <button onClick={() => { setAddRiderMode('today'); setAddRiderModal({ bus: name }); resetRiderForm(); loadAllStudents() }}
+                <button onClick={() => { setAddRiderMode('today'); setAddRiderModal({ bus: name, sessionName, sessionLocs: locations, sessionDir: dir }); resetRiderForm(); loadAllStudents() }}
                   className="flex-1 text-[10px] font-semibold text-[#9333EA] hover:bg-purple-50 rounded-lg py-1.5 transition-colors border border-[#9333EA]">
                   + 오늘만 탑승 추가
                 </button>
@@ -1616,7 +1634,12 @@ export default function VehiclesPage() {
               </div>
               {addRiderMode !== 'today' && (() => {
                 const bus = addRiderModal?.bus ?? ''
-                const srcGroups = tab === 'today' ? todayGroups : masterGroups
+                const allGroups = tab === 'today' ? todayGroups : masterGroups
+                // 현재 섹션(session+dir) 그룹만 필터링
+                const sessLabel = addRiderModal?.sessionName ? getRunLabel(addRiderModal.sessionName, addRiderModal.sessionDir ?? 'arr') : ''
+                const srcGroups = sessLabel
+                  ? allGroups.filter(g => getRunLabel(g.session_name, addRiderModal?.sessionDir ?? 'arr') === sessLabel)
+                  : allGroups
                 // 해당 버스 기존 탑승자의 시간 목록
                 const existTimes = [...new Set(
                   srcGroups.flatMap(g => (g.busMap[bus] ?? []).map(s => s.pickup_time)).filter(Boolean) as string[]
@@ -1627,7 +1650,8 @@ export default function VehiclesPage() {
                       (g.busMap[bus] ?? []).filter(s => normalizeTime(s.pickup_time ?? '') === riderTime).map(s => s.location).filter((x): x is string => x != null)
                     ))]
                   : []
-                const allLocs = masterBusLocMap[bus] ?? []
+                const sessionLocs = addRiderModal?.sessionLocs ?? []
+                const allLocs = sessionLocs.length > 0 ? sessionLocs : (masterBusLocMap[bus] ?? [])
                 const existLocs = locsAtTime.length > 0 ? locsAtTime : allLocs
                 return (
                   <>
