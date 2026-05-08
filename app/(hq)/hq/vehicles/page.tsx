@@ -17,8 +17,8 @@ export default function HqVehiclesPage() {
   useEffect(() => {
     fetch('/api/hq/campuses')
       .then(r => r.json())
-      .then((data: Campus[]) => {
-        const active = data.filter(c => c.is_active)
+      .then((data: { campuses: Campus[] }) => {
+        const active = (data.campuses ?? []).filter(c => c.is_active)
         setCampuses(active)
         if (active.length > 0) setSelectedId(active[0].id)
       })
