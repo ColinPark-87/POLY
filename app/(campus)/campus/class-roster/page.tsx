@@ -159,6 +159,11 @@ export default function ClassRosterPage() {
   const [studentForm, setStudentForm] = useState({ name: '', english_name: '', grade: '' })
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
+  // 백업
+  const [backupModal, setBackupModal] = useState(false)
+  const [backups, setBackups] = useState<{ id: string; label: string; created_at: string }[]>([])
+  const [backupLoading, setBackupLoading] = useState(false)
+  const [backupSaving, setBackupSaving] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -294,6 +299,20 @@ export default function ClassRosterPage() {
     load()
   }
 
+  async function handleReorderClasses(sessionId: string, orderedIds: string[]) {
+    // Optimistic update
+    setClasses(prev => {
+      const others = prev.filter(c => c.session_id !== sessionId)
+      const reordered = orderedIds.map((id, i) => {
+        const cls = prev.find(c => c.id === id)!
+        return { ...cls, sort_order: i }
+      })
+      return [...others, ...reordered]
+    })
+    const orders = orderedIds.map((id, i) => ({ id, sort_order: i }))
+    await post({ action: 'reorder_classes', orders })
+  }
+
   async function handleAddSession(e: React.FormEvent) {
     e.preventDefault()
     const r = await post({ action: 'add_session', name: sessForm.name, time_range: sessForm.time_range, month })
@@ -382,6 +401,49 @@ export default function ClassRosterPage() {
     }
     setWithdrawModal(null)
     load()
+  }
+
+  async function openBackupModal() {
+    setBackupModal(true)
+    setBackupLoading(true)
+    const res = await fetch('/api/campus/backup')
+    const d = await res.json()
+    setBackups(d.backups ?? [])
+    setBackupLoading(false)
+  }
+
+  async function handleSaveBackup() {
+    setBackupSaving(true)
+    const now = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })
+    const res = await fetch('/api/campus/backup', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'create', label: now }),
+    })
+    const d = await res.json()
+    if (d.ok) setBackups(prev => [d.backup, ...prev])
+    setBackupSaving(false)
+  }
+
+  async function handleRestoreBackup(backupId: string, label: string) {
+    if (!confirm(`"${label}" 시점으로 복원하시겠습니까?\n현재 데이터가 덮어써집니다.`)) return
+    setSaving(true)
+    const res = await fetch('/api/campus/backup', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'restore', backup_id: backupId }),
+    })
+    const d = await res.json()
+    setSaving(false)
+    if (d.ok) { setBackupModal(false); load() }
+    else alert('복원 실패: ' + d.error)
+  }
+
+  async function handleDeleteBackup(backupId: string) {
+    if (!confirm('이 백업을 삭제하시겠습니까?')) return
+    await fetch('/api/campus/backup', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'delete', backup_id: backupId }),
+    })
+    setBackups(prev => prev.filter(b => b.id !== backupId))
   }
 
   async function handleUndo() {
@@ -522,6 +584,7 @@ export default function ClassRosterPage() {
                 앞으로 ↪
               </button>
               <button onClick={() => setAddStudentModal(true)} className="text-sm bg-white border border-[#E2E8F0] text-[#1E293B] px-3 py-2 rounded-lg hover:bg-[#F7F8FA] transition-colors">+ 학생</button>
+              <button onClick={openBackupModal} className="text-sm bg-white border border-[#E2E8F0] text-[#64748B] px-3 py-2 rounded-lg hover:bg-[#F7F8FA] transition-colors">💾 백업</button>
               <button onClick={() => setAddSessionModal(true)} className="text-sm bg-[#1e3a5f] text-white px-3 py-2 rounded-lg hover:bg-[#2c5f8a] transition-colors">+ 세션</button>
             </div>
           </div>
@@ -580,6 +643,7 @@ export default function ClassRosterPage() {
           onStudentClick={(enr, stu) => setStudentDetailModal({ enrollment: enr, student: stu })}
           onWaitlistAdd={(classId, classLevel) => setWaitlistAddModal({ classId, classLevel })}
           onNewStudent={(classId, classLevel) => setNewStudentModal({ classId, classLevel })}
+          onReorderClasses={handleReorderClasses}
         />
       ) : tab === 'students' ? (
         <StudentsTab allStudents={allStudents} enrollments={enrollments} classes={classes} sessions={sessions} onWithdrawSuccess={load} />
@@ -767,6 +831,49 @@ export default function ClassRosterPage() {
         </div>
       )}
 
+      {/* ─── 백업 모달 ─── */}
+      {backupModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-[#E2E8F0]">
+              <h2 className="font-bold text-[#1E293B]">데이터 백업</h2>
+              <button onClick={() => setBackupModal(false)} className="text-[#94A3B8] hover:text-[#1E293B] text-xl">✕</button>
+            </div>
+            <div className="p-5 space-y-4 overflow-y-auto flex-1">
+              <button onClick={handleSaveBackup} disabled={backupSaving}
+                className="w-full bg-[#1e3a5f] text-white py-2.5 rounded-lg font-medium hover:bg-[#2c5f8a] disabled:opacity-50 transition-colors">
+                {backupSaving ? '저장 중...' : '💾 지금 시점 백업 저장'}
+              </button>
+              <div className="border-t border-[#E2E8F0] pt-3">
+                <p className="text-xs text-[#64748B] mb-2 font-medium">저장된 백업 목록</p>
+                {backupLoading ? (
+                  <p className="text-sm text-[#94A3B8] text-center py-4">불러오는 중...</p>
+                ) : backups.length === 0 ? (
+                  <p className="text-sm text-[#94A3B8] text-center py-4">저장된 백업이 없습니다</p>
+                ) : (
+                  <div className="space-y-2">
+                    {backups.map(b => (
+                      <div key={b.id} className="flex items-center gap-2 p-2.5 bg-[#F8FAFC] rounded-lg">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-[#1E293B] truncate">{b.label}</p>
+                          <p className="text-xs text-[#94A3B8]">{new Date(b.created_at).toLocaleString('ko-KR')}</p>
+                        </div>
+                        <button onClick={() => handleRestoreBackup(b.id, b.label)}
+                          className="text-xs bg-[#EFF6FF] text-[#2563EB] px-2 py-1 rounded hover:bg-[#DBEAFE] transition-colors whitespace-nowrap">
+                          복원
+                        </button>
+                        <button onClick={() => handleDeleteBackup(b.id)}
+                          className="text-xs text-[#EF4444] hover:text-[#DC2626] px-1">✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ─── Modals ─── */}
       {addSessionModal && (
         <Modal title="세션 추가" onClose={() => setAddSessionModal(false)}>
@@ -895,6 +1002,7 @@ function RosterTab({
   matchEnrollments, classVisible, getEnrollments, getWaitlist,
   dragEnrId, dragOverClassId, setDragEnrId, setDragOverClassId, onDrop,
   onAddClass, onEditClass, onEnroll, onUnenroll, onStudentClick, onWaitlistAdd, onNewStudent,
+  onReorderClasses,
 }: {
   sessions: Session[]; classes: ClassItem[]; enrollments: Enrollment[]; buses: Bus[]
   search: string; setSearch: (s: string) => void; searchLower: string
@@ -908,7 +1016,10 @@ function RosterTab({
   onStudentClick: (enr: Enrollment, stu: Student) => void
   onWaitlistAdd: (classId: string, classLevel: string) => void
   onNewStudent: (classId: string, classLevel: string) => void
+  onReorderClasses: (sessionId: string, orderedIds: string[]) => void
 }) {
+  const [dragClsId, setDragClsId] = useState<string | null>(null)
+  const [dragOverClsId, setDragOverClsId] = useState<string | null>(null)
   // Grade stats
   const gradeMap: Record<string, number> = {}
   const seen = new Set<string>()
@@ -999,7 +1110,6 @@ function RosterTab({
       {sessions.map(sess => {
         const color = sessColor(sess.name, sess.name.length > 0 ? CLASS_COLORS[sessions.indexOf(sess) % CLASS_COLORS.length] : '#666')
         const sessClasses = classes.filter(c => c.session_id === sess.id)
-          .sort((a, b) => (a.teacher ?? a.level ?? '').localeCompare(b.teacher ?? b.level ?? ''))
         const sessEnrollCount = sessClasses.reduce((n, c) => n + getEnrollments(c.id).length, 0)
         const visibleClasses = searchLower ? sessClasses.filter(c => classVisible(c.id)) : sessClasses
         if (searchLower && visibleClasses.length === 0) return null
@@ -1039,22 +1149,53 @@ function RosterTab({
                   const isDragTarget = dragOverClassId === cls.id && dragEnrId !== null
                   return (
                     <div key={cls.id}
-                      className={`flex-shrink-0 rounded-[9px] border-[1.5px] bg-white shadow-sm overflow-hidden transition-all ${isDragTarget ? 'ring-2 ring-blue-400 border-blue-400 bg-blue-50' : 'border-[#e0e0e0]'}`}
+                      className={`flex-shrink-0 rounded-[9px] border-[1.5px] bg-white shadow-sm overflow-hidden transition-all ${
+                        dragOverClsId === cls.id && dragClsId && dragClsId !== cls.id
+                          ? 'ring-2 ring-[#1e3a5f] border-[#1e3a5f] opacity-80'
+                          : dragClsId === cls.id ? 'opacity-40'
+                          : isDragTarget ? 'ring-2 ring-blue-400 border-blue-400 bg-blue-50' : 'border-[#e0e0e0]'
+                      }`}
                       style={{ width: cardWidth, minWidth: '150px' }}
-                      onDragOver={e => { if (dragEnrId) { e.preventDefault(); setDragOverClassId(cls.id) } }}
-                      onDragLeave={() => setDragOverClassId(null)}
-                      onDrop={e => { e.preventDefault(); if (dragEnrId) onDrop(dragEnrId, cls.id); setDragOverClassId(null) }}
+                      onDragOver={e => {
+                        if (dragClsId && dragClsId !== cls.id) { e.preventDefault(); setDragOverClsId(cls.id) }
+                        else if (dragEnrId) { e.preventDefault(); setDragOverClassId(cls.id) }
+                      }}
+                      onDragLeave={() => { setDragOverClassId(null); setDragOverClsId(null) }}
+                      onDrop={e => {
+                        e.preventDefault()
+                        if (dragClsId && dragClsId !== cls.id) {
+                          // Reorder classes in this session
+                          const ids = sessClasses.map(c => c.id)
+                          const fromIdx = ids.indexOf(dragClsId)
+                          const toIdx = ids.indexOf(cls.id)
+                          if (fromIdx !== -1 && toIdx !== -1) {
+                            const newIds = [...ids]
+                            newIds.splice(fromIdx, 1)
+                            newIds.splice(toIdx, 0, dragClsId)
+                            onReorderClasses(sess.id, newIds)
+                          }
+                          setDragClsId(null); setDragOverClsId(null)
+                        } else if (dragEnrId) {
+                          onDrop(dragEnrId, cls.id); setDragOverClassId(null)
+                        }
+                      }}
                     >
                       {/* Card header */}
-                      <div className="px-1.5 py-1 text-white cursor-pointer hover:brightness-110 transition-all select-none"
-                        style={{ background: color }}
-                        onClick={() => onEditClass(cls)}>
-                        <div className="flex items-center justify-between gap-0.5">
-                          <span className="font-extrabold text-[11px] leading-tight truncate">{cls.level}</span>
+                      <div className="px-1.5 py-1 text-white transition-all select-none"
+                        style={{ background: color }}>
+                        <div className="flex items-center gap-0.5">
+                          {/* Drag handle */}
+                          <span
+                            className="text-white/50 hover:text-white/90 cursor-grab active:cursor-grabbing text-[11px] flex-shrink-0 pr-0.5"
+                            draggable
+                            onDragStart={e => { e.stopPropagation(); setDragClsId(cls.id); e.dataTransfer.effectAllowed = 'move' }}
+                            onDragEnd={() => { setDragClsId(null); setDragOverClsId(null) }}
+                          >⠿</span>
+                          <span className="font-extrabold text-[11px] leading-tight truncate flex-1 cursor-pointer hover:brightness-110" onClick={() => onEditClass(cls)}>{cls.level}</span>
                           <span className="text-[9px] font-bold bg-white/30 px-1 py-px rounded flex-shrink-0">{all.length}</span>
                         </div>
                         {(cls.room || cls.teacher) && (
-                          <div className="mt-0.5 space-y-px">
+                          <div className="mt-0.5 space-y-px cursor-pointer" onClick={() => onEditClass(cls)}>
                             {cls.room && <div className="text-[7.5px] opacity-75 flex gap-0.5 truncate"><span className="opacity-60">교</span><span className="bg-white/15 px-0.5 rounded truncate">{cls.room}</span></div>}
                             {cls.teacher && <div className="text-[7.5px] opacity-75 flex gap-0.5 truncate"><span className="opacity-60">강</span><span className="bg-white/15 px-0.5 rounded truncate">{cls.teacher}</span></div>}
                           </div>
