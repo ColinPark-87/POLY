@@ -85,17 +85,17 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === 'add_class') {
-    const { session_id, level, room, teacher, color } = body
+    const { session_id, level, room, teacher, kt_teacher, color } = body
     const { data, error } = await service.from('classes').insert({
-      campus_id: campusId, session_id, level, room, teacher, color: color ?? '#3b82f6',
+      campus_id: campusId, session_id, level, room, teacher, kt_teacher: kt_teacher || null, color: color ?? '#3b82f6',
     }).select().single()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ class: data })
   }
 
   if (action === 'update_class') {
-    const { class_id, level, room, teacher, color } = body
-    const { data, error } = await service.from('classes').update({ level, room, teacher, color })
+    const { class_id, level, room, teacher, kt_teacher, color } = body
+    const { data, error } = await service.from('classes').update({ level, room, teacher, kt_teacher: kt_teacher || null, color })
       .eq('id', class_id).eq('campus_id', campusId).select().single()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ class: data })
@@ -276,6 +276,7 @@ export async function POST(request: NextRequest) {
         const { data: newCls, error: cErr } = await service.from('classes').insert({
           campus_id: campusId, session_id: newSess.id,
           level: cls.level, room: cls.room, teacher: cls.teacher,
+          kt_teacher: cls.kt_teacher ?? null,
           color: cls.color, sort_order: cls.sort_order,
         }).select('id').single()
         if (cErr) return NextResponse.json({ error: cErr.message }, { status: 500 })
