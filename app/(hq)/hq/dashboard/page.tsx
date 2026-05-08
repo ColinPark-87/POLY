@@ -223,51 +223,99 @@ export default function HqDashboardPage() {
         const removed = filtered.filter(c => c.type === 'removed')
         const title = changeModal.filter === 'all' ? '전체' : changeModal.filter
         const campusName = changeModal.campus_id ? stats.campusSummaries.find(c => c.id === changeModal.campus_id)?.name : null
+        const isByAll = !changeModal.campus_id
+
+        // 캠퍼스별 그룹핑 (전체 뷰일 때)
+        const campusIds = isByAll ? [...new Set(filtered.map(s => s.campus_id))].sort((a, b) =>
+          (stats.campusSummaries.find(c => c.id === a)?.name ?? '').localeCompare(
+            stats.campusSummaries.find(c => c.id === b)?.name ?? '', 'ko')) : []
+
         return (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4" onClick={() => setChangeModal(null)}>
-            <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-lg max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h3 className="font-bold text-[#0F172A] text-lg">
                     {campusName ? `${campusName} · ` : ''}{title} 학생 증감
                   </h3>
                   <p className="text-[11px] text-[#94A3B8] mt-0.5">
-                    직전월 대비 · 추가 {added.length}명 / 이탈 {removed.length}명
+                    직전월 대비 · 입소 {added.length}명 / 탈퇴 {removed.length}명
                   </p>
                 </div>
                 <button onClick={() => setChangeModal(null)} className="text-[#94A3B8] hover:text-[#1E293B] text-xl font-light">✕</button>
               </div>
-              <div className="overflow-y-auto flex-1 space-y-3">
-                {added.length > 0 && (
-                  <div>
-                    <p className="text-[10px] font-bold text-[#16A34A] mb-1.5 uppercase tracking-wider">▲ 신규 추가 {added.length}명</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {added.map((s, i) => (
-                        <div key={i} className="flex items-center gap-1 bg-[#F0FDF4] border border-[#BBF7D0] rounded-xl px-2.5 py-1.5">
-                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-lg" style={{ background: CAT_COLORS[s.group] + '20', color: CAT_COLORS[s.group] }}>{s.group}</span>
-                          <span className="text-[12px] font-semibold text-[#1E293B]">{s.name}</span>
-                          {!changeModal.campus_id && <span className="text-[9px] text-[#94A3B8]">{s.campus_name}</span>}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {removed.length > 0 && (
-                  <div>
-                    <p className="text-[10px] font-bold text-[#DC2626] mb-1.5 uppercase tracking-wider">▼ 이탈 {removed.length}명</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {removed.map((s, i) => (
-                        <div key={i} className="flex items-center gap-1 bg-[#FEF2F2] border border-[#FECACA] rounded-xl px-2.5 py-1.5">
-                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-lg" style={{ background: CAT_COLORS[s.group] + '20', color: CAT_COLORS[s.group] }}>{s.group}</span>
-                          <span className="text-[12px] font-semibold text-[#1E293B]">{s.name}</span>
-                          {!changeModal.campus_id && <span className="text-[9px] text-[#94A3B8]">{s.campus_name}</span>}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+              <div className="overflow-y-auto flex-1 space-y-4">
                 {filtered.length === 0 && (
                   <p className="text-sm text-[#94A3B8] text-center py-8">변경 사항 없음</p>
+                )}
+                {isByAll ? (
+                  // 전체 뷰: 캠퍼스별 그룹핑
+                  campusIds.map(cid => {
+                    const cName = stats.campusSummaries.find(c => c.id === cid)?.name ?? cid
+                    const cAdded = added.filter(s => s.campus_id === cid)
+                    const cRemoved = removed.filter(s => s.campus_id === cid)
+                    return (
+                      <div key={cid} className="border border-[#E2E8F0] rounded-xl p-3">
+                        <p className="text-[11px] font-bold text-[#0F172A] mb-2">{cName}</p>
+                        {cAdded.length > 0 && (
+                          <div className="mb-2">
+                            <p className="text-[9px] font-bold text-[#16A34A] mb-1">▲ 입소 {cAdded.length}명</p>
+                            <div className="flex flex-wrap gap-1">
+                              {cAdded.map((s, i) => (
+                                <div key={i} className="flex items-center gap-1 bg-[#F0FDF4] border border-[#BBF7D0] rounded-lg px-2 py-1">
+                                  <span className="text-[9px] font-bold" style={{ color: CAT_COLORS[s.group] }}>{s.group}</span>
+                                  <span className="text-[11px] font-semibold text-[#1E293B]">{s.name}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {cRemoved.length > 0 && (
+                          <div>
+                            <p className="text-[9px] font-bold text-[#DC2626] mb-1">▼ 탈퇴 {cRemoved.length}명</p>
+                            <div className="flex flex-wrap gap-1">
+                              {cRemoved.map((s, i) => (
+                                <div key={i} className="flex items-center gap-1 bg-[#FEF2F2] border border-[#FECACA] rounded-lg px-2 py-1">
+                                  <span className="text-[9px] font-bold" style={{ color: CAT_COLORS[s.group] }}>{s.group}</span>
+                                  <span className="text-[11px] font-semibold text-[#1E293B]">{s.name}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })
+                ) : (
+                  // 단일 캠퍼스 뷰: 기존 flat 목록
+                  <>
+                    {added.length > 0 && (
+                      <div>
+                        <p className="text-[10px] font-bold text-[#16A34A] mb-1.5 uppercase tracking-wider">▲ 입소 {added.length}명</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {added.map((s, i) => (
+                            <div key={i} className="flex items-center gap-1 bg-[#F0FDF4] border border-[#BBF7D0] rounded-xl px-2.5 py-1.5">
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-lg" style={{ background: CAT_COLORS[s.group] + '20', color: CAT_COLORS[s.group] }}>{s.group}</span>
+                              <span className="text-[12px] font-semibold text-[#1E293B]">{s.name}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {removed.length > 0 && (
+                      <div>
+                        <p className="text-[10px] font-bold text-[#DC2626] mb-1.5 uppercase tracking-wider">▼ 탈퇴 {removed.length}명</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {removed.map((s, i) => (
+                            <div key={i} className="flex items-center gap-1 bg-[#FEF2F2] border border-[#FECACA] rounded-xl px-2.5 py-1.5">
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-lg" style={{ background: CAT_COLORS[s.group] + '20', color: CAT_COLORS[s.group] }}>{s.group}</span>
+                              <span className="text-[12px] font-semibold text-[#1E293B]">{s.name}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>
