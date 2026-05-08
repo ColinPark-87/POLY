@@ -103,7 +103,7 @@ function getDayKey(d: Date): Day {
 }
 
 export default function ClassRosterPage() {
-  const [pageTab, setPageTab] = useState<'overview'|'management'|'homeroom'>('overview')
+  const [pageTab, setPageTab] = useState<'management'|'homeroom'>('management')
   const [tab, setTab] = useState<'roster'|'students'|'enroll'|'log'>('roster')
   const [month, setMonth] = useState(currentMonth())
   const [addMonthLoading, setAddMonthLoading] = useState(false)
@@ -429,7 +429,6 @@ export default function ClassRosterPage() {
         <h1 className="text-xl font-bold text-[#1E293B] mb-3">개설반 현황</h1>
         <div className="flex gap-0 border-b border-[#E2E8F0]">
           {([
-            ['overview',    '개설반 현황'],
             ['management',  '반편성 현황관리'],
             ['homeroom',    '담임반 관리'],
           ] as const).map(([key, label]) => (
@@ -443,75 +442,6 @@ export default function ClassRosterPage() {
           ))}
         </div>
       </div>
-
-      {/* ── 개설반 현황 탭 ── */}
-      {pageTab === 'overview' && (
-        <div className="space-y-4">
-          {loading ? <Spinner /> : sessions.length === 0 ? (
-            <div className="text-center py-20 text-[#94A3B8] text-sm">세션 데이터가 없습니다. 반편성 파일을 업로드해주세요.</div>
-          ) : (
-            <>
-              {/* 월 선택 */}
-              <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
-                {(availableMonths.length ? availableMonths : [month]).map(m => (
-                  <button key={m} onClick={() => setMonth(m)}
-                    className={`px-3 py-1.5 text-sm font-medium rounded-lg whitespace-nowrap transition-colors ${
-                      month === m ? 'bg-[#1e3a5f] text-white' : 'bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]'
-                    }`}>{m}
-                  </button>
-                ))}
-              </div>
-              {/* 세션별 요약 카드 */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {sessions.sort((a, b) => (a.sort_order ?? 99) - (b.sort_order ?? 99)).map(sess => {
-                  const sessClasses = classes.filter(c => c.session_id === sess.id)
-                  const sessStudents = enrollments.filter(e => sessClasses.some(c => c.id === e.class_id) && !e.is_waitlist)
-                  const color = sessColor(sess.name, '#1e3a5f')
-                  return (
-                    <div key={sess.id} className="bg-white rounded-2xl border border-[#E2E8F0] p-4 shadow-sm">
-                      <div className="flex items-start justify-between mb-3">
-                        <div>
-                          <div className="flex items-center gap-2 mb-0.5">
-                            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
-                            <h3 className="font-bold text-[#1E293B] text-sm">{sess.name}</h3>
-                          </div>
-                          {sess.time_range && <p className="text-[10px] text-[#94A3B8] ml-4">{sess.time_range}</p>}
-                        </div>
-                        <div className="text-right shrink-0">
-                          <p className="text-2xl font-black text-[#1e3a5f]">{sessStudents.length}</p>
-                          <p className="text-[9px] text-[#94A3B8]">명</p>
-                        </div>
-                      </div>
-                      <div className="space-y-1.5">
-                        {sessClasses.sort((a, b) => (a.sort_order ?? 99) - (b.sort_order ?? 99)).map(cls => {
-                          const cnt = enrollments.filter(e => e.class_id === cls.id && !e.is_waitlist).length
-                          const waitCnt = enrollments.filter(e => e.class_id === cls.id && e.is_waitlist).length
-                          return (
-                            <div key={cls.id} className="flex items-center justify-between bg-[#F7F8FA] rounded-xl px-3 py-2">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: cls.color }} />
-                                <span className="text-xs font-medium text-[#1E293B] truncate">{cls.level}</span>
-                                {cls.teacher && <span className="text-[10px] text-[#94A3B8] truncate">({cls.teacher})</span>}
-                              </div>
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                <span className="text-xs font-bold text-[#1E293B]">{cnt}명</span>
-                                {waitCnt > 0 && <span className="text-[10px] text-[#F59E0B] font-semibold">대기 {waitCnt}</span>}
-                              </div>
-                            </div>
-                          )
-                        })}
-                        {sessClasses.length === 0 && (
-                          <p className="text-[11px] text-[#CBD5E1] text-center py-2">반 없음</p>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </>
-          )}
-        </div>
-      )}
 
       {/* ── 반편성 현황관리 탭 ── */}
       {pageTab === 'management' && (
