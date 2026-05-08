@@ -120,6 +120,7 @@ export default function ClassRosterPage() {
   const [enrollments, setEnrollments] = useState<Enrollment[]>([])
   const [buses, setBuses] = useState<Bus[]>([])
   const [allStudents, setAllStudents] = useState<Student[]>([])
+  const [employees, setEmployees] = useState<{ id: string; name: string; position: string }[]>([])
   const [availableMonths, setAvailableMonths] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -182,6 +183,13 @@ export default function ClassRosterPage() {
   }, [month])
 
   useEffect(() => { load() }, [month])
+
+  useEffect(() => {
+    fetch('/api/campus/employees')
+      .then(r => r.json())
+      .then(d => setEmployees(d.employees ?? []))
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     try {
@@ -771,17 +779,25 @@ export default function ClassRosterPage() {
         </Modal>
       )}
 
-      {addClassModal && (
-        <Modal title="반 추가" onClose={() => setAddClassModal(null)}>
-          <ClassForm form={clsForm} setForm={setClsForm} onSubmit={handleAddClass} onClose={() => setAddClassModal(null)} saving={saving} error={formError} />
-        </Modal>
-      )}
+      {addClassModal && (() => {
+        const ft = employees.filter(e => e.position?.includes('FT'))
+        const kt = employees.filter(e => /KT|관리자|상담/.test(e.position ?? ''))
+        return (
+          <Modal title="반 추가" onClose={() => setAddClassModal(null)}>
+            <ClassForm form={clsForm} setForm={setClsForm} onSubmit={handleAddClass} onClose={() => setAddClassModal(null)} saving={saving} error={formError} ftEmployees={ft} ktEmployees={kt} />
+          </Modal>
+        )
+      })()}
 
-      {editClassModal && (
-        <Modal title={`반 수정 — ${editClassModal.level}`} onClose={() => setEditClassModal(null)}>
-          <ClassForm form={clsForm} setForm={setClsForm} onSubmit={handleUpdateClass} onClose={() => setEditClassModal(null)} saving={saving} error={formError} onDelete={handleDeleteClass} />
-        </Modal>
-      )}
+      {editClassModal && (() => {
+        const ft = employees.filter(e => e.position?.includes('FT'))
+        const kt = employees.filter(e => /KT|관리자|상담/.test(e.position ?? ''))
+        return (
+          <Modal title={`반 수정 — ${editClassModal.level}`} onClose={() => setEditClassModal(null)}>
+            <ClassForm form={clsForm} setForm={setClsForm} onSubmit={handleUpdateClass} onClose={() => setEditClassModal(null)} saving={saving} error={formError} onDelete={handleDeleteClass} ftEmployees={ft} ktEmployees={kt} />
+          </Modal>
+        )
+      })()}
 
       {enrollModal && (() => {
         const candidates = unenrolledStudents(enrollModal)
@@ -1904,41 +1920,40 @@ function NewStudentModal({ classId, classLevel, buses, onAdd, onClose, saving, e
 }
 
 // ─── ClassForm ─────────────────────────────────────────────────
-function ClassForm({ form, setForm, onSubmit, onClose, saving, error, onDelete }: {
+function ClassForm({ form, setForm, onSubmit, onClose, saving, error, onDelete, ftEmployees, ktEmployees }: {
   form: { level: string; room: string; teacher: string; kt_teacher: string; color: string }
   setForm: (f: typeof form | ((prev: typeof form) => typeof form)) => void
   onSubmit: (e: React.FormEvent) => void; onClose: () => void
   saving: boolean; error: string; onDelete?: () => void
+  ftEmployees: { name: string }[]
+  ktEmployees: { name: string }[]
 }) {
   return (
     <form onSubmit={onSubmit} className="space-y-3">
       <Field label="반 이름" required>
         <input required value={form.level} onChange={e => setForm(f => ({ ...f, level: e.target.value }))} placeholder="GT2, MAG1..." className={inputCls} />
       </Field>
-      {/* 교실 + 담임(원어민) — swap 버튼 포함 */}
-      <div className="space-y-1">
-        <div className="flex items-end gap-2">
-          <div className="flex-1">
-            <Field label="교실 (나라이름)">
-              <input value={form.room} onChange={e => setForm(f => ({ ...f, room: e.target.value }))} placeholder="France, Italy..." className={inputCls} />
-            </Field>
-          </div>
-          <button
-            type="button"
-            title="교실↔원어민 담임 교환"
-            onClick={() => setForm(f => ({ ...f, room: f.teacher, teacher: f.room }))}
-            className="mb-0.5 px-2 py-2 text-sm border border-[#E2E8F0] rounded-xl text-[#64748B] hover:bg-[#F7F8FA] hover:border-[#1e3a5f] hover:text-[#1e3a5f] transition-colors shrink-0"
-          >↔</button>
-          <div className="flex-1">
-            <Field label="원어민 담임">
-              <input value={form.teacher} onChange={e => setForm(f => ({ ...f, teacher: e.target.value }))} placeholder="Emily, Nasia..." className={inputCls} />
-            </Field>
-          </div>
-        </div>
-        <p className="text-[10px] text-[#94A3B8]">↔ 버튼으로 교실/담임이 반대로 입력된 경우 교환할 수 있습니다</p>
-      </div>
-      <Field label="한국인 담임">
-        <input value={form.kt_teacher} onChange={e => setForm(f => ({ ...f, kt_teacher: e.target.value }))} placeholder="홍길동, 김민준..." className={inputCls} />
+      <Field label="교실 (나라이름)">
+        <input value={form.room} onChange={e => setForm(f => ({ ...f, room: e.target.value }))} placeholder="America, France..." className={inputCls} />
+      </Field>
+      <Field label="원어민 담임 (FT)">
+        <select value={form.teacher} onChange={e => setForm(f => ({ ...f, teacher: e.target.value }))} className={inputCls}>
+          <option value="">(미지정)</option>
+          {ftEmployees.map(e => <option key={e.name} value={e.name}>{e.name}</option>)}
+          {/* 현재 값이 목록에 없을 경우 표시 */}
+          {form.teacher && !ftEmployees.some(e => e.name === form.teacher) && (
+            <option value={form.teacher}>{form.teacher} (직접입력)</option>
+          )}
+        </select>
+      </Field>
+      <Field label="한국인 담임 (KT)">
+        <select value={form.kt_teacher} onChange={e => setForm(f => ({ ...f, kt_teacher: e.target.value }))} className={inputCls}>
+          <option value="">(미지정)</option>
+          {ktEmployees.map(e => <option key={e.name} value={e.name}>{e.name}</option>)}
+          {form.kt_teacher && !ktEmployees.some(e => e.name === form.kt_teacher) && (
+            <option value={form.kt_teacher}>{form.kt_teacher} (직접입력)</option>
+          )}
+        </select>
       </Field>
       <Field label="반 색상">
         <div className="flex gap-2 flex-wrap">
