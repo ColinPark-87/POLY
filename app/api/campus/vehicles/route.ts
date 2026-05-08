@@ -466,12 +466,10 @@ export async function POST(request: NextRequest) {
       .eq('class_id', enr.class_id)
     if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 })
 
-    // 오늘 날짜 override도 생성 (location, pickup_time 포함)
+    // 오늘 날짜 override 생성 (버스 배정만, location/pickup_time은 enrollment에 저장됨)
     const { data, error } = await service.from('pickup_overrides').upsert({
       student_id, campus_id: campusId, date, direction: dir,
       bus_name, is_absent: false,
-      location: pickup_location ?? null,
-      pickup_time: pickup_time ?? null,
       created_by: user.id,
     }, { onConflict: 'student_id,date,direction' }).select().single()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
