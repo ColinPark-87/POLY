@@ -13,10 +13,14 @@ function getClassDays(sessionName: string | null): Day[] {
 }
 
 // 세션 이름에서 그룹 레이블 추출 (유치부/초등부 구분용)
-// 방과후(유치부 방과후 포함): 하원(dep)→매일반, 등원(arr)→방과후 (유치부와 분리)
+// 유치부 방과후: 등원/하원 모두 유치부 그룹
+// 초등 방과후: 하원→매일반, 등원→방과후
 function getSessionLabel(name: string | null, dir: 'arr' | 'dep' = 'arr'): string {
   if (!name) return ''
-  if (name.includes('방과후')) return dir === 'dep' ? '매일반' : '방과후'
+  if (name.includes('방과후')) {
+    if (name.includes('유치부')) return '유치부'
+    return dir === 'dep' ? '매일반' : '방과후'
+  }
   if (name.includes('유치부')) return '유치부'
   if (name.includes('매일반')) return '매일반'
   if (name.includes('월수금') || name.includes('3일반')) return '3일반'
@@ -201,7 +205,7 @@ export async function GET(request: NextRequest) {
           location,
           days: assignedDays,
           pickup_time: resolvedTime,
-          is_bangwaHu: !!(session_name?.includes('방과후') && direction === 'dep'),
+          is_bangwaHu: !!(session_name?.includes('방과후') && !session_name?.includes('유치부') && direction === 'dep'),
         }
         if (!busMap[busName]) busMap[busName] = []
         busMap[busName].push(entry)
@@ -258,7 +262,7 @@ export async function GET(request: NextRequest) {
         location: finalLocation,
         days: scheduleDays,
         pickup_time: finalTime,
-        is_bangwaHu: !!(session_name?.includes('방과후') && direction === 'dep'),
+        is_bangwaHu: !!(session_name?.includes('방과후') && !session_name?.includes('유치부') && direction === 'dep'),
       }
 
       if (!busMap[busName]) busMap[busName] = []
@@ -314,9 +318,12 @@ export async function GET(request: NextRequest) {
   const { data: buses } = await service.from('campus_buses').select('*').eq('campus_id', campusId).order('sort_order')
 
   // 세션 유형 우선순위: 유치부 → 매일반 → 3일반 → 2일반
-  // 방과후(유치부 방과후 포함): 하원→매일반(2), 등원→유치부(1)
+  // 유치부 방과후: 항상 유치부(1) / 초등 방과후: 하원→매일반(2), 등원→1.5
   function sessPriority(name: string): number {
-    if (name.includes('방과후')) return direction === 'dep' ? 2 : 1.5
+    if (name.includes('방과후')) {
+      if (name.includes('유치부')) return 1
+      return direction === 'dep' ? 2 : 1.5
+    }
     if (name.includes('유치부')) return 1
     if (name.includes('매일반')) return 2
     if (name.includes('월수금') || name.includes('3일반')) return 3

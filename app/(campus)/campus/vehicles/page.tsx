@@ -21,8 +21,11 @@ function getTextColor(hex: string): string {
 }
 
 function getRunColor(sessName: string, dir?: 'arr'|'dep') {
-  // 방과후(유치부 방과후 포함): 하원→매일반 파랑, 등원→방과후 별도 색상
-  if (sessName.includes('방과후')) return dir === 'dep' ? '#2196F3' : '#8B5CF6'
+  // 유치부 방과후 → 유치부 색상 / 초등 방과후 → 하원 파랑, 등원 보라
+  if (sessName.includes('방과후')) {
+    if (sessName.includes('유치부')) return '#FF6B35'
+    return dir === 'dep' ? '#2196F3' : '#8B5CF6'
+  }
   if (sessName.includes('매일반')) return '#2196F3'
   if (sessName.includes('월수금')||sessName.includes('3일반')) return '#4CAF50'
   if (sessName.includes('화목')||sessName.includes('2일반')) return '#9C27B0'
@@ -31,8 +34,11 @@ function getRunColor(sessName: string, dir?: 'arr'|'dep') {
 }
 function getRunLabel(sessName: string, dir: 'arr'|'dep') {
   const d = dir === 'arr' ? '등원' : '하원'
-  // 방과후(유치부 방과후 포함): 하원→매일반 하원, 등원→방과후 등원 (유치부와 분리)
-  if (sessName.includes('방과후')) return dir === 'dep' ? `매일반 ${d}` : `방과후 ${d}`
+  // 유치부 방과후 → 유치부 등원/하원 / 초등 방과후 → 하원 매일반, 등원 방과후
+  if (sessName.includes('방과후')) {
+    if (sessName.includes('유치부')) return `유치부 ${d}`
+    return dir === 'dep' ? `매일반 ${d}` : `방과후 ${d}`
+  }
   if (sessName.includes('매일반')) return `매일반 ${d}`
   if (sessName.includes('월수금')||sessName.includes('3일반')) return `3일반 ${d}`
   if (sessName.includes('화목')||sessName.includes('2일반')) return `2일반 ${d}`
