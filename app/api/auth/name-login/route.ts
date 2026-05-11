@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
   const service = createServiceClient()
   const { data: record } = await service
     .from('users')
-    .select('id, email, role')
+    .select('id, email, role, position')
     .eq('campus_id', campus_id)
     .eq('name', name)
     .single()
@@ -29,5 +29,5 @@ export async function POST(request: NextRequest) {
   const { error } = await supabase.auth.signInWithPassword({ email: record.email, password })
   if (error) return NextResponse.json({ error: '비밀번호가 올바르지 않습니다.' }, { status: 401 })
 
-  return NextResponse.json({ role: record.role })
+  return NextResponse.json({ email: record.email, role: record.role, position: record.position ?? '' })
 }

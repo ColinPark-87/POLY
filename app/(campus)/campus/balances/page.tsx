@@ -1,8 +1,43 @@
 ﻿'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 
 const MONTHS = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월']
+
+const CATS = ['원장', '관리자', 'KT', 'FT', '상담부', '기타'] as const
+type Cat = typeof CATS[number]
+
+const CAT_COLORS: Record<Cat, { bar: string }> = {
+  '원장':  { bar: '#0F172A' },
+  '관리자': { bar: '#004EA2' },
+  'KT':   { bar: '#004EA2' },
+  'FT':   { bar: '#EA580C' },
+  '상담부': { bar: '#16A34A' },
+  '기타':  { bar: '#64748B' },
+}
+
+function getCat(position: string, role: string): Cat {
+  if (role === 'campus_admin' || (/원장/.test(position) && !/부원장/.test(position))) return '원장'
+  if (/부원장|관리자/.test(position)) return '관리자'
+  if (/KT/i.test(position)) return 'KT'
+  if (/FT/i.test(position)) return 'FT'
+  if (/상담/.test(position)) return '상담부'
+  return '기타'
+}
+
+function Ring({ pct, color, size = 44 }: { pct: number; color: string; size?: number }) {
+  const r = (size - 6) / 2
+  const circ = 2 * Math.PI * r
+  const dash = Math.min(pct / 100, 1) * circ
+  return (
+    <svg width={size} height={size} className="shrink-0 -rotate-90">
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#E2E8F0" strokeWidth={5} />
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={5}
+        strokeDasharray={`${dash} ${circ}`} strokeLinecap="round" />
+    </svg>
+  )
+}
 
 const LEAVE_TYPE_LABELS: Record<string, string> = {
   annual:'연차', half_am:'오전반차', half_pm:'오후반차', quarter:'반반차',
@@ -14,7 +49,8 @@ interface MonthDetail { userId:string; userName:string; month:number; records:De
 
 interface BalanceRow {
   id: string; name: string; position: string; role: string; is_active: boolean
-  campus_hired_at: string | null; baseDays: number; carriedOver: number; extraDays: number
+  campus_hired_at: string | null; company_hired_at: string | null
+  baseDays: number; carriedOver: number; extraDays: number
   total: number; monthly: number[]; annualDays: number; halfDays: number; quarterDays: number
   totalUsed: number; remaining: number
 }
@@ -25,6 +61,7 @@ function fmtDays(v: number) { return parseFloat(v.toFixed(2)) }
 const DEPT_ORDER = ['원장', '관리자', '상담부', 'FT', 'KT', 'POLY안전선생님', '사서', '미화', '기타']
 
 export default function BalancesPage() {
+  const router = useRouter()
   const [rows, setRows] = useState<BalanceRow[]>([])
   const [year, setYear] = useState(new Date().getFullYear())
   const [loading, setLoading] = useState(true)
@@ -94,10 +131,35 @@ export default function BalancesPage() {
   }
   const deptKeys = DEPT_ORDER.filter(d => groupedTable[d]).concat(Object.keys(groupedTable).filter(d => !DEPT_ORDER.includes(d)))
 
+  const totalGranted = parseFloat(filtered.reduce((s, r) => s + r.total, 0).toFixed(2))
+  const totalUsed = parseFloat(filtered.reduce((s, r) => s + r.totalUsed, 0).toFixed(2))
+  const totalRemaining = parseFloat(filtered.reduce((s, r) => s + r.remaining, 0).toFixed(2))
+  const overused = filtered.filter(r => r.remaining < 0).length
+  const totalPct = totalGranted > 0 ? Math.round((totalUsed / totalGranted) * 100) : 0
+
   const colCount = hideMonthly ? 12 : 24
 
   return (
     <div className="max-w-full">
+      {/* 탭 — 최상단 */}
+      <div className="flex gap-0 border-b border-[#E2E8F0] mb-5 flex-wrap">
+        <button onClick={() => router.push('/campus/overview')}
+          className="px-5 py-2.5 text-sm font-medium border-b-2 border-transparent text-[#64748B] hover:text-[#1E293B]">
+          연차 현황
+        </button>
+        <button className="px-5 py-2.5 text-sm font-medium border-b-2 border-[#004EA2] text-[#004EA2]">
+          잔여 관리
+        </button>
+        <button onClick={() => router.push('/campus/overview?tab=approvals')}
+          className="px-5 py-2.5 text-sm font-medium border-b-2 border-transparent text-[#64748B] hover:text-[#1E293B]">
+          연차 신청 관리
+        </button>
+        <button onClick={() => router.push('/campus/overview?tab=direct')}
+          className="px-5 py-2.5 text-sm font-medium border-b-2 border-transparent text-[#64748B] hover:text-[#1E293B]">
+          연차 직접입력
+        </button>
+      </div>
+
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
         <h1 className="text-xl md:text-2xl font-bold text-[#1E293B]">연차 잔여 관리</h1>
         <div className="flex items-center gap-2 flex-wrap">
@@ -121,6 +183,56 @@ export default function BalancesPage() {
           </button>
         </div>
       </div>
+
+      {!loading && (
+        <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-sm p-4 mb-5">
+          <div className="flex flex-col md:flex-row md:items-center gap-4">
+            <div className="flex items-center gap-4 shrink-0">
+              <div className="relative">
+                <Ring pct={totalPct} color="#004EA2" size={80} />
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <span className="text-lg font-bold text-[#1E293B]">{totalPct}%</span>
+                </div>
+              </div>
+              <div>
+                <p className="text-xs text-[#94A3B8] mb-1">{year}년 전체 사용률</p>
+                <p className="text-sm text-[#64748B]">총 <strong className="text-[#1E293B]">{filtered.length}명</strong></p>
+              </div>
+            </div>
+            <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[
+                { label: '총 부여', value: totalGranted, unit: '일', color: 'text-[#1E293B]', bg: 'bg-[#F7F8FA]' },
+                { label: '총 사용', value: totalUsed,   unit: '일', color: 'text-[#004EA2]', bg: 'bg-[#EAF2FB]' },
+                { label: '총 잔여', value: totalRemaining, unit: '일', color: totalRemaining < 0 ? 'text-[#EF4444]' : 'text-[#10B981]', bg: totalRemaining < 0 ? 'bg-[#FEF2F2]' : 'bg-[#F0FDF4]' },
+                { label: '초과 사용', value: overused, unit: '명', color: overused > 0 ? 'text-[#EF4444]' : 'text-[#94A3B8]', bg: overused > 0 ? 'bg-[#FEF2F2]' : 'bg-[#F7F8FA]' },
+              ].map(s => (
+                <div key={s.label} className={`${s.bg} rounded-xl px-3 py-2.5 text-center`}>
+                  <p className="text-[10px] text-[#64748B] mb-0.5">{s.label}</p>
+                  <p className={`text-2xl font-bold ${s.color}`}>{s.value}<span className="text-xs font-normal ml-0.5">{s.unit}</span></p>
+                </div>
+              ))}
+            </div>
+            <div className="hidden lg:block shrink-0 space-y-1.5 min-w-[200px]">
+              {deptKeys.map(dept => {
+                const c = groupedTable[dept]
+                const used = c.reduce((s, r) => s + r.totalUsed, 0)
+                const total = c.reduce((s, r) => s + r.total, 0)
+                const pct = total > 0 ? Math.round((used / total) * 100) : 0
+                const color = CAT_COLORS[getCat(dept === '원장' ? '원장' : dept, dept === '원장' ? 'campus_admin' : 'employee')].bar
+                return (
+                  <div key={dept} className="flex items-center gap-2">
+                    <span className="text-[10px] font-semibold text-[#64748B] w-16 text-right shrink-0 truncate">{dept}</span>
+                    <div className="flex-1 h-1.5 bg-[#F1F5F9] rounded-full overflow-hidden">
+                      <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: color }} />
+                    </div>
+                    <span className="text-[10px] text-[#94A3B8] w-7 shrink-0">{pct}%</span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex justify-center py-16">
@@ -185,7 +297,7 @@ export default function BalancesPage() {
                         {deptRows.map(r => (
                           <tr key={r.id} className={`hover:bg-[#F7F8FA] border-t border-[#F1F5F9] ${!r.is_active ? 'opacity-50' : ''}`}>
                             <td className="px-3 py-2 font-medium sticky left-0 bg-white z-10 truncate max-w-[96px]">{r.name}</td>
-                            <td className="px-3 py-2 text-xs text-[#94A3B8]">{r.campus_hired_at?.slice(0,10) ?? '-'}</td>
+                            <td className="px-3 py-2 text-xs text-[#94A3B8]">{(r.campus_hired_at ?? r.company_hired_at)?.slice(0,10) ?? '-'}</td>
                             <td className="px-3 py-2 text-center font-semibold text-[#1E293B]">{r.baseDays}</td>
                             <td className="px-3 py-2 text-center text-xs">
                               {r.carriedOver === 0 ? <span className="text-[#E2E8F0]">-</span> : (

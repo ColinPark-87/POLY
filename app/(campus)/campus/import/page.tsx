@@ -21,6 +21,10 @@ export default function ImportPage() {
   const [rosterLoading, setRosterLoading] = useState(false)
   const [rosterResult, setRosterResult] = useState<RosterResult | null>(null)
   const [rosterError, setRosterError] = useState('')
+  const [rosterMonth, setRosterMonth] = useState(() => {
+    const now = new Date()
+    return `${now.getFullYear()}년 ${now.getMonth() + 1}월`
+  })
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -43,7 +47,7 @@ export default function ImportPage() {
     setRosterLoading(true); setRosterError(''); setRosterResult(null)
     const formData = new FormData()
     formData.append('file', rosterFile)
-    const res = await fetch('/api/campus/class-roster/import', { method: 'POST', body: formData })
+    const res = await fetch(`/api/campus/class-roster/import?month=${encodeURIComponent(rosterMonth)}`, { method: 'POST', body: formData })
     const d = await res.json()
     setRosterLoading(false)
     if (!res.ok) { setRosterError(d.error ?? '업로드 실패'); return }
@@ -150,6 +154,17 @@ export default function ImportPage() {
         <div className="bg-white rounded-2xl p-5 md:p-6 border border-[#E2E8F0] shadow-sm">
           <form onSubmit={handleRosterSubmit} className="space-y-5">
             <div>
+              <label className="block text-sm font-semibold text-[#1E293B] mb-2">운영월</label>
+              <input
+                type="text"
+                value={rosterMonth}
+                onChange={e => setRosterMonth(e.target.value)}
+                placeholder="예: 2026년 6월"
+                className="w-full border border-[#E2E8F0] rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]"
+              />
+              <p className="text-xs text-[#94A3B8] mt-1">반 형식 업로드 시 적용될 운영월 (예: 2026년 6월)</p>
+            </div>
+            <div>
               <label className="block text-sm font-semibold text-[#1E293B] mb-2">Excel 파일 선택</label>
               <div
                 className="border-2 border-dashed border-[#E2E8F0] rounded-2xl p-8 text-center cursor-pointer hover:border-[#004EA2] transition-colors"
@@ -162,11 +177,12 @@ export default function ImportPage() {
               </div>
             </div>
             <div className="bg-[#F7F8FA] rounded-xl p-4 text-xs text-[#64748B] space-y-1">
-              <p className="font-semibold text-[#1E293B] mb-2">시트 구성 안내</p>
-              <p>• <strong>①세션설정</strong>: 세션명, 월, 시작시간, 종료시간, 순서</p>
-              <p>• <strong>②반편성_차량</strong>: 세션명, 레벨, 선생님, 학생명, 영어명, 차량스케줄</p>
-              <p>• <strong>③차량정보</strong> (선택): 차량명, 기사, 연락처, 안전요원 등</p>
-              <p>• <strong>④정류장좌표</strong> (선택): 정류장명, 주소 입력 시 위도·경도 자동 변환</p>
+              <p className="font-semibold text-[#1E293B] mb-2">지원 파일 형식</p>
+              <p className="font-medium text-[#475569]">▸ 반 형식 (권장)</p>
+              <p>• <strong>반</strong> 시트: 세션·반이름·KT·FT·학생이름·차량탑승·요일별 등하원 정류장+시간</p>
+              <p>• <strong>정류장별 주소</strong> 시트 (선택): 주소 입력 시 지도 좌표 자동 변환</p>
+              <p className="font-medium text-[#475569] mt-2">▸ 기존 형식</p>
+              <p>• <strong>②세션설정</strong> + <strong>③반편성</strong> + <strong>⑤차량정보</strong> 구성</p>
             </div>
             {rosterError && <p className="text-[#EF4444] text-sm">{rosterError}</p>}
             {rosterResult && (

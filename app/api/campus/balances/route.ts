@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
 
   const { data: employees } = await service
     .from('users')
-    .select('id, name, position, role, is_active, campus_hired_at')
+    .select('id, name, position, role, is_active, campus_hired_at, company_hired_at')
     .eq('campus_id', me?.campus_id ?? '')
     .eq('is_active', true)
     .order('name')
@@ -93,6 +93,7 @@ export async function GET(request: NextRequest) {
       role: emp.role,
       is_active: emp.is_active,
       campus_hired_at: emp.campus_hired_at,
+      company_hired_at: emp.company_hired_at,
       baseDays: grant.base,
       carriedOver: grant.carried,
       extraDays: grant.extra,

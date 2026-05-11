@@ -65,7 +65,28 @@ interface Session { id: string; name: string; time_range: string | null; month: 
 interface Bus { id: string; name: string; sort_order: number }
 interface StudentOnBus { student_id: string; name: string; english_name: string | null; override?: boolean }
 interface KTTeacher { name: string; color: string; classIds: string[] }
-interface EnrollHistoryEntry { type: string; class_name: string; created_at: string }
+interface EnrollHistoryEntry { type: string; class_name: string; class_id?: string | null; created_at: string }
+
+function levelPrefix(level: string): string {
+  if (/^honors/i.test(level)) {
+    // Honors2, Honors3처럼 바로 뒤에 숫자가 붙는 경우
+    const hm = level.match(/^honors(\d+)/i)
+    return hm ? `Honors${hm[1]}` : 'Honors'
+  }
+  // 알파벳 + 뒤따르는 숫자까지 (예: MAG3, ECP5, GT1)
+  const m = level.match(/^([A-Za-z]+\d+)/)
+  if (m) return m[1].toUpperCase()
+  // 숫자 없는 경우 알파벳만
+  const m2 = level.match(/^([A-Za-z]+)/)
+  if (m2) return m2[1].toUpperCase()
+  return level
+}
+
+function monthToPrefix(m: string): string {
+  const match = m.match(/(\d+)년 (\d+)월/)
+  if (!match) return ''
+  return `${match[1]}-${match[2].padStart(2, '0')}`
+}
 
 function Spinner() {
   return <div className="flex justify-center py-16"><div className="w-8 h-8 border-4 border-[#1e3a5f] border-t-transparent rounded-full animate-spin" /></div>
@@ -120,7 +141,8 @@ export default function ClassRosterPage() {
   const [enrollments, setEnrollments] = useState<Enrollment[]>([])
   const [buses, setBuses] = useState<Bus[]>([])
   const [allStudents, setAllStudents] = useState<Student[]>([])
-  const [employees, setEmployees] = useState<{ id: string; name: string; position: string }[]>([])
+  const [employees, setEmployees] = useState<{ id: string; name: string; position: string; role: string }[]>([])
+  const [homeroomCategory, setHomeroomCategory] = useState<'all'|'원장'|'관리자'|'상담부'|'KT'|'FT'>('all')
   const [availableMonths, setAvailableMonths] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -152,6 +174,7 @@ export default function ClassRosterPage() {
   const [ktReassignTarget, setKtReassignTarget] = useState('')
   const [enrollHistory, setEnrollHistory] = useState<EnrollHistoryEntry[]>([])
   const [homeroomSaving, setHomeroomSaving] = useState(false)
+  const [expandedTeachers, setExpandedTeachers] = useState<Set<string>>(new Set())
 
   // Forms
   const [sessForm, setSessForm] = useState({ name: '', time_range: '' })
@@ -164,6 +187,8 @@ export default function ClassRosterPage() {
   const [backups, setBackups] = useState<{ id: string; label: string; created_at: string }[]>([])
   const [backupLoading, setBackupLoading] = useState(false)
   const [backupSaving, setBackupSaving] = useState(false)
+  const [timeRestoring, setTimeRestoring] = useState(false)
+  const [timeRestoreResult, setTimeRestoreResult] = useState<Record<string, { updated: number; skipped_no_student: number; skipped_no_time: number }> | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -359,22 +384,39 @@ export default function ClassRosterPage() {
     setWithdrawModal({ enrollmentId, studentName })
   }
 
-  async function handleStudentDetailSave(enrollmentId: string, arr: Record<string, string>, dep: Record<string, string>, toClassId: string, highlightColor: string) {
+  async function handleStudentDetailSave(enrollmentId: string, arr: Record<string, string>, dep: Record<string, string>, toClassId: string, highlightColor: string, name: string, englishName: string) {
     const enr = enrollments.find(e => e.id === enrollmentId)
     if (!enr) return
     setSaving(true); setFormError('')
+    const promises: Promise<Response>[] = []
+    // 이름 변경
+    if (name.trim() !== enr.campus_students.name || (englishName.trim() || null) !== enr.campus_students.english_name) {
+      promises.push(fetch('/api/campus/students', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: enr.student_id, name: name.trim(), english_name: englishName.trim() || null }),
+      }))
+    }
+    // 반 이동 또는 차량 업데이트
     if (toClassId !== enr.class_id) {
-      await fetch('/api/campus/class-roster', {
+      promises.push(fetch('/api/campus/class-roster', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'move_student', enrollment_id: enrollmentId, to_class_id: toClassId, arr_schedule: arr, dep_schedule: dep, highlight_color: highlightColor }),
-      })
+      }))
     } else {
-      await fetch('/api/campus/class-roster', {
+      promises.push(fetch('/api/campus/class-roster', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'update_bus_schedule', enrollment_id: enrollmentId, arr_schedule: arr, dep_schedule: dep, highlight_color: highlightColor }),
-      })
+      }))
     }
-    setSaving(false); setStudentDetailModal(null); load()
+    const results = await Promise.all(promises)
+    setSaving(false)
+    const failed = results.find(r => !r.ok)
+    if (failed) {
+      const d = await failed.json().catch(() => ({}))
+      setFormError(d.error ?? '저장 실패')
+      return
+    }
+    setStudentDetailModal(null); load()
   }
 
   function handleStudentDetailDelete() {
@@ -435,6 +477,17 @@ export default function ClassRosterPage() {
     setSaving(false)
     if (d.ok) { setBackupModal(false); load() }
     else alert('복원 실패: ' + d.error)
+  }
+
+  async function handleRestoreTimes() {
+    if (!confirm('Firebase busRoutes에서 픽업 시간을 복구합니다.\n기존 _time 데이터가 덮어써집니다. 계속하시겠습니까?')) return
+    setTimeRestoring(true)
+    setTimeRestoreResult(null)
+    const res = await fetch('/api/campus/class-roster/restore-times', { method: 'POST' })
+    const d = await res.json()
+    setTimeRestoring(false)
+    if (d.ok) setTimeRestoreResult(d.results)
+    else alert('복구 실패: ' + (d.error ?? ''))
   }
 
   async function handleDeleteBackup(backupId: string) {
@@ -539,12 +592,13 @@ export default function ClassRosterPage() {
     if (!ktReassignModal) return
     setHomeroomSaving(true)
     const { cls } = ktReassignModal
-    await fetch('/api/campus/class-roster', {
+    const res = await fetch('/api/campus/class-roster', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'update_class', class_id: cls.id, level: cls.level, room: cls.room, teacher: cls.teacher, kt_teacher: ktReassignTarget || null, color: cls.color }),
     })
-    setKtReassignModal(null)
     setHomeroomSaving(false)
+    if (!res.ok) { const d = await res.json(); alert(d.error ?? '저장 실패'); return }
+    setKtReassignModal(null)
     load()
   }
 
@@ -657,140 +711,212 @@ export default function ClassRosterPage() {
 
       {/* ── 담임반 관리 탭 ── */}
       {pageTab === 'homeroom' && (
-        <div className="space-y-8">
-          {/* ─── 섹션 1: 한국인 담임 선생님별 담임반 현황 ─── */}
-          <div>
-            <p className="text-[11px] text-[#94A3B8] mb-3">
-              한국인 담임 선생님별 담임반 현황 (헤더 클릭 → 색상 편집 / 반 클릭 → 담임 변경) — 반편성 현황관리와 연동
-            </p>
-            {loading ? <Spinner /> : (() => {
-              const ktMap: Record<string, { name: string; items: { cls: ClassItem; sess: Session; count: number }[] }> = {}
-              for (const cls of classes) {
-                const name = cls.kt_teacher?.trim() || '(미지정)'
-                if (!ktMap[name]) ktMap[name] = { name, items: [] }
-                const sess = sessions.find(s => s.id === cls.session_id)
-                if (!sess) continue
-                const count = enrollments.filter(e => e.class_id === cls.id && !e.is_waitlist).length
-                ktMap[name].items.push({ cls, sess, count })
-              }
-              const ktGroups = Object.values(ktMap).sort((a, b) =>
-                a.name === '(미지정)' ? 1 : b.name === '(미지정)' ? -1 : a.name.localeCompare(b.name, 'ko')
-              )
-              if (ktGroups.length === 0) {
-                return <p className="text-sm text-[#94A3B8]">반편성 파일을 업로드하거나 반을 추가해주세요.</p>
-              }
-              return (
-                <div className="flex flex-wrap gap-3 items-start">
-                  {ktGroups.map(({ name, items }) => {
-                    const isUnassigned = name === '(미지정)'
-                    const color = isUnassigned ? '#CBD5E1' : (ktColors[name] ?? TEACHER_COLORS[Object.keys(ktMap).indexOf(name) % TEACHER_COLORS.length])
-                    const total = items.reduce((s, i) => s + i.count, 0)
-                    return (
-                      <div key={name} className="bg-white rounded-xl border border-[#E2E8F0] overflow-hidden shadow-sm w-44 flex-shrink-0">
-                        <div
-                          className="px-3 py-2 flex justify-between items-center select-none"
-                          style={{ background: color, cursor: isUnassigned ? 'default' : 'pointer' }}
-                          onClick={() => !isUnassigned && setKtColorModal({ name, color })}
-                        >
-                          <span className="text-white font-bold text-sm truncate">{name}</span>
-                          {!isUnassigned && <span className="text-white text-[10px] opacity-60 shrink-0 ml-1">편집</span>}
-                        </div>
-                        {items.sort((a, b) => (a.cls.sort_order ?? 99) - (b.cls.sort_order ?? 99)).map(({ cls, sess, count }) => (
-                          <div
-                            key={cls.id}
-                            onClick={() => { setKtReassignModal({ cls, sess, count }); setKtReassignTarget(cls.kt_teacher?.trim() ?? '') }}
-                            className="flex justify-between items-center px-3 py-1.5 border-b border-[#F0F0F0] hover:bg-[#F5F5F5] cursor-pointer"
-                          >
-                            <div className="min-w-0">
-                              <p className="text-[12px] font-medium text-[#1E293B] truncate">{cls.level}</p>
-                              <p className="text-[9px] text-[#94A3B8] truncate">{sess.name}</p>
-                            </div>
-                            <span className="text-[13px] font-bold text-[#1E293B] shrink-0 ml-1">{count}</span>
-                          </div>
-                        ))}
-                        <div className="px-3 py-1.5 text-right text-[13px] font-bold text-[#1E293B] bg-[#F5F5F5] border-t-2 border-[#E0E0E0]">
-                          {total}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )
-            })()}
+        <div className="space-y-4">
+          {/* 월 선택 */}
+          <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
+            {(availableMonths.length ? availableMonths : [month]).map(m => (
+              <button key={m} onClick={() => setMonth(m)}
+                className={`px-3 py-1.5 text-sm font-medium rounded-lg whitespace-nowrap transition-colors shrink-0 ${
+                  month === m ? 'bg-[#1e3a5f] text-white' : 'bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]'
+                }`}>{m}
+              </button>
+            ))}
           </div>
 
-          {/* ─── 섹션 2: 원어민 선생님별 반 현황 ─── */}
-          <div>
-            <p className="text-[11px] text-[#94A3B8] mb-3">원어민 선생님별 반 현황 — 반편성 현황관리와 연동</p>
-            {loading ? <Spinner /> : (() => {
-              const nativeMap: Record<string, { teacher: string; items: { cls: ClassItem; sess: Session; count: number; enrolled: number; withdrawn: number }[] }> = {}
-              for (const cls of classes) {
-                const teacher = cls.teacher?.trim() || '(미지정)'
-                if (!nativeMap[teacher]) nativeMap[teacher] = { teacher, items: [] }
-                const sess = sessions.find(s => s.id === cls.session_id)
-                if (!sess) continue
-                const count = enrollments.filter(e => e.class_id === cls.id && !e.is_waitlist).length
-                const classLabel = `${sess.name} ${cls.level}`.toLowerCase()
-                const enrolled = enrollHistory.filter(h =>
-                  h.type === 'enrolled' && h.class_name.toLowerCase().includes(cls.level.toLowerCase())
-                ).length
-                const withdrawn = enrollHistory.filter(h =>
-                  h.type === 'withdrawn' && h.class_name.toLowerCase().includes(cls.level.toLowerCase())
-                ).length
-                nativeMap[teacher].items.push({ cls, sess, count, enrolled, withdrawn })
-              }
-              const nativeTeachers = Object.values(nativeMap).sort((a, b) =>
-                a.teacher === '(미지정)' ? 1 : b.teacher === '(미지정)' ? -1 : a.teacher.localeCompare(b.teacher)
-              )
-              if (nativeTeachers.length === 0) {
-                return <div className="text-center py-16 text-[#94A3B8] text-sm">반편성 데이터가 없습니다.</div>
-              }
-              return (
-                <div className="flex flex-wrap gap-3 items-start">
-                  {nativeTeachers.map(({ teacher, items }) => {
-                    const totalCount = items.reduce((s, i) => s + i.count, 0)
-                    const totalEnrolled = items.reduce((s, i) => s + i.enrolled, 0)
-                    const totalWithdrawn = items.reduce((s, i) => s + i.withdrawn, 0)
-                    const isUnassigned = teacher === '(미지정)'
-                    return (
-                      <div key={teacher} className="bg-white rounded-xl border border-[#E2E8F0] overflow-hidden shadow-sm w-52 flex-shrink-0">
-                        <div className={`px-3 py-2 ${isUnassigned ? 'bg-[#CBD5E1]' : 'bg-[#1e3a5f]'}`}>
-                          <p className="text-white font-bold text-sm truncate">{teacher}</p>
-                          <div className="flex gap-2 mt-0.5">
-                            <span className="text-white text-[10px] opacity-70">{items.length}개 반 · {totalCount}명</span>
-                            {(totalEnrolled > 0 || totalWithdrawn > 0) && (
-                              <span className="text-[10px]">
-                                {totalEnrolled > 0 && <span className="text-green-300">+{totalEnrolled}</span>}
-                                {totalEnrolled > 0 && totalWithdrawn > 0 && <span className="text-white opacity-50 mx-0.5">/</span>}
-                                {totalWithdrawn > 0 && <span className="text-red-300">-{totalWithdrawn}</span>}
-                              </span>
+          {/* 카테고리 필터 */}
+          <div className="flex gap-1.5 flex-wrap">
+            {(['all','원장','관리자','상담부','KT','FT'] as const).map(cat => (
+              <button key={cat} onClick={() => setHomeroomCategory(cat)}
+                className={`px-3 py-1 text-xs font-semibold rounded-lg border transition-colors ${
+                  homeroomCategory === cat
+                    ? 'bg-[#004EA2] text-white border-[#004EA2]'
+                    : 'bg-white text-[#64748B] border-[#E2E8F0] hover:bg-[#F7F8FA]'
+                }`}>{cat === 'all' ? '전체' : cat}
+              </button>
+            ))}
+          </div>
+
+          {loading ? <Spinner /> : (() => {
+            // 방과후 세션 제외
+            const nonBangwaSessions = new Set(
+              sessions.filter(s => !s.name.includes('방과후')).map(s => s.id)
+            )
+            // 방과후 제외 반 목록
+            const homeroomClasses = classes.filter(cls => nonBangwaSessions.has(cls.session_id))
+
+            // 직원 카테고리 분류
+            function empCategory(emp: { name: string; position: string; role: string }): '원장'|'관리자'|'상담부'|'KT'|'FT'|null {
+              const p = emp.position ?? ''
+              if (/원장/.test(p) || emp.role === 'campus_admin') return '원장'
+              if (/관리자|부원장/.test(p)) return '관리자'
+              if (/상담/.test(p)) return '상담부'
+              if (/KT/i.test(p)) return 'KT'
+              if (/FT/.test(p)) return 'FT'
+              return null
+            }
+
+            // 표시 대상 직원 (원장/관리자/상담부/KT/FT + 활성 필터)
+            const targetEmps = employees
+              .filter(e => empCategory(e) !== null)
+              .filter(e => homeroomCategory === 'all' || empCategory(e) === homeroomCategory)
+              .sort((a, b) => {
+                const order = ['원장','관리자','상담부','KT','FT']
+                return order.indexOf(empCategory(a)!) - order.indexOf(empCategory(b)!)
+                  || a.name.localeCompare(b.name, 'ko')
+              })
+
+            if (targetEmps.length === 0) {
+              return <p className="text-sm text-[#94A3B8] py-8 text-center">해당 직원이 없습니다.</p>
+            }
+
+            // 카테고리별 색상
+            const catColor: Record<string, string> = {
+              '원장': '#0F172A', '관리자': '#004EA2', '상담부': '#16A34A', 'KT': '#7C3AED', 'FT': '#EA580C',
+            }
+            const catBg: Record<string, string> = {
+              '원장': 'bg-[#F1F5F9] text-[#0F172A]',
+              '관리자': 'bg-[#EAF2FB] text-[#004EA2]',
+              '상담부': 'bg-[#F0FDF4] text-[#16A34A]',
+              'KT': 'bg-[#F5F3FF] text-[#7C3AED]',
+              'FT': 'bg-[#FFF7ED] text-[#EA580C]',
+            }
+
+            const displayGroups = [
+              { label: '원장', cats: ['원장'] as const },
+              { label: '관리자 · 상담부', cats: ['관리자', '상담부'] as const },
+              { label: 'FT', cats: ['FT'] as const },
+              { label: 'KT', cats: ['KT'] as const },
+            ]
+
+            return (
+              <div className="space-y-6">
+                {displayGroups.map(({ label, cats }) => {
+                  const groupEmps = targetEmps.filter(e => (cats as readonly string[]).includes(empCategory(e)!))
+                  if (groupEmps.length === 0) return null
+                  return (
+                    <div key={label}>
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="text-xs font-bold text-[#64748B] whitespace-nowrap">{label}</span>
+                        <div className="flex-1 h-px bg-[#E2E8F0]" />
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                {groupEmps.map(emp => {
+                  const cat = empCategory(emp)!
+                  // 클래스 매칭: KT/관리자/상담부 → kt_teacher, FT → teacher
+                  const matched = homeroomClasses.filter(cls =>
+                    cat === 'FT'
+                      ? cls.teacher?.trim() === emp.name.trim()
+                      : cls.kt_teacher?.trim() === emp.name.trim()
+                  )
+                  const totalStudents = matched.reduce((sum, cls) => {
+                    return sum + enrollments.filter(e => e.class_id === cls.id && !e.is_waitlist).length
+                  }, 0)
+
+                  // 레벨 그룹
+                  const levelGroups: Record<string, ClassItem[]> = {}
+                  for (const cls of matched) {
+                    const p = levelPrefix(cls.level)
+                    if (!levelGroups[p]) levelGroups[p] = []
+                    levelGroups[p].push(cls)
+                  }
+
+                  // 변화율 (현재 월 기준)
+                  const monthPfx = monthToPrefix(month)
+                  const classIds = new Set(matched.map(c => c.id))
+                  const deltaIn = enrollHistory.filter(h =>
+                    h.class_id && classIds.has(h.class_id) && h.type === 'enrolled' && h.created_at.startsWith(monthPfx)
+                  ).length
+                  const deltaOut = enrollHistory.filter(h =>
+                    h.class_id && classIds.has(h.class_id) && h.type === 'withdrawn' && h.created_at.startsWith(monthPfx)
+                  ).length
+
+                  const isExpanded = expandedTeachers.has(emp.id)
+                  function toggleExpand() {
+                    setExpandedTeachers(prev => {
+                      const next = new Set(prev)
+                      if (next.has(emp.id)) next.delete(emp.id)
+                      else next.add(emp.id)
+                      return next
+                    })
+                  }
+
+                  return (
+                    <div key={emp.id} className="bg-white rounded-xl border border-[#E2E8F0] shadow-sm overflow-hidden">
+                      {/* 헤더 */}
+                      <div
+                        onClick={toggleExpand}
+                        className="px-4 py-3 cursor-pointer hover:bg-[#FAFBFC] transition-colors"
+                        style={{ borderLeftWidth: 3, borderLeftColor: catColor[cat] }}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <p className="font-bold text-[#1E293B] text-sm">{emp.name}</p>
+                            {/* 레벨 태그 */}
+                            {matched.length > 0 && (
+                              <div className="flex gap-1 flex-wrap mt-1">
+                                {Object.entries(levelGroups).sort(([a],[b]) => a.localeCompare(b)).map(([prefix, clsList]) => (
+                                  <span key={prefix}
+                                    className="inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-[#F1F5F9] text-[#475569]">
+                                    {prefix}{clsList.length > 1 && <span className="ml-0.5 text-[#94A3B8]">×{clsList.length}</span>}
+                                  </span>
+                                ))}
+                              </div>
                             )}
                           </div>
-                        </div>
-                        {items.sort((a, b) => (a.cls.sort_order ?? 99) - (b.cls.sort_order ?? 99)).map(({ cls, sess, count, enrolled, withdrawn }) => (
-                          <div key={cls.id} className="flex items-center justify-between px-3 py-1.5 border-b border-[#F0F0F0]">
-                            <div className="min-w-0">
-                              <p className="text-[11px] font-semibold text-[#1E293B] truncate">{cls.level}</p>
-                              <p className="text-[9px] text-[#94A3B8] truncate">{sess.name}</p>
-                            </div>
-                            <div className="flex items-center gap-1.5 shrink-0 ml-1">
-                              <span className="text-[12px] font-bold text-[#1E293B]">{count}</span>
-                              {(enrolled > 0 || withdrawn > 0) && (
-                                <span className="text-[9px]">
-                                  {enrolled > 0 && <span className="text-[#22C55E] font-semibold">+{enrolled}</span>}
-                                  {withdrawn > 0 && <span className="text-[#EF4444] font-semibold ml-0.5">-{withdrawn}</span>}
-                                </span>
-                              )}
-                            </div>
+                          <div className="flex items-center gap-1.5 shrink-0 pt-0.5">
+                            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${catBg[cat]}`}>{cat}</span>
+                            {matched.length > 0 && (
+                              <div className="flex flex-col items-end">
+                                <span className="text-xs font-bold text-[#1E293B]">{totalStudents}명</span>
+                                {(deltaIn > 0 || deltaOut > 0) && (
+                                  <span className="text-[9px] font-medium flex gap-0.5">
+                                    {deltaIn > 0 && <span className="text-[#16A34A]">+{deltaIn}</span>}
+                                    {deltaOut > 0 && <span className="text-[#DC2626]">-{deltaOut}</span>}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                            <span className="text-[#CBD5E1] text-[10px] ml-0.5">{isExpanded ? '▲' : '▼'}</span>
                           </div>
-                        ))}
+                        </div>
                       </div>
-                    )
-                  })}
-                </div>
-              )
-            })()}
-          </div>
+
+                      {/* 담임반 목록 — 접힘/펼침 */}
+                      {isExpanded && (
+                        matched.length === 0 ? (
+                          <div className="px-4 py-3 text-[11px] text-[#CBD5E1] border-t border-[#F1F5F9]">미배정</div>
+                        ) : (
+                          <div className="border-t border-[#F1F5F9]">
+                            {matched
+                              .sort((a, b) => (a.sort_order ?? 99) - (b.sort_order ?? 99))
+                              .map(cls => {
+                                const sess = sessions.find(s => s.id === cls.session_id)
+                                const count = enrollments.filter(e => e.class_id === cls.id && !e.is_waitlist).length
+                                return (
+                                  <div key={cls.id}
+                                    onClick={e => { e.stopPropagation(); setKtReassignModal({ cls, sess: sess!, count }); setKtReassignTarget(cls.kt_teacher?.trim() ?? '') }}
+                                    className="flex items-center justify-between px-4 py-2 border-b border-[#F8FAFC] hover:bg-[#F7F8FA] cursor-pointer last:border-0">
+                                    <div className="min-w-0">
+                                      <p className="text-[12px] font-semibold text-[#1E293B] truncate">{cls.level}</p>
+                                      <p className="text-[10px] text-[#94A3B8] truncate">{sess?.name}</p>
+                                    </div>
+                                    <span className="text-sm font-bold text-[#1E293B] shrink-0 ml-2">{count}명</span>
+                                  </div>
+                                )
+                              })}
+                          </div>
+                        )
+                      )}
+                    </div>
+                  )
+                })}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })()}
 
           {/* KT 색상 편집 모달 */}
           {ktColorModal && (
@@ -844,6 +970,19 @@ export default function ClassRosterPage() {
                 className="w-full bg-[#1e3a5f] text-white py-2.5 rounded-lg font-medium hover:bg-[#2c5f8a] disabled:opacity-50 transition-colors">
                 {backupSaving ? '저장 중...' : '💾 지금 시점 백업 저장'}
               </button>
+              <button onClick={handleRestoreTimes} disabled={timeRestoring}
+                className="w-full border border-[#0EA5E9] text-[#0EA5E9] py-2.5 rounded-lg font-medium hover:bg-[#F0F9FF] disabled:opacity-50 transition-colors text-sm">
+                {timeRestoring ? '복구 중...' : '⏱ Firebase 픽업시간 복구'}
+              </button>
+              {timeRestoreResult && (
+                <div className="text-xs bg-[#F0FDF4] border border-[#BBF7D0] rounded-lg p-3 space-y-1">
+                  {Object.entries(timeRestoreResult).map(([m, r]) => (
+                    <p key={m} className="text-[#166534]">
+                      {m}: 업데이트 {r.updated}건 / 미매칭 {r.skipped_no_student} / 시간없음 {r.skipped_no_time}
+                    </p>
+                  ))}
+                </div>
+              )}
               <div className="border-t border-[#E2E8F0] pt-3">
                 <p className="text-xs text-[#64748B] mb-2 font-medium">저장된 백업 목록</p>
                 {backupLoading ? (
@@ -888,7 +1027,7 @@ export default function ClassRosterPage() {
 
       {addClassModal && (() => {
         const ft = employees.filter(e => e.position?.includes('FT'))
-        const kt = employees.filter(e => /KT|관리자|상담/.test(e.position ?? ''))
+        const kt = employees.filter(e => /KT|관리자|상담|원장/.test(e.position ?? '') || e.role === 'campus_admin')
         return (
           <Modal title="반 추가" onClose={() => setAddClassModal(null)}>
             <ClassForm form={clsForm} setForm={setClsForm} onSubmit={handleAddClass} onClose={() => setAddClassModal(null)} saving={saving} error={formError} ftEmployees={ft} ktEmployees={kt} />
@@ -898,7 +1037,7 @@ export default function ClassRosterPage() {
 
       {editClassModal && (() => {
         const ft = employees.filter(e => e.position?.includes('FT'))
-        const kt = employees.filter(e => /KT|관리자|상담/.test(e.position ?? ''))
+        const kt = employees.filter(e => /KT|관리자|상담|원장/.test(e.position ?? '') || e.role === 'campus_admin')
         return (
           <Modal title={`반 수정 — ${editClassModal.level}`} onClose={() => setEditClassModal(null)}>
             <ClassForm form={clsForm} setForm={setClsForm} onSubmit={handleUpdateClass} onClose={() => setEditClassModal(null)} saving={saving} error={formError} onDelete={handleDeleteClass} ftEmployees={ft} ktEmployees={kt} />
@@ -1700,13 +1839,15 @@ function extractLocOnly(sched: Record<string, string>) {
 function StudentDetailModal({ enrollment, student, classes, sessions, buses, enrollments, onSave, onDelete, onClose, saving }: {
   enrollment: Enrollment; student: Student; classes: ClassItem[]; sessions: Session[]; buses: Bus[]
   enrollments: Enrollment[]
-  onSave: (enrollmentId: string, arr: Record<string, string>, dep: Record<string, string>, toClassId: string, highlightColor: string) => void
+  onSave: (enrollmentId: string, arr: Record<string, string>, dep: Record<string, string>, toClassId: string, highlightColor: string, name: string, englishName: string) => void
   onDelete: () => void; onClose: () => void; saving: boolean
 }) {
   const [arr, setArr] = useState<Record<string, string>>(extractBusOnly(enrollment.arr_schedule ?? {}))
   const [dep, setDep] = useState<Record<string, string>>(extractBusOnly(enrollment.dep_schedule ?? {}))
   const [arrLoc, setArrLoc] = useState<Record<string, string>>(extractLocOnly(enrollment.arr_schedule ?? {}))
   const [depLoc, setDepLoc] = useState<Record<string, string>>(extractLocOnly(enrollment.dep_schedule ?? {}))
+  const [editName, setEditName] = useState(student.name)
+  const [editEnglishName, setEditEnglishName] = useState(student.english_name ?? '')
   const [highlightColor, setHighlightColor] = useState(enrollment.highlight_color ?? '')
   const currentClass = classes.find(c => c.id === enrollment.class_id)
   const currentSession = sessions.find(s => s.id === currentClass?.session_id)
@@ -1717,18 +1858,46 @@ function StudentDetailModal({ enrollment, student, classes, sessions, buses, enr
   const getCount = (cid: string) => enrollments.filter(e => e.class_id === cid && !e.is_waitlist).length
   const color = currentSession ? sessColor(currentSession.name, '#666') : '#666'
 
-  // 같은 세션 내 호차별 승하차 위치 집계 (드롭다운용)
-  const sessBusArrLocs: Record<string, string[]> = {}
-  const sessBusDepLocs: Record<string, string[]> = {}
-  const sessClassIds = new Set(classes.filter(c => c.session_id === currentClass?.session_id).map(c => c.id))
+  // 호차별 정류장+시간 집계 — (버스, 세션, 방향) 단위로 구분
+  // 현재 학생 세션 기준 우선, 없으면 전체 fallback
+  const busSessionArrStops: Record<string, Record<string, { loc: string; time?: string }[]>> = {}
+  const busSessionDepStops: Record<string, Record<string, { loc: string; time?: string }[]>> = {}
   for (const enr of enrollments) {
-    if (!sessClassIds.has(enr.class_id)) continue
+    const sessId = classes.find(c => c.id === enr.class_id)?.session_id ?? ''
     for (const d of DAYS) {
       const aBus = enr.arr_schedule[d]; const aLoc = enr.arr_schedule[`${d}_loc`]
-      if (aBus && aLoc) { if (!sessBusArrLocs[aBus]) sessBusArrLocs[aBus] = []; if (!sessBusArrLocs[aBus].includes(aLoc)) sessBusArrLocs[aBus].push(aLoc) }
+      const aTime = (enr.arr_schedule as Record<string,string>)[`${d}_time`] || (enr.arr_schedule as Record<string,string>)['_time'] || undefined
+      if (aBus && aLoc) {
+        if (!busSessionArrStops[aBus]) busSessionArrStops[aBus] = {}
+        if (!busSessionArrStops[aBus][sessId]) busSessionArrStops[aBus][sessId] = []
+        const ex = busSessionArrStops[aBus][sessId].find(x => x.loc === aLoc)
+        if (!ex) busSessionArrStops[aBus][sessId].push({ loc: aLoc, time: aTime })
+        else if (!ex.time && aTime) ex.time = aTime
+      }
       const dBus = enr.dep_schedule[d]; const dLoc = enr.dep_schedule[`${d}_loc`]
-      if (dBus && dLoc) { if (!sessBusDepLocs[dBus]) sessBusDepLocs[dBus] = []; if (!sessBusDepLocs[dBus].includes(dLoc)) sessBusDepLocs[dBus].push(dLoc) }
+      const dTime = (enr.dep_schedule as Record<string,string>)[`${d}_time`] || (enr.dep_schedule as Record<string,string>)['_time'] || undefined
+      if (dBus && dLoc) {
+        if (!busSessionDepStops[dBus]) busSessionDepStops[dBus] = {}
+        if (!busSessionDepStops[dBus][sessId]) busSessionDepStops[dBus][sessId] = []
+        const ex = busSessionDepStops[dBus][sessId].find(x => x.loc === dLoc)
+        if (!ex) busSessionDepStops[dBus][sessId].push({ loc: dLoc, time: dTime })
+        else if (!ex.time && dTime) ex.time = dTime
+      }
     }
+  }
+
+  const curSessId = currentClass?.session_id ?? ''
+  function getArrStops(busName: string): { loc: string; time?: string }[] {
+    const same = busSessionArrStops[busName]?.[curSessId] ?? []
+    if (same.length > 0) return same
+    const all = Object.values(busSessionArrStops[busName] ?? {}).flat()
+    return all.filter((s, i, a) => a.findIndex(x => x.loc === s.loc) === i)
+  }
+  function getDepStops(busName: string): { loc: string; time?: string }[] {
+    const same = busSessionDepStops[busName]?.[curSessId] ?? []
+    if (same.length > 0) return same
+    const all = Object.values(busSessionDepStops[busName] ?? {}).flat()
+    return all.filter((s, i, a) => a.findIndex(x => x.loc === s.loc) === i)
   }
 
   function handleSessionChange(sessId: string) {
@@ -1741,13 +1910,26 @@ function StudentDetailModal({ enrollment, student, classes, sessions, buses, enr
     <Modal title="" onClose={onClose} wide>
       {/* Header */}
       <div className="mb-4">
-        <div className="flex items-center gap-2 mb-0.5">
-          <span className="text-xl font-bold text-[#1E293B]">{student.name}</span>
+        <div className="flex items-center gap-2 mb-1.5">
+          <input
+            value={editName}
+            onChange={e => setEditName(e.target.value)}
+            className="text-xl font-bold text-[#1E293B] border-b border-transparent hover:border-[#E2E8F0] focus:border-[#1e3a5f] focus:outline-none bg-transparent w-auto"
+            placeholder="이름"
+          />
           {currentClass && (
             <span className="text-xs px-2 py-0.5 rounded-full text-white font-semibold" style={{ background: color }}>{currentClass.level}</span>
           )}
         </div>
-        <p className="text-sm text-[#64748B]">{student.english_name ? `${student.english_name} | ` : ''}{currentSession?.name ?? ''}</p>
+        <div className="flex items-center gap-1">
+          <input
+            value={editEnglishName}
+            onChange={e => setEditEnglishName(e.target.value)}
+            className="text-sm text-[#64748B] border-b border-transparent hover:border-[#E2E8F0] focus:border-[#1e3a5f] focus:outline-none bg-transparent"
+            placeholder="영어 이름"
+          />
+          {currentSession?.name && <span className="text-sm text-[#64748B]">| {currentSession.name}</span>}
+        </div>
       </div>
 
       {/* Bus table */}
@@ -1777,14 +1959,18 @@ function StudentDetailModal({ enrollment, student, classes, sessions, buses, enr
                   </select>
                 </td>
                 <td className="py-1 pr-1">
-                  <input value={arrLoc[day] ?? ''} onChange={e => setArrLoc(p => ({ ...p, [day]: e.target.value }))}
-                    list={`arr-loc-${day}`}
-                    placeholder="장소" className="w-full text-xs border border-[#E2E8F0] rounded px-1 py-1 bg-white focus:outline-none" />
-                  {arr[day] && (sessBusArrLocs[arr[day]]?.length ?? 0) > 0 && (
-                    <datalist id={`arr-loc-${day}`}>
-                      {sessBusArrLocs[arr[day]].map(loc => <option key={loc} value={loc} />)}
-                    </datalist>
-                  )}
+                  {(() => {
+                    const opts = getArrStops(arr[day] ?? '')
+                    const cur = arrLoc[day] ?? ''
+                    const allOpts = cur && !opts.find(x => x.loc === cur) ? [{ loc: cur, time: undefined }, ...opts] : opts
+                    return (
+                      <select value={cur} onChange={e => setArrLoc(p => ({ ...p, [day]: e.target.value }))}
+                        className="w-full text-xs border border-[#E2E8F0] rounded px-1 py-1 bg-white focus:outline-none">
+                        <option value="">-</option>
+                        {allOpts.map(s => <option key={s.loc} value={s.loc}>{s.loc}{s.time ? ` · ${s.time}` : ''}</option>)}
+                      </select>
+                    )
+                  })()}
                 </td>
                 <td className="py-1 pr-1">
                   <select value={dep[day] ?? ''} onChange={e => setDep(p => ({ ...p, [day]: e.target.value }))}
@@ -1794,14 +1980,18 @@ function StudentDetailModal({ enrollment, student, classes, sessions, buses, enr
                   </select>
                 </td>
                 <td className="py-1">
-                  <input value={depLoc[day] ?? ''} onChange={e => setDepLoc(p => ({ ...p, [day]: e.target.value }))}
-                    list={`dep-loc-${day}`}
-                    placeholder="장소" className="w-full text-xs border border-[#E2E8F0] rounded px-1 py-1 bg-white focus:outline-none" />
-                  {dep[day] && (sessBusDepLocs[dep[day]]?.length ?? 0) > 0 && (
-                    <datalist id={`dep-loc-${day}`}>
-                      {sessBusDepLocs[dep[day]].map(loc => <option key={loc} value={loc} />)}
-                    </datalist>
-                  )}
+                  {(() => {
+                    const opts = getDepStops(dep[day] ?? '')
+                    const cur = depLoc[day] ?? ''
+                    const allOpts = cur && !opts.find(x => x.loc === cur) ? [{ loc: cur, time: undefined }, ...opts] : opts
+                    return (
+                      <select value={cur} onChange={e => setDepLoc(p => ({ ...p, [day]: e.target.value }))}
+                        className="w-full text-xs border border-[#E2E8F0] rounded px-1 py-1 bg-white focus:outline-none">
+                        <option value="">-</option>
+                        {allOpts.map(s => <option key={s.loc} value={s.loc}>{s.loc}{s.time ? ` · ${s.time}` : ''}</option>)}
+                      </select>
+                    )
+                  })()}
                 </td>
               </tr>
             ))}
@@ -1853,7 +2043,7 @@ function StudentDetailModal({ enrollment, student, classes, sessions, buses, enr
             if (arrLoc[day]) mergedArr[`${day}_loc`] = arrLoc[day]
             if (depLoc[day]) mergedDep[`${day}_loc`] = depLoc[day]
           }
-          onSave(enrollment.id, mergedArr, mergedDep, toClassId, highlightColor)
+          onSave(enrollment.id, mergedArr, mergedDep, toClassId, highlightColor, editName, editEnglishName)
         }} disabled={saving}
           className="bg-[#1e3a5f] text-white px-4 py-2 rounded-xl text-sm font-semibold disabled:opacity-50">
           {saving ? '저장 중...' : '저장'}

@@ -44,8 +44,8 @@ interface ReqState {
 }
 
 function normalizeTime(t: string): string {
-  const m = t.match(/^(\d{1,2}):(\d{2})$/)
-  if (!m) return t
+  const m = t.match(/^(\d{1,2}):(\d{2})/)
+  if (!m) return ''
   let h = parseInt(m[1])
   const min = m[2]
   if (h < 8) h += 12

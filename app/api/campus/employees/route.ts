@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
 
   let query = service
     .from('users')
-    .select('id, name, email, position, role, is_active, company_hired_at, campus_hired_at, terminated_at, created_at')
+    .select('id, name, email, position, role, is_active, company_hired_at, campus_hired_at, terminated_at, created_at, perm_class_roster, perm_vehicles, perm_vehicles_restricted')
     .eq('campus_id', me?.campus_id ?? '')
     .order('created_at', { ascending: true })
 

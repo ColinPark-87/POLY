@@ -1,6 +1,7 @@
 ﻿'use client'
 
 import { useState, useEffect } from 'react'
+import { createClient as createBrowserClient } from '@/lib/supabase/client'
 
 interface Campus {
   id: string
@@ -14,6 +15,7 @@ export default function LoginPage() {
   const [selected, setSelected] = useState('hq')
   const [mode, setMode] = useState<LoginMode>('email') // hq는 항상 email, 캠퍼스는 기본 name
   const [form, setForm] = useState({ name: '', email: '', password: '' })
+  const [rememberMe, setRememberMe] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -34,9 +36,21 @@ export default function LoginPage() {
     fetch('/api/public/campuses')
       .then(r => r.json())
       .then(d => setCampuses(d.campuses ?? []))
+
+    // 저장된 아이디 불러오기
+    try {
+      const saved = localStorage.getItem('poly-login-saved')
+      if (saved) {
+        const { selected: s, mode: m, identifier } = JSON.parse(saved)
+        if (s) setSelected(s)
+        if (m) setMode(m)
+        if (identifier) setForm(f => m === 'name' ? { ...f, name: identifier } : { ...f, email: identifier })
+        setRememberMe(true)
+      }
+    } catch {}
   }, [])
 
-  // 소속 변경 시 모드 초기화
+  // 소속 변경 시 모드 초기화 (저장된 아이디와 다른 소속으로 바꾸면 필드 리셋)
   function handleSelectChange(val: string) {
     setSelected(val)
     setMode(val === 'hq' ? 'email' : 'name')
@@ -44,10 +58,31 @@ export default function LoginPage() {
     setError('')
   }
 
+  function resolveDestination(role: string, position: string): string {
+    if (role === 'hq_admin') return '/hq/dashboard'
+    const isCampus =
+      role === 'campus_admin' ||
+      position.includes('상담') ||
+      position.includes('KT') ||
+      position.includes('관리자') ||
+      position.includes('POLY안전')
+    return isCampus ? '/campus/dashboard' : '/dashboard'
+  }
+
+  function saveOrClearId() {
+    if (rememberMe) {
+      const identifier = mode === 'name' ? form.name : form.email
+      localStorage.setItem('poly-login-saved', JSON.stringify({ selected, mode, identifier }))
+    } else {
+      localStorage.removeItem('poly-login-saved')
+    }
+  }
+
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
     setError('')
+    saveOrClearId()
 
     // HQ 또는 원장 이메일 로그인
     if (selected === 'hq' || mode === 'email') {
@@ -61,13 +96,14 @@ export default function LoginPage() {
         setLoading(false)
         return
       }
-      const { role } = await res.json()
+      const emailData = await res.json()
+      const { role, position } = emailData
       if (selected === 'hq' && role !== 'hq_admin') {
         setError('HQ 관리자 계정이 아닙니다.')
         setLoading(false)
         return
       }
-      window.location.href = role === 'hq_admin' ? '/hq/dashboard' : role === 'campus_admin' ? '/campus/dashboard' : '/dashboard'
+      window.location.href = resolveDestination(role ?? '', position ?? '')
       return
     }
 
@@ -90,7 +126,13 @@ export default function LoginPage() {
       return
     }
 
-    window.location.href = '/dashboard'
+    // 브라우저 Supabase 클라이언트로 직접 로그인 (쿠키 설정 보장)
+    if (data.email) {
+      const supabase = createBrowserClient()
+      await supabase.auth.signInWithPassword({ email: data.email, password: form.password })
+    }
+
+    window.location.href = '/redirecting'
   }
 
   async function handleSetup(e: React.FormEvent) {
@@ -117,7 +159,7 @@ export default function LoginPage() {
       setSetupError(data.error)
       return
     }
-    window.location.href = '/dashboard'
+    window.location.href = resolveDestination(data.role ?? '', data.position ?? '')
   }
 
   async function handleForgotPassword(e: React.FormEvent) {
@@ -145,7 +187,7 @@ export default function LoginPage() {
             <div className="inline-flex items-center justify-center w-12 h-12 bg-[#004EA2] rounded-2xl mb-3">
               <span className="text-white text-xl font-black tracking-tight">P</span>
             </div>
-            <h1 className="text-xl sm:text-2xl font-bold text-[#0C1220]">Poly Leave</h1>
+            <h1 className="text-xl sm:text-2xl font-bold text-[#0C1220]">캠퍼스 관리시스템</h1>
             <p className="text-[#6B7687] text-sm mt-1">소속을 선택하고 로그인하세요</p>
           </div>
 
@@ -244,6 +286,17 @@ export default function LoginPage() {
                 autoComplete="current-password"
               />
             </div>
+
+            {/* 아이디 저장 */}
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={e => setRememberMe(e.target.checked)}
+                className="w-4 h-4 rounded border-[#CBD5E1] text-[#004EA2] accent-[#004EA2]"
+              />
+              <span className="text-xs text-[#64748B]">아이디 저장</span>
+            </label>
 
             {error && <p className="text-[#EF4444] text-sm text-center">{error}</p>}
 

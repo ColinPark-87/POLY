@@ -13,14 +13,14 @@ export async function POST(request: NextRequest) {
   // ID로 먼저 조회, 없으면 이메일로 대체 조회
   let { data: profile } = await serviceClient
     .from('users')
-    .select('id, role, campus_id')
+    .select('id, role, campus_id, position')
     .eq('id', data.user.id)
     .maybeSingle()
 
   if (!profile) {
     const { data: byEmail } = await serviceClient
       .from('users')
-      .select('id, role, campus_id')
+      .select('id, role, campus_id, position')
       .eq('email', data.user.email ?? '')
       .maybeSingle()
 
@@ -35,5 +35,5 @@ export async function POST(request: NextRequest) {
 
   console.log('[login-api] user.id:', data.user.id, 'profile:', profile)
 
-  return NextResponse.json({ user: data.user, role: profile?.role ?? 'employee' })
+  return NextResponse.json({ user: data.user, role: profile?.role ?? 'employee', position: profile?.position ?? '' })
 }

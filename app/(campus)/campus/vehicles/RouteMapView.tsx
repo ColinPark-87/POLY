@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 
 const COORDS_KEY = 'shuttle-stop-coords'
+const SCHOOL_STOP = { name: '중계폴리어학원', lat: 37.6556, lng: 127.0686 }
 
 const BUS_COLORS = ['#FF9800','#2196F3','#9C27B0','#4CAF50','#FFC107','#E91E63','#607D8B','#795548','#00BCD4','#FF5722']
 const BUS_COLOR_MAP: Record<string, string> = {
@@ -23,8 +24,8 @@ function parseTimeMin(t: string | null | undefined): number {
 }
 function normalizeTime(t: string | null): string {
   if (!t) return ''
-  const m = t.match(/^(\d{1,2}):(\d{2})$/)
-  if (!m) return t
+  const m = t.match(/^(\d{1,2}):(\d{2})/)
+  if (!m) return ''
   let h = parseInt(m[1])
   if (h < 8) h += 12
   return `${String(h).padStart(2, '0')}:${m[2]}`
@@ -65,7 +66,8 @@ interface KakaoResult { name: string; address: string; lat: number; lng: number 
 
 type PanelView = 'route' | 'coords'
 
-export default function RouteMapView() {
+export default function RouteMapView({ campusId }: { campusId?: string }) {
+  const cqs = campusId ? `&campus_id=${campusId}` : ''
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<any>(null)
   const markersRef = useRef<any[]>([])
@@ -79,9 +81,10 @@ export default function RouteMapView() {
   const [buses, setBuses] = useState<Bus[]>([])
   const [coords, setCoords] = useState<Record<string, { lat: number; lng: number }>>({})
   const [mapReady, setMapReady] = useState(false)
+  const [coordsSaving, setCoordsSaving] = useState(false)
 
   const [selectedSession, setSelectedSession] = useState<string | null>(null)
-  const [selectedBus, setSelectedBus] = useState<string | null>(null)
+  const [selectedBuses, setSelectedBuses] = useState<string[]>([])
   const [panelView, setPanelView] = useState<PanelView>('route')
 
   const [expandedStop, setExpandedStop] = useState<string | null>(null)
@@ -93,17 +96,17 @@ export default function RouteMapView() {
 
   const [batchLoading, setBatchLoading] = useState(false)
   const [batchProgress, setBatchProgress] = useState(0)
-  const [excelDownloaded, setExcelDownloaded] = useState(false)
   const [uploadMsg, setUploadMsg] = useState('')
   const [uploadGeocoding, setUploadGeocoding] = useState(false)
+  const [uploadPanelOpen, setUploadPanelOpen] = useState(true)
 
   // 등하원 통합 정류장 데이터 (좌표 설정용)
   const [bothDirGroups, setBothDirGroups] = useState<{ group: TimeGroup; dir: 'arr' | 'dep' }[]>([])
 
   useEffect(() => {
     Promise.all([
-      fetch('/api/campus/vehicles?direction=arr&master=true').then(r => r.ok ? r.json() : { timeGroups: [] }),
-      fetch('/api/campus/vehicles?direction=dep&master=true').then(r => r.ok ? r.json() : { timeGroups: [] }),
+      fetch(`/api/campus/vehicles?direction=arr&master=true${cqs}`).then(r => r.ok ? r.json() : { timeGroups: [] }),
+      fetch(`/api/campus/vehicles?direction=dep&master=true${cqs}`).then(r => r.ok ? r.json() : { timeGroups: [] }),
     ]).then(([a, d]) => {
       setBothDirGroups([
         ...(a.timeGroups ?? []).map((g: TimeGroup) => ({ group: g, dir: 'arr' as const })),
@@ -112,24 +115,54 @@ export default function RouteMapView() {
     })
   }, [])
 
+  // DB에서 좌표 로드 (localStorage는 캐시 역할)
   useEffect(() => {
-    try { const s = localStorage.getItem(COORDS_KEY); if (s) setCoords(JSON.parse(s)) } catch {}
+    const schoolBase = { [SCHOOL_STOP.name]: { lat: SCHOOL_STOP.lat, lng: SCHOOL_STOP.lng } }
+    // 먼저 localStorage로 빠르게 표시
+    try {
+      const s = localStorage.getItem(COORDS_KEY)
+      if (s) setCoords({ ...schoolBase, ...JSON.parse(s) })
+      else setCoords(schoolBase)
+    } catch { setCoords(schoolBase) }
+    // DB에서 최신 데이터 가져와 덮어쓰기
+    fetch(`/api/campus/stop-coords${campusId ? `?campus_id=${campusId}` : ''}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (!d?.coords) return
+        const merged = { ...schoolBase, ...d.coords }
+        setCoords(merged)
+        localStorage.setItem(COORDS_KEY, JSON.stringify(d.coords))
+      })
+      .catch(() => {})
   }, [])
 
-  const updateCoords = useCallback((c: Record<string, { lat: number; lng: number }>) => {
-    setCoords(c); localStorage.setItem(COORDS_KEY, JSON.stringify(c))
+  const updateCoords = useCallback(async (c: Record<string, { lat: number; lng: number }>) => {
+    // 학원 좌표 제외하고 저장
+    const { [SCHOOL_STOP.name]: _school, ...rest } = c
+    setCoords({ [SCHOOL_STOP.name]: { lat: SCHOOL_STOP.lat, lng: SCHOOL_STOP.lng }, ...rest })
+    localStorage.setItem(COORDS_KEY, JSON.stringify(rest))
+    // DB 저장
+    setCoordsSaving(true)
+    try {
+      await fetch(`/api/campus/stop-coords${campusId ? `?campus_id=${campusId}` : ''}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ coords: rest }),
+      })
+    } catch {}
+    setCoordsSaving(false)
   }, [])
 
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/campus/vehicles?direction=${dir}&master=true`)
+      const res = await fetch(`/api/campus/vehicles?direction=${dir}&master=true${cqs}`)
       if (res.ok) { const d = await res.json(); setGroups(d.timeGroups ?? []); setBuses(d.buses ?? []) }
     } finally { setLoading(false) }
   }, [dir])
   useEffect(() => { loadData() }, [loadData])
 
-  // 세션 옵션
+  // 세션 옵션 (현재 dir 기준)
   const sessionOptions = useMemo(() => {
     const labelMap = new Map<string, number>()
     for (const g of groups) {
@@ -139,6 +172,21 @@ export default function RouteMapView() {
     }
     return [...labelMap.entries()].sort((a, b) => a[1] - b[1]).map(([label]) => ({ label, color: getSessionColor(label) }))
   }, [groups, dir])
+
+  // 세션×방향 조합 옵션 (bothDirGroups 기반 — 빠른 선택용)
+  const sessionDirOptions = useMemo(() => {
+    const map = new Map<string, { arr: boolean; dep: boolean; priority: number }>()
+    for (const { group, dir: d } of bothDirGroups) {
+      const label = getRunLabel(group.session_name, d)
+      const pri = getSessPriority(group.session_name, d)
+      if (!map.has(label)) map.set(label, { arr: false, dep: false, priority: pri })
+      const e = map.get(label)!
+      if (d === 'arr') e.arr = true; else e.dep = true
+      if (pri < e.priority) e.priority = pri
+    }
+    return [...map.entries()].sort((a, b) => a[1].priority - b[1].priority)
+      .map(([label, info]) => ({ label, color: getSessionColor(label), arr: info.arr, dep: info.dep }))
+  }, [bothDirGroups])
 
   // 세션 자동 선택
   useEffect(() => {
@@ -158,32 +206,45 @@ export default function RouteMapView() {
     return buses.filter(b => names.has(b.name))
   }, [groups, dir, selectedSession, buses])
 
-  // 버스 자동 선택
+  // 버스 자동 선택 (세션 바뀌면 전체 선택)
   useEffect(() => {
     if (!sessionBuses.length) return
-    setSelectedBus(prev => (!prev || !sessionBuses.find(b => b.name === prev)) ? sessionBuses[0].name : prev)
+    setSelectedBuses(sessionBuses.map(b => b.name))
   }, [sessionBuses])
 
-  // 선택 버스의 정류장 (시간순)
-  const routeStops = useMemo((): RouteStop[] => {
-    if (!selectedSession || !selectedBus) return []
-    const locMap = new Map<string, { time: string | null; count: number; names: string[] }>()
-    for (const g of groups) {
-      if (getRunLabel(g.session_name, dir) !== selectedSession) continue
-      for (const s of (g.busMap[selectedBus] ?? [])) {
-        if (!s.location) continue
-        const loc = s.location.trim()
-        if (!locMap.has(loc)) locMap.set(loc, { time: null, count: 0, names: [] })
-        const e = locMap.get(loc)!
-        e.count++
-        if (!e.names.includes(s.name)) e.names.push(s.name)
-        if (s.pickup_time && (!e.time || parseTimeMin(s.pickup_time) < parseTimeMin(e.time))) e.time = s.pickup_time
+  function toggleBus(name: string) {
+    setSelectedBuses(prev =>
+      prev.includes(name) ? prev.filter(b => b !== name) : [...prev, name]
+    )
+  }
+
+  // 버스별 정류장 (시간순) — 등원 마지막/하원 첫번째에 학원 고정
+  const routeStopsByBus = useMemo((): Record<string, RouteStop[]> => {
+    if (!selectedSession) return {}
+    const result: Record<string, RouteStop[]> = {}
+    const schoolStop: RouteStop = { name: SCHOOL_STOP.name, time: null, count: 0, studentNames: [] }
+    for (const busName of selectedBuses) {
+      const locMap = new Map<string, { time: string | null; count: number; names: string[] }>()
+      for (const g of groups) {
+        if (getRunLabel(g.session_name, dir) !== selectedSession) continue
+        for (const s of (g.busMap[busName] ?? [])) {
+          if (!s.location) continue
+          const loc = s.location.trim()
+          if (!locMap.has(loc)) locMap.set(loc, { time: null, count: 0, names: [] })
+          const e = locMap.get(loc)!
+          e.count++
+          if (!e.names.includes(s.name)) e.names.push(s.name)
+          if (s.pickup_time && (!e.time || parseTimeMin(s.pickup_time) < parseTimeMin(e.time))) e.time = s.pickup_time
+        }
       }
+      const sorted = [...locMap.entries()]
+        .map(([name, info]) => ({ name, time: info.time, count: info.count, studentNames: info.names }))
+        .sort((a, b) => parseTimeMin(a.time) - parseTimeMin(b.time))
+      // 등원: 학원이 마지막(도착지) / 하원: 학원이 첫번째(출발지)
+      result[busName] = dir === 'arr' ? [...sorted, schoolStop] : [schoolStop, ...sorted]
     }
-    return [...locMap.entries()]
-      .map(([name, info]) => ({ name, time: info.time, count: info.count, studentNames: info.names }))
-      .sort((a, b) => parseTimeMin(a.time) - parseTimeMin(b.time))
-  }, [groups, dir, selectedSession, selectedBus])
+    return result
+  }, [groups, dir, selectedSession, selectedBuses])
 
   // 전체 정류장 — 등하원 양쪽 데이터 통합 (좌표 설정용)
   const allStops = useMemo(() => {
@@ -215,6 +276,8 @@ export default function RouteMapView() {
     }
     return counts
   }, [groups, dir, selectedSession])
+
+  const allSelected = sessionBuses.length > 0 && sessionBuses.every(b => selectedBuses.includes(b.name))
 
   // Leaflet 초기화
   useEffect(() => {
@@ -273,63 +336,77 @@ export default function RouteMapView() {
     })
   }, [mapReady, candidateCoord, candidateStop])
 
-  // 노선 렌더 (선택 버스만, 번호 마커)
+  // 노선 렌더 (선택된 모든 버스, 버스별 색상)
   useEffect(() => {
     if (!mapReady || !mapRef.current) return
     import('leaflet').then(L => {
       const map = mapRef.current; if (!map) return
       markersRef.current.forEach(m => map.removeLayer(m)); markersRef.current = []
       polylinesRef.current.forEach(p => map.removeLayer(p)); polylinesRef.current = []
-      if (!selectedBus || routeStops.length === 0) return
 
-      const busIdx = buses.findIndex(b => b.name === selectedBus)
-      const color = getBusColor(selectedBus, busIdx)
-      const pts: [number, number][] = routeStops.filter(s => coords[s.name]).map(s => [coords[s.name].lat, coords[s.name].lng])
+      const allPts: [number, number][] = []
 
-      if (pts.length > 1) {
-        polylinesRef.current.push(L.polyline(pts, { color, weight: 5, opacity: 0.9 }).addTo(map))
-        for (let i = 0; i < pts.length - 1; i++) {
-          const mid: [number, number] = [(pts[i][0]+pts[i+1][0])/2, (pts[i][1]+pts[i+1][1])/2]
-          const angle = Math.atan2(pts[i+1][1]-pts[i][1], pts[i+1][0]-pts[i][0]) * 180 / Math.PI
-          markersRef.current.push(L.marker(mid, {
-            icon: L.divIcon({ className: '', html: `<div style="transform:rotate(${angle}deg);color:${color};font-size:16px;text-shadow:0 0 4px white">▶</div>`, iconSize:[16,16], iconAnchor:[8,8] }),
-            interactive: false,
-          }).addTo(map))
+      for (const busName of selectedBuses) {
+        const stops = routeStopsByBus[busName] ?? []
+        if (stops.length === 0) continue
+        const busIdx = buses.findIndex(b => b.name === busName)
+        const color = getBusColor(busName, busIdx)
+        const pts: [number, number][] = stops.filter(s => coords[s.name]).map(s => [coords[s.name].lat, coords[s.name].lng])
+        pts.forEach(p => allPts.push(p))
+
+        if (pts.length > 1) {
+          polylinesRef.current.push(L.polyline(pts, { color, weight: 5, opacity: 0.85 }).addTo(map))
+          for (let i = 0; i < pts.length - 1; i++) {
+            const mid: [number, number] = [(pts[i][0]+pts[i+1][0])/2, (pts[i][1]+pts[i+1][1])/2]
+            const angle = Math.atan2(pts[i+1][1]-pts[i][1], pts[i+1][0]-pts[i][0]) * 180 / Math.PI
+            markersRef.current.push(L.marker(mid, {
+              icon: L.divIcon({ className: '', html: `<div style="transform:rotate(${angle}deg);color:${color};font-size:16px;text-shadow:0 0 4px white">▶</div>`, iconSize:[16,16], iconAnchor:[8,8] }),
+              interactive: false,
+            }).addTo(map))
+          }
+        }
+
+        let num = 0
+        for (const stop of stops) {
+          const c = coords[stop.name]; if (!c) continue
+          const isSchool = stop.name === SCHOOL_STOP.name
+          num++
+          const timeStr = stop.time ? normalizeTime(stop.time) : ''
+          const names = stop.studentNames.slice(0, 6).join(', ') + (stop.studentNames.length > 6 ? ` 외 ${stop.studentNames.length-6}명` : '')
+          const markerHtml = isSchool
+            ? `<div style="display:flex;flex-direction:column;align-items:center">
+                <div style="background:#004EA2;border:3px solid #fff;border-radius:8px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:900;box-shadow:0 3px 12px rgba(0,0,0,.4)">P</div>
+                <div style="margin-top:2px;background:#004EA2;color:#fff;font-size:8px;font-weight:800;padding:1px 5px;border-radius:4px;white-space:nowrap;max-width:80px;overflow:hidden;text-overflow:ellipsis;box-shadow:0 1px 4px rgba(0,0,0,.2)">중계폴리</div>
+              </div>`
+            : `<div style="display:flex;flex-direction:column;align-items:center">
+                <div style="background:${color};border:2.5px solid #fff;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:800;box-shadow:0 2px 10px rgba(0,0,0,.35)">${num}</div>
+                <div style="margin-top:2px;background:white;border:1.5px solid ${color};color:#1E293B;font-size:8px;font-weight:700;padding:1px 5px;border-radius:4px;white-space:nowrap;max-width:80px;overflow:hidden;text-overflow:ellipsis;box-shadow:0 1px 4px rgba(0,0,0,.15)">${stop.name}</div>
+              </div>`
+          markersRef.current.push(
+            L.marker([c.lat, c.lng], {
+              icon: L.divIcon({ className: '', html: markerHtml, iconSize: [34, 52], iconAnchor: [17, 17] }),
+              zIndexOffset: isSchool ? 2000 : 0,
+            })
+            .bindPopup(`<div style="font-family:sans-serif;min-width:160px;padding:4px 2px">
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+                ${isSchool
+                  ? `<span style="background:#004EA2;color:#fff;border-radius:6px;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:900">P</span>`
+                  : `<span style="background:${color};color:#fff;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:800">${num}</span>`}
+                <b style="font-size:13px">${stop.name}</b>
+              </div>
+              ${isSchool ? `<div style="color:#004EA2;font-size:11px;font-weight:700">${dir === 'arr' ? '🏫 도착지' : '🏫 출발지'}</div>` : `
+              <div style="color:#94A3B8;font-size:10px;font-weight:700;margin-bottom:2px">${busName}</div>
+              ${timeStr ? `<div style="color:#64748B;font-size:12px;margin-bottom:4px">⏱ ${timeStr}</div>` : ''}
+              <div style="color:#1E293B;font-size:11px">👥 ${stop.count}명 — ${names}</div>`}
+            </div>`, { maxWidth: 250 })
+            .addTo(map)
+          )
         }
       }
 
-      let num = 0
-      for (const stop of routeStops) {
-        const c = coords[stop.name]; if (!c) continue
-        num++
-        const timeStr = stop.time ? normalizeTime(stop.time) : ''
-        const names = stop.studentNames.slice(0, 6).join(', ') + (stop.studentNames.length > 6 ? ` 외 ${stop.studentNames.length-6}명` : '')
-        markersRef.current.push(
-          L.marker([c.lat, c.lng], {
-            icon: L.divIcon({
-              className: '',
-              html: `<div style="display:flex;flex-direction:column;align-items:center">
-                <div style="background:${color};border:2.5px solid #fff;border-radius:50%;width:34px;height:34px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:800;box-shadow:0 2px 10px rgba(0,0,0,.35)">${num}</div>
-                <div style="margin-top:3px;background:white;border:1.5px solid ${color};color:#1E293B;font-size:9px;font-weight:700;padding:2px 6px;border-radius:5px;white-space:nowrap;max-width:90px;overflow:hidden;text-overflow:ellipsis;box-shadow:0 1px 4px rgba(0,0,0,.15)">${stop.name}</div>
-              </div>`,
-              iconSize: [34, 56], iconAnchor: [17, 17],
-            }),
-          })
-          .bindPopup(`<div style="font-family:sans-serif;min-width:160px;padding:4px 2px">
-            <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
-              <span style="background:${color};color:#fff;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:800">${num}</span>
-              <b style="font-size:14px">${stop.name}</b>
-            </div>
-            ${timeStr ? `<div style="color:#64748B;font-size:12px;margin-bottom:4px">⏱ ${timeStr}</div>` : ''}
-            <div style="color:#1E293B;font-size:11px">👥 ${stop.count}명 — ${names}</div>
-          </div>`, { maxWidth: 250 })
-          .addTo(map)
-        )
-      }
-
-      if (pts.length > 0) map.fitBounds(L.latLngBounds(pts), { padding: [50, 50] })
+      if (allPts.length > 0) map.fitBounds(L.latLngBounds(allPts), { padding: [50, 50] })
     })
-  }, [mapReady, routeStops, coords, selectedBus, buses])
+  }, [mapReady, routeStopsByBus, coords, selectedBuses, buses])
 
   // ── 검색 함수들
   async function searchStop(stopName: string) {
@@ -397,7 +474,7 @@ export default function RouteMapView() {
     const ws = XLSX.utils.json_to_sheet(data)
     ws['!cols'] = [{ wch: 30 }, { wch: 10 }, { wch: 20 }, { wch: 40 }, { wch: 14 }, { wch: 14 }]
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '정류장좌표_등하원')
-    XLSX.writeFile(wb, '정류장좌표_등하원.xlsx'); setExcelDownloaded(true)
+    XLSX.writeFile(wb, '정류장좌표_등하원.xlsx')
   }
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -443,7 +520,8 @@ export default function RouteMapView() {
       updateCoords(newCoords)
       setUploadMsg(`✅ ${directCount}개 정류장 좌표 업데이트 완료`)
     }
-    setExcelDownloaded(false); setTimeout(() => setUploadMsg(''), 5000)
+    setUploadPanelOpen(false)
+    setTimeout(() => setUploadMsg(''), 8000)
   }
 
   // ── 공통 정류장 확장 패널 렌더
@@ -549,15 +627,39 @@ export default function RouteMapView() {
       {/* ── 왼쪽 패널 */}
       <div className="w-72 flex flex-col gap-2 shrink-0">
 
-        {/* 방향 토글 */}
-        <div className="flex gap-1.5">
-          {(['arr', 'dep'] as const).map(d => (
-            <button key={d} onClick={() => setDir(d)}
-              className={`flex-1 py-2 rounded-xl text-sm font-semibold transition-colors ${
-                dir === d ? (d === 'arr' ? 'bg-[#2196F3] text-white' : 'bg-[#DC2626] text-white')
-                : 'bg-white border border-[#E2E8F0] text-[#64748B]'}`}>
-              {d === 'arr' ? '🚌 등원' : '🏠 하원'}
-            </button>
+        {/* 세션 × 방향 빠른 선택 */}
+        <div className="bg-white rounded-2xl border border-[#E2E8F0] p-2 space-y-1.5">
+          <p className="text-[9px] font-bold text-[#94A3B8] uppercase tracking-wider px-1">빠른 선택 (전체호차)</p>
+          {sessionDirOptions.map(opt => (
+            <div key={opt.label} className="flex items-center gap-1.5">
+              <span className="text-[10px] font-bold w-14 text-right shrink-0" style={{ color: opt.color }}>{opt.label}</span>
+              <div className="flex gap-1 flex-1">
+                {opt.arr && (
+                  <button
+                    onClick={() => { setDir('arr'); setSelectedSession(opt.label); setSelectedBuses([]) }}
+                    className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold transition-colors border ${
+                      dir === 'arr' && selectedSession === opt.label
+                        ? 'text-white border-transparent'
+                        : 'bg-white border-[#E2E8F0] text-[#64748B] hover:border-[#2196F3] hover:text-[#2196F3]'
+                    }`}
+                    style={dir === 'arr' && selectedSession === opt.label ? { background: opt.color, borderColor: opt.color } : {}}>
+                    🚌 등원
+                  </button>
+                )}
+                {opt.dep && (
+                  <button
+                    onClick={() => { setDir('dep'); setSelectedSession(opt.label); setSelectedBuses([]) }}
+                    className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold transition-colors border ${
+                      dir === 'dep' && selectedSession === opt.label
+                        ? 'text-white border-transparent'
+                        : 'bg-white border-[#E2E8F0] text-[#64748B] hover:border-[#DC2626] hover:text-[#DC2626]'
+                    }`}
+                    style={dir === 'dep' && selectedSession === opt.label ? { background: opt.color, borderColor: opt.color } : {}}>
+                    🏠 하원
+                  </button>
+                )}
+              </div>
+            </div>
           ))}
         </div>
 
@@ -575,108 +677,130 @@ export default function RouteMapView() {
         {panelView === 'route' && (
           <div className="flex flex-col gap-2 flex-1 min-h-0 overflow-hidden">
 
-            {/* 세션 선택 */}
-            {sessionOptions.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {sessionOptions.map(opt => (
-                  <button key={opt.label}
-                    onClick={() => { setSelectedSession(opt.label); setSelectedBus(null) }}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors border`}
-                    style={selectedSession === opt.label
-                      ? { background: opt.color, borderColor: opt.color, color: '#fff' }
-                      : { background: '#fff', borderColor: '#E2E8F0', color: '#64748B' }}>
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* 버스 선택 */}
+            {/* 버스 선택 (다중) */}
             {sessionBuses.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {sessionBuses.map(bus => {
-                  const color = getBusColor(bus.name, buses.findIndex(b => b.id === bus.id))
-                  const active = selectedBus === bus.name
-                  const cnt = busStudentCount[bus.name] ?? 0
-                  return (
-                    <button key={bus.name} onClick={() => setSelectedBus(bus.name)}
-                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-colors"
-                      style={active
-                        ? { background: color + '20', borderColor: color, color }
-                        : { background: '#F8FAFC', borderColor: '#E2E8F0', color: '#94A3B8' }}>
-                      <span className="w-2 h-2 rounded-full shrink-0" style={{ background: active ? color : '#CBD5E1' }} />
-                      {bus.name}
-                      <span className="text-[10px] opacity-70">{cnt}명</span>
-                    </button>
-                  )
-                })}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-[#94A3B8] font-semibold">호차 선택</span>
+                  <button
+                    onClick={() => setSelectedBuses(allSelected ? [] : sessionBuses.map(b => b.name))}
+                    className="text-[10px] font-bold text-[#004EA2] hover:underline">
+                    {allSelected ? '전체 해제' : '전체 선택'}
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {sessionBuses.map(bus => {
+                    const color = getBusColor(bus.name, buses.findIndex(b => b.id === bus.id))
+                    const active = selectedBuses.includes(bus.name)
+                    const cnt = busStudentCount[bus.name] ?? 0
+                    return (
+                      <button key={bus.name} onClick={() => toggleBus(bus.name)}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-colors"
+                        style={active
+                          ? { background: color + '20', borderColor: color, color }
+                          : { background: '#F8FAFC', borderColor: '#E2E8F0', color: '#94A3B8' }}>
+                        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: active ? color : '#CBD5E1' }} />
+                        {bus.name}
+                        <span className="text-[10px] opacity-70">{cnt}명</span>
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
             )}
 
-            {/* 타임라인 */}
+            {/* 타임라인 — 버스별 섹션 */}
             <div className="flex-1 min-h-0 overflow-y-auto">
               {loading ? (
                 <div className="flex items-center justify-center py-10">
                   <div className="w-6 h-6 border-4 border-[#004EA2] border-t-transparent rounded-full animate-spin" />
                 </div>
-              ) : !selectedBus || routeStops.length === 0 ? (
+              ) : selectedBuses.length === 0 ? (
                 <p className="text-xs text-[#94A3B8] text-center py-10">
-                  {!selectedSession ? '세션을 선택해주세요' : !selectedBus ? '호차를 선택해주세요' : '정류장 데이터 없음'}
+                  {!selectedSession ? '세션을 선택해주세요' : '호차를 선택해주세요'}
                 </p>
               ) : (
-                <div className="relative pl-1">
-                  {/* 세로 타임라인 선 */}
-                  <div className="absolute left-[23px] top-5 bottom-5 w-0.5 bg-[#E2E8F0] z-0" />
-                  <div className="space-y-1.5 relative z-10">
-                    {routeStops.map((stop, idx) => {
-                      const busIdx = buses.findIndex(b => b.name === selectedBus)
-                      const color = getBusColor(selectedBus ?? '', busIdx)
-                      const hasCoord = !!coords[stop.name]
-                      const isExpanded = expandedStop === stop.name
-                      return (
-                        <div key={stop.name}
-                          className={`bg-white rounded-2xl border transition-all overflow-hidden ${isExpanded ? 'border-[#004EA2] shadow-md' : 'border-[#E2E8F0]'}`}>
-                          <button onClick={() => openStop(stop.name)}
-                            className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-[#F7F8FA] transition-colors">
-                            {/* 번호 뱃지 */}
-                            <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
-                              style={{ background: hasCoord ? color : '#CBD5E1' }}>
-                              {idx + 1}
-                            </div>
-                            <div className="flex-1 text-left min-w-0">
-                              <div className="flex items-center gap-1.5 min-w-0">
-                                <span className={`text-xs font-semibold truncate ${hasCoord ? 'text-[#1E293B]' : 'text-[#94A3B8]'}`}>
-                                  {stop.name}
-                                </span>
-                                {!hasCoord && <span className="text-[9px] text-[#EF4444] bg-[#FEF2F2] px-1.5 py-0.5 rounded font-bold shrink-0">좌표없음</span>}
-                              </div>
-                              <div className="flex items-center gap-2 mt-0.5">
-                                <span className="text-[10px] text-[#64748B] font-mono">
-                                  {stop.time ? `⏱ ${normalizeTime(stop.time)}` : <span className="text-[#CBD5E1]">시간 미설정</span>}
-                                </span>
-                                <span className="text-[10px] text-[#94A3B8]">👥 {stop.count}명</span>
-                              </div>
-                            </div>
-                            <svg className={`w-3 h-3 text-[#CBD5E1] transition-transform shrink-0 ${isExpanded ? 'rotate-180' : ''}`}
-                              fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                            </svg>
-                          </button>
-                          {isExpanded && (
-                            <div className="px-3 pb-3 space-y-2 border-t border-[#F1F5F9]">
-                              {/* 탑승 학생 */}
-                              <div className="pt-2 flex flex-wrap gap-1">
-                                {stop.studentNames.map(n => (
-                                  <span key={n} className="text-[10px] bg-[#F1F5F9] text-[#475569] px-2 py-0.5 rounded-lg">{n}</span>
-                                ))}
-                              </div>
-                              {renderStopExpanded(stop.name)}
-                            </div>
-                          )}
+                <div className="space-y-3">
+                  {selectedBuses.map(busName => {
+                    const stops = routeStopsByBus[busName] ?? []
+                    const busIdx = buses.findIndex(b => b.name === busName)
+                    const color = getBusColor(busName, busIdx)
+                    const cnt = busStudentCount[busName] ?? 0
+                    return (
+                      <div key={busName}>
+                        {/* 호차 헤더 */}
+                        <div className="flex items-center gap-2 px-1 mb-1.5">
+                          <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: color }} />
+                          <span className="text-xs font-bold" style={{ color }}>{busName}</span>
+                          <span className="text-[10px] text-[#94A3B8]">{cnt}명 · {stops.length}정류장</span>
+                          <div className="flex-1 h-px bg-[#F1F5F9]" />
                         </div>
-                      )
-                    })}
-                  </div>
+                        {stops.length === 0 ? (
+                          <p className="text-[10px] text-[#CBD5E1] text-center py-2">정류장 데이터 없음</p>
+                        ) : (
+                          <div className="relative pl-1">
+                            <div className="absolute left-[23px] top-3 bottom-3 w-0.5 bg-[#E2E8F0] z-0" />
+                            <div className="space-y-1.5 relative z-10">
+                              {stops.map((stop, idx) => {
+                                const isSchool = stop.name === SCHOOL_STOP.name
+                                const hasCoord = !!coords[stop.name]
+                                const isExpanded = expandedStop === stop.name
+                                if (isSchool) return (
+                                  <div key="school" className="flex items-center gap-2 px-3 py-2 bg-[#EAF2FB] rounded-2xl border border-[#004EA2]/30">
+                                    <div className="w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-black text-white shrink-0 bg-[#004EA2]">P</div>
+                                    <div className="flex-1 min-w-0">
+                                      <span className="text-xs font-bold text-[#004EA2]">중계폴리어학원</span>
+                                      <p className="text-[9px] text-[#64748B] mt-0.5">{dir === 'arr' ? '도착지' : '출발지'}</p>
+                                    </div>
+                                  </div>
+                                )
+                                return (
+                                  <div key={stop.name + busName}
+                                    className={`bg-white rounded-2xl border transition-all overflow-hidden ${isExpanded ? 'border-[#004EA2] shadow-md' : 'border-[#E2E8F0]'}`}>
+                                    <button onClick={() => openStop(stop.name)}
+                                      className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-[#F7F8FA] transition-colors">
+                                      <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
+                                        style={{ background: hasCoord ? color : '#CBD5E1' }}>
+                                        {idx + 1}
+                                      </div>
+                                      <div className="flex-1 text-left min-w-0">
+                                        <div className="flex items-center gap-1.5 min-w-0">
+                                          <span className={`text-xs font-semibold truncate ${hasCoord ? 'text-[#1E293B]' : 'text-[#94A3B8]'}`}>
+                                            {stop.name}
+                                          </span>
+                                          {!hasCoord && <span className="text-[9px] text-[#EF4444] bg-[#FEF2F2] px-1.5 py-0.5 rounded font-bold shrink-0">좌표없음</span>}
+                                        </div>
+                                        <div className="flex items-center gap-2 mt-0.5">
+                                          <span className="text-[10px] text-[#64748B] font-mono">
+                                            {stop.time ? `⏱ ${normalizeTime(stop.time)}` : <span className="text-[#CBD5E1]">시간 미설정</span>}
+                                          </span>
+                                          <span className="text-[10px] text-[#94A3B8]">👥 {stop.count}명</span>
+                                        </div>
+                                      </div>
+                                      <svg className={`w-3 h-3 text-[#CBD5E1] transition-transform shrink-0 ${isExpanded ? 'rotate-180' : ''}`}
+                                        fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                                      </svg>
+                                    </button>
+                                    {isExpanded && (
+                                      <div className="px-3 pb-3 space-y-2 border-t border-[#F1F5F9]">
+                                        <div className="pt-2 flex flex-wrap gap-1">
+                                          {stop.studentNames.map(n => (
+                                            <span key={n} className="text-[10px] bg-[#F1F5F9] text-[#475569] px-2 py-0.5 rounded-lg">{n}</span>
+                                          ))}
+                                        </div>
+                                        {renderStopExpanded(stop.name)}
+                                      </div>
+                                    )}
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -694,62 +818,52 @@ export default function RouteMapView() {
                   : <>🔍 미설정 {allStops.filter(s => !coords[s.name]).length}개 자동 검색</>}
               </button>
             )}
-            <div className="bg-white rounded-2xl border border-[#E2E8F0] p-4 space-y-3">
-              <div>
-                <p className="text-xs font-bold text-[#1E293B]">좌표 일괄 입력 (등하원 통합)</p>
-                <p className="text-[10px] text-[#64748B] mt-0.5 leading-relaxed">
-                  주소 칸을 입력하면 위도/경도 자동 변환<br />
-                  위도/경도 직접 입력도 가능합니다
-                </p>
-              </div>
-              <div className={`rounded-2xl border p-3 space-y-2 ${!excelDownloaded ? 'border-[#004EA2] bg-[#F0F9FF]' : 'border-[#E2E8F0] opacity-60'}`}>
+            <div className="bg-white rounded-2xl border border-[#E2E8F0] overflow-hidden">
+              {/* 헤더 — 항상 표시 */}
+              <button
+                onClick={() => setUploadPanelOpen(p => !p)}
+                className="w-full flex items-center justify-between px-4 py-3 hover:bg-[#F7F8FA] transition-colors">
                 <div className="flex items-center gap-2">
-                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${!excelDownloaded ? 'bg-[#004EA2] text-white' : 'bg-[#10B981] text-white'}`}>
-                    {excelDownloaded ? '✓' : '1'}
-                  </div>
-                  <div>
-                    <p className="text-xs font-semibold text-[#1E293B]">양식 다운로드</p>
-                    <p className="text-[9px] text-[#64748B]">등원+하원 정류장 {allStops.length}개 포함</p>
-                  </div>
+                  <span className="text-xs font-bold text-[#1E293B]">좌표 일괄 입력</span>
+                  {uploadMsg && !uploadPanelOpen && (
+                    <span className="text-[10px] text-[#10B981] font-semibold">{uploadMsg}</span>
+                  )}
                 </div>
-                <button onClick={downloadTemplate}
-                  className="w-full py-2.5 rounded-xl text-xs font-bold bg-[#004EA2] text-white hover:bg-[#003580]">
-                  📥 등하원 통합 양식 다운로드
-                </button>
-                {excelDownloaded && (
-                  <div className="bg-[#FFFBEB] border border-[#FCD34D] rounded-xl p-2.5 space-y-1">
-                    <p className="text-[9px] font-bold text-[#92400E]">💡 작성 방법 (둘 중 하나만 입력)</p>
-                    <p className="text-[9px] text-[#78350F] leading-relaxed">
-                      · <b>주소</b> 칸: 실제 주소 입력 → 자동 변환<br />
-                      · <b>위도/경도</b> 칸: 좌표 직접 입력<br />
-                      · 방향/호차는 참고용 (수정 불필요)
-                    </p>
-                  </div>
-                )}
-              </div>
-              <div className={`rounded-2xl border p-3 space-y-2 ${excelDownloaded ? 'border-[#004EA2] bg-[#F0F9FF]' : 'border-[#E2E8F0] opacity-50'}`}>
-                <div className="flex items-center gap-2">
-                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${excelDownloaded ? 'bg-[#004EA2] text-white' : 'bg-[#E2E8F0] text-[#94A3B8]'}`}>2</div>
-                  <p className="text-xs font-semibold text-[#1E293B]">채운 파일 업로드</p>
+                <svg className={`w-3.5 h-3.5 text-[#94A3B8] transition-transform ${uploadPanelOpen ? 'rotate-180' : ''}`}
+                  fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              {/* 펼쳐진 내용 */}
+              {uploadPanelOpen && (
+                <div className="px-4 pb-4 space-y-2 border-t border-[#F1F5F9]">
+                  <p className="text-[10px] text-[#64748B] pt-3 leading-relaxed">
+                    주소 입력 시 위도/경도 자동 변환 · 좌표 직접 입력도 가능
+                  </p>
+                  <button onClick={downloadTemplate}
+                    className="w-full py-2.5 rounded-xl text-xs font-bold bg-white border border-[#E2E8F0] text-[#004EA2] hover:bg-[#EAF2FB] transition-colors">
+                    📥 양식 다운로드 ({allStops.length}개 정류장)
+                  </button>
+                  <button onClick={() => uploadRef.current?.click()} disabled={uploadGeocoding}
+                    className="w-full py-2.5 rounded-xl text-xs font-bold bg-[#004EA2] text-white hover:bg-[#003580] disabled:opacity-50 flex items-center justify-center gap-2 transition-colors">
+                    {uploadGeocoding
+                      ? <><div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />주소 변환 중...</>
+                      : '📤 좌표 파일 업로드'}
+                  </button>
+                  <input ref={uploadRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleUpload} />
+                  {uploadMsg && (
+                    <div className="border border-[#86EFAC] bg-[#DCFCE7] rounded-xl px-3 py-2 text-xs font-semibold text-[#166534] text-center">
+                      {uploadMsg}
+                    </div>
+                  )}
+                  {setStopsCount > 0 && (
+                    <button onClick={async () => { if (confirm(`설정된 좌표 ${setStopsCount}개를 모두 초기화할까요?`)) { await fetch('/api/campus/stop-coords', { method: 'DELETE' }); updateCoords({}) } }}
+                      className="w-full py-2 rounded-xl text-[10px] text-[#EF4444] border border-[#FECACA] hover:bg-[#FEF2F2]">
+                      좌표 전체 초기화
+                    </button>
+                  )}
                 </div>
-                <button onClick={() => uploadRef.current?.click()} disabled={!excelDownloaded || uploadGeocoding}
-                  className="w-full py-2.5 rounded-xl text-xs font-bold border-2 border-dashed border-[#004EA2] text-[#004EA2] hover:bg-[#EAF2FB] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
-                  {uploadGeocoding
-                    ? <><div className="w-3 h-3 border-2 border-[#004EA2] border-t-transparent rounded-full animate-spin" />주소 변환 중...</>
-                    : '📤 파일 선택하여 업로드'}
-                </button>
-                <input ref={uploadRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleUpload} />
-              </div>
-              {uploadMsg && (
-                <div className={`border rounded-xl px-3 py-2.5 text-xs font-semibold text-center ${uploadGeocoding ? 'bg-[#EFF6FF] border-[#BFDBFE] text-[#1D4ED8]' : 'bg-[#DCFCE7] border-[#86EFAC] text-[#166534]'}`}>
-                  {uploadMsg}
-                </div>
-              )}
-              {setStopsCount > 0 && (
-                <button onClick={() => { if (confirm(`설정된 좌표 ${setStopsCount}개를 모두 초기화할까요?`)) { updateCoords({}); setExcelDownloaded(false) } }}
-                  className="w-full py-2 rounded-xl text-[10px] text-[#EF4444] border border-[#FECACA] hover:bg-[#FEF2F2]">
-                  좌표 전체 초기화
-                </button>
               )}
             </div>
             <div className="space-y-1">
@@ -794,20 +908,29 @@ export default function RouteMapView() {
         <div ref={mapContainerRef} className="w-full h-full" />
 
         {/* 현재 노선 배지 */}
-        {panelView === 'route' && selectedSession && selectedBus && !loading && (
+        {panelView === 'route' && selectedSession && selectedBuses.length > 0 && !loading && (
           <div className="absolute top-3 left-3 z-[1000] pointer-events-none">
-            <div className="bg-white/95 rounded-xl shadow-md px-3 py-2 flex items-center gap-2 border border-[#E2E8F0]">
-              <span className="text-xs font-bold px-2 py-0.5 rounded-lg text-white"
+            <div className="bg-white/95 rounded-xl shadow-md px-3 py-2 flex items-center gap-2 border border-[#E2E8F0] flex-wrap max-w-xs">
+              <span className="text-xs font-bold px-2 py-0.5 rounded-lg text-white shrink-0"
                 style={{ background: getSessionColor(selectedSession) }}>
                 {selectedSession}
               </span>
-              <span className="text-xs font-bold" style={{ color: getBusColor(selectedBus, buses.findIndex(b => b.name === selectedBus)) }}>
-                {selectedBus}
-              </span>
-              <span className="text-xs text-[#64748B]">
-                {dir === 'arr' ? '등원' : '하원'} · {routeStops.filter(s => coords[s.name]).length}/{routeStops.length}
-              </span>
+              {selectedBuses.map(busName => (
+                <span key={busName} className="text-xs font-bold shrink-0"
+                  style={{ color: getBusColor(busName, buses.findIndex(b => b.name === busName)) }}>
+                  {busName}
+                </span>
+              ))}
+              <span className="text-xs text-[#64748B] shrink-0">{dir === 'arr' ? '등원' : '하원'}</span>
             </div>
+          </div>
+        )}
+
+        {/* DB 저장 중 표시 */}
+        {coordsSaving && (
+          <div className="absolute bottom-3 right-3 z-[1000] bg-white/95 rounded-xl shadow px-3 py-1.5 flex items-center gap-1.5 border border-[#E2E8F0] text-xs text-[#64748B]">
+            <div className="w-3 h-3 border-2 border-[#004EA2] border-t-transparent rounded-full animate-spin" />
+            저장 중...
           </div>
         )}
 
@@ -820,7 +943,9 @@ export default function RouteMapView() {
         )}
 
         {/* 좌표 미설정 안내 */}
-        {!loading && panelView === 'route' && routeStops.length > 0 && routeStops.every(s => !coords[s.name]) && !candidateStop && (
+        {!loading && panelView === 'route' && selectedBuses.length > 0 &&
+          Object.values(routeStopsByBus).flat().length > 0 &&
+          Object.values(routeStopsByBus).flat().every(s => !coords[s.name]) && !candidateStop && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="bg-white/95 rounded-2xl shadow-xl px-7 py-6 text-center max-w-xs">
               <p className="text-3xl mb-3">📍</p>

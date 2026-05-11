@@ -18,10 +18,25 @@ const safetyNavItems = [
   { href: '/settings', label: '설정', icon: '⚙️' },
 ]
 
+const campusStaffNavItems = [
+  { href: '/dashboard', label: '홈', icon: '📊' },
+  { href: '/campus/class-roster', label: '반편성', icon: '🏫' },
+  { href: '/campus/vehicles', label: '차량', icon: '🚌' },
+  { href: '/apply', label: '연차신청', icon: '✏️' },
+  { href: '/settings', label: '설정', icon: '⚙️' },
+]
+
 export default function BottomNav({ userPosition }: { userPosition?: string }) {
   const pathname = usePathname()
   const isSafety = userPosition?.includes('안전') || userPosition?.includes('POLY')
-  const navItems = isSafety ? safetyNavItems : defaultNavItems
+  const isCampusStaff =
+    !isSafety && (
+      userPosition?.includes('상담') ||
+      userPosition?.includes('KT') ||
+      userPosition?.includes('관리자') ||
+      userPosition?.includes('POLY안전')
+    )
+  const navItems = isSafety ? safetyNavItems : isCampusStaff ? campusStaffNavItems : defaultNavItems
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-[#E2E8F0] flex md:hidden z-50"

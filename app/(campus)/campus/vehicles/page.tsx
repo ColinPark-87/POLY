@@ -164,6 +164,13 @@ export default function VehiclesPage() {
   const todayStr = [today.getFullYear(), String(today.getMonth()+1).padStart(2,'0'), String(today.getDate()).padStart(2,'0')].join('-')
 
   const [tab, setTab] = useState<'master'|'today'|'approval'|'history'|'map'|'settings'>('master')
+  const [vehiclesRestricted, setVehiclesRestricted] = useState(false)
+
+  // ── 백업 ─────────────────────────────────────────────────────
+  const [backupModal, setBackupModal] = useState(false)
+  const [backups, setBackups] = useState<{ id: string; label: string; created_at: string }[]>([])
+  const [backupLoading, setBackupLoading] = useState(false)
+  const [backupSaving, setBackupSaving] = useState(false)
 
   // ── 공통 ─────────────────────────────────────────────────────
   const [month, setMonth] = useState('')
@@ -195,6 +202,7 @@ export default function VehiclesPage() {
   const [overrideLocMode, setOverrideLocMode] = useState<'select'|'new'>('select')
   const [overrideTime, setOverrideTime] = useState('')
   const [busFilter, setBusFilter] = useState('전체')
+  const [sessionFilter, setSessionFilter] = useState('전체')
 
   // ── 차량 설정 ─────────────────────────────────────────────────
   const [addBusModal, setAddBusModal] = useState(false)
@@ -284,6 +292,65 @@ export default function VehiclesPage() {
     setChangeRequests(d.requests ?? [])
     setPendingCount(d.pendingCount ?? 0)
     setRequestsLoading(false)
+  }, [])
+
+  async function openBackupModal() {
+    setBackupModal(true)
+    setBackupLoading(true)
+    const res = await fetch('/api/campus/backup')
+    const d = await res.json()
+    setBackups(d.backups ?? [])
+    setBackupLoading(false)
+  }
+
+  async function handleSaveBackup() {
+    setBackupSaving(true)
+    const now = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })
+    const res = await fetch('/api/campus/backup', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'create', label: now }),
+    })
+    const d = await res.json()
+    if (d.ok) setBackups(prev => [d.backup, ...prev])
+    setBackupSaving(false)
+  }
+
+  async function handleRestoreBackup(backupId: string, label: string) {
+    if (!confirm(`"${label}" 시점으로 복원하시겠습니까?\n현재 차량 스케줄 데이터가 덮어써집니다.`)) return
+    setSaving(true)
+    const res = await fetch('/api/campus/backup', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'restore', backup_id: backupId }),
+    })
+    const d = await res.json()
+    setSaving(false)
+    if (d.ok) {
+      alert('복원 완료')
+      setBackupModal(false)
+      loadMaster()
+    } else {
+      alert('복원 실패: ' + (d.error ?? ''))
+    }
+  }
+
+  async function handleDeleteBackup(backupId: string) {
+    if (!confirm('이 백업을 삭제하시겠습니까?')) return
+    await fetch('/api/campus/backup', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'delete', backup_id: backupId }),
+    })
+    setBackups(prev => prev.filter(b => b.id !== backupId))
+  }
+
+  useEffect(() => {
+    fetch('/api/campus/me')
+      .then(r => r.json())
+      .then(d => {
+        if (d.permissions?.vehiclesRestricted) {
+          setVehiclesRestricted(true)
+          setTab('today')
+        }
+      })
   }, [])
 
   useEffect(() => { if (tab === 'master') loadMaster() }, [tab, masterDir, month])
@@ -823,10 +890,11 @@ export default function VehiclesPage() {
       }
       return filtered
     }).filter(g => Object.keys(g.busMap).length > 0)
+    .filter(g => sessionFilter === '전체' || getRunLabel(g.session_name, todayDir).startsWith(sessionFilter))
     .sort((a, b) => {
-      const pa = getSessPriority(a.session_name, todayDir), pb = getSessPriority(b.session_name, todayDir)
-      if (pa !== pb) return pa - pb
-      return parseTimeMin(getRunTime(a.time_range, todayDir)) - parseTimeMin(getRunTime(b.time_range, todayDir))
+      const ta = parseTimeMin(getRunTime(a.time_range, todayDir)), tb = parseTimeMin(getRunTime(b.time_range, todayDir))
+      if (ta !== tb) return ta - tb
+      return getSessPriority(a.session_name, todayDir) - getSessPriority(b.session_name, todayDir)
     })
 
   return (
@@ -845,9 +913,11 @@ export default function VehiclesPage() {
         </div>
       </div>
 
-      {/* 4탭 */}
+      {/* 탭 */}
       <div className="flex gap-0 border-b border-[#E2E8F0] mb-4 overflow-x-auto">
-        {([['master','차량 관리'],['today','오늘 등하원'],['approval','변경 승인'],['history','변경기록'],['map','노선 지도'],['settings','차량 설정']] as const).map(([k, label]) => (
+        {([['master','차량 관리'],['today','오늘 등하원'],['approval','변경 승인'],['history','변경기록'],['map','노선 지도'],['settings','차량 설정']] as const)
+          .filter(([k]) => !vehiclesRestricted || k === 'today' || k === 'history' || k === 'map')
+          .map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)}
             className={`relative flex-shrink-0 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
               tab===k ? 'border-[#004EA2] text-[#004EA2]' : 'border-transparent text-[#64748B] hover:text-[#1E293B]'}`}>
@@ -865,7 +935,7 @@ export default function VehiclesPage() {
       {tab === 'master' && (
         <div>
           {/* 세션 필터 버튼 + 방향 */}
-          <div className="flex flex-wrap gap-1.5 mb-3">
+          <div className="flex flex-wrap gap-1.5 mb-3 items-center">
             {/* 등원/하원 */}
             {(['arr','dep'] as const).map(dir => (
               <button key={dir} onClick={() => setMasterDir(dir)}
@@ -885,6 +955,11 @@ export default function VehiclesPage() {
                 {f}
               </button>
             ))}
+            <div className="ml-auto">
+              <button onClick={openBackupModal} className="text-sm bg-white border border-[#E2E8F0] text-[#64748B] px-3 py-1.5 rounded-lg hover:bg-[#F7F8FA] transition-colors">
+                💾 백업
+              </button>
+            </div>
           </div>
 
           {masterLoading ? <Spinner /> : (
@@ -899,9 +974,9 @@ export default function VehiclesPage() {
               ) : mergeGroupsByLabel(masterGroups, masterDir)
                 .filter(g => sessMatchesFilter(g.session_name, sessFilter, masterDir))
                 .sort((a, b) => {
-                  const pa = getSessPriority(a.session_name, masterDir), pb = getSessPriority(b.session_name, masterDir)
-                  if (pa !== pb) return pa - pb
-                  return parseTimeMin(getRunTime(a.time_range, masterDir)) - parseTimeMin(getRunTime(b.time_range, masterDir))
+                  const ta = parseTimeMin(getRunTime(a.time_range, masterDir)), tb = parseTimeMin(getRunTime(b.time_range, masterDir))
+                  if (ta !== tb) return ta - tb
+                  return getSessPriority(a.session_name, masterDir) - getSessPriority(b.session_name, masterDir)
                 })
                 .map(group => (
                   <SessSection key={getRunLabel(group.session_name, masterDir)} group={group} dir={masterDir} showAddRider />
@@ -929,6 +1004,22 @@ export default function VehiclesPage() {
             ))}
             <span className="text-xs text-[#94A3B8] ml-auto">총 {todayTotal}명</span>
           </div>
+
+          {/* 세션 필터 탭 */}
+          {(() => {
+            const labels = [...new Set(mergeGroupsByLabel(todayGroups, todayDir).map(g => getRunLabel(g.session_name, todayDir).replace(/ ?(등원|하원)$/, '')))]
+            if (labels.length <= 1) return null
+            return (
+              <div className="flex flex-wrap gap-1.5 mb-3">
+                {['전체', ...labels].map(lbl => (
+                  <button key={lbl} onClick={() => setSessionFilter(lbl)}
+                    className={'px-3 py-1 rounded-lg text-xs font-semibold transition-colors ' + (sessionFilter === lbl ? 'bg-[#004EA2] text-white' : 'bg-[#F1F5F9] text-[#64748B]')}>
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+            )
+          })()}
 
           {/* 호차 필터 */}
           {todayBusNamesInUse.length > 1 && (
@@ -1860,6 +1951,52 @@ export default function VehiclesPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── 백업 모달 ────────────────────────────────────── */}
+      {backupModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-[#E2E8F0]">
+              <h2 className="font-bold text-[#1E293B]">차량 데이터 백업</h2>
+              <button onClick={() => setBackupModal(false)} className="text-[#94A3B8] hover:text-[#1E293B] text-xl">✕</button>
+            </div>
+            <div className="p-5 space-y-4 overflow-y-auto flex-1">
+              <button onClick={handleSaveBackup} disabled={backupSaving}
+                className="w-full bg-[#1e3a5f] text-white py-2.5 rounded-lg font-medium hover:bg-[#2c5f8a] disabled:opacity-50 transition-colors">
+                {backupSaving ? '저장 중...' : '💾 지금 시점 백업 저장'}
+              </button>
+              <p className="text-xs text-[#94A3B8]">백업에는 차량 스케줄(등원/하원 배차, 탑승 위치, 요일) 전체가 포함됩니다. 복원 시 현재 데이터를 덮어씁니다.</p>
+              <div className="border-t border-[#E2E8F0] pt-3">
+                <p className="text-xs text-[#64748B] mb-2 font-medium">저장된 백업 목록</p>
+                {backupLoading ? (
+                  <p className="text-sm text-[#94A3B8] text-center py-4">불러오는 중...</p>
+                ) : backups.length === 0 ? (
+                  <p className="text-sm text-[#94A3B8] text-center py-4">저장된 백업이 없습니다</p>
+                ) : (
+                  <div className="space-y-2">
+                    {backups.map(b => (
+                      <div key={b.id} className="flex items-center gap-2 p-2.5 bg-[#F8FAFC] rounded-lg">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-[#1E293B] truncate">{b.label}</p>
+                          <p className="text-xs text-[#94A3B8]">{new Date(b.created_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}</p>
+                        </div>
+                        <button onClick={() => handleRestoreBackup(b.id, b.label)} disabled={saving}
+                          className="text-xs text-[#2563EB] border border-[#BFDBFE] bg-[#EFF6FF] px-2.5 py-1 rounded-lg hover:bg-[#DBEAFE] disabled:opacity-50 transition-colors shrink-0">
+                          복원
+                        </button>
+                        <button onClick={() => handleDeleteBackup(b.id)}
+                          className="text-xs text-[#DC2626] border border-[#FECACA] bg-[#FEF2F2] px-2.5 py-1 rounded-lg hover:bg-[#FEE2E2] transition-colors shrink-0">
+                          삭제
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       )}

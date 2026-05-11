@@ -5,6 +5,8 @@ import BottomNav from '@/components/BottomNav'
 import MobileHeader from '@/components/MobileHeader'
 import EmailSetupBanner from '@/components/EmailSetupBanner'
 
+export const dynamic = 'force-dynamic'
+
 export default async function EmployeeLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -15,7 +17,7 @@ export default async function EmployeeLayout({ children }: { children: React.Rea
     .from('users')
     .select('name, position, role, email')
     .eq('id', user.id)
-    .single()
+    .maybeSingle()
 
   const userName = profile?.name ?? '사용자'
   const userPosition = profile?.position ?? '직원'

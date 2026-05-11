@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { resolvePermissions } from '@/lib/permissions'
 
 const DAYS = ['월', '화', '수', '목', '금'] as const
 type Day = typeof DAYS[number]
@@ -73,7 +74,23 @@ export async function GET(request: NextRequest) {
   if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
 
   const service = createServiceClient()
-  const { data: profile } = await service.from('users').select('campus_id, role').eq('id', user.id).single()
+  const { data: profile } = await service
+    .from('users')
+    .select('campus_id, role, position, perm_class_roster, perm_vehicles, perm_vehicles_restricted')
+    .eq('id', user.id)
+    .single()
+
+  const permissions = resolvePermissions({
+    role: profile?.role ?? 'employee',
+    position: profile?.position ?? null,
+    perm_class_roster: profile?.perm_class_roster ?? null,
+    perm_vehicles: profile?.perm_vehicles ?? null,
+    perm_vehicles_restricted: profile?.perm_vehicles_restricted ?? null,
+  })
+  if (!permissions.vehicles) {
+    return NextResponse.json({ error: '권한 없음' }, { status: 403 })
+  }
+
   const { searchParams } = new URL(request.url)
   let campusId: string | null | undefined = profile?.campus_id
   if (!campusId && profile?.role === 'hq_admin') campusId = searchParams.get('campus_id')
@@ -167,7 +184,10 @@ export async function GET(request: NextRequest) {
       } else {
         const minArr = getMinArrTime(session_name)
         if (minArr > 0) {
-          pickup_time = parseTimeMinNorm(rawPickupTime) >= minArr ? rawPickupTime : null
+          // 등원 시간 상한: 세션 시작 시간 이하여야 함 (초과 시 하원 시간이 잘못 저장된 것)
+          const sessStartMin = time_range ? parseTimeMinNorm(time_range.split('~')[0]?.trim() ?? '') : 9999
+          const tMin = parseTimeMinNorm(rawPickupTime)
+          pickup_time = (tMin >= minArr && (sessStartMin >= 9999 || tMin <= sessStartMin)) ? rawPickupTime : null
         } else if (session_name?.includes('유치부')) {
           // 유치부 등원: 아침 시간만 허용 (13:00 이후는 하원 시간이 잘못 저장된 것)
           pickup_time = parseTimeMinNorm(rawPickupTime) < 13 * 60 ? rawPickupTime : null
@@ -381,12 +401,19 @@ export async function POST(request: NextRequest) {
   const { action } = body
 
   // 세션명 기준 등하원 시간 유효성 검사
-  function validatePickupTime(session_name: string | null, pickup_time: string | null, dir: 'arr' | 'dep'): boolean {
+  function validatePickupTime(session_name: string | null, pickup_time: string | null, dir: 'arr' | 'dep', time_range?: string | null): boolean {
     if (!pickup_time || !session_name) return true
     if (dir === 'dep') return parseTimeMinNorm(pickup_time) >= getMinDepTime(session_name)
     const minArr = getMinArrTime(session_name)
     if (minArr === 0) return true  // 유치부 등 검사 안 함
-    return parseTimeMinNorm(pickup_time) >= minArr
+    const tMin = parseTimeMinNorm(pickup_time)
+    if (tMin < minArr) return false
+    // 등원 시간 상한: 세션 시작 시간 이하여야 함
+    if (time_range) {
+      const sessStartMin = parseTimeMinNorm(time_range.split('~')[0]?.trim() ?? '')
+      if (sessStartMin < 9999 && tMin > sessStartMin) return false
+    }
+    return true
   }
 
   if (action === 'set_override') {
@@ -428,14 +455,8 @@ export async function POST(request: NextRequest) {
     // session_name이 있으면 해당 세션 유형으로 필터링
     let targetSessionIds: string[]
     if (session_name) {
-      const matched = allSessRows.filter(s => {
-        if (session_name.includes('방과후')) return s.name.includes('방과후')
-        if (session_name.includes('유치부')) return s.name.includes('유치부') && !s.name.includes('방과후')
-        if (session_name.includes('매일반')) return s.name.includes('매일반')
-        if (session_name.includes('월수금') || session_name.includes('3일반')) return s.name.includes('월수금') || s.name.includes('3일반')
-        if (session_name.includes('화목') || session_name.includes('2일반')) return s.name.includes('화목') || s.name.includes('2일반')
-        return s.name === session_name
-      })
+      const targetLabel = getSessionLabel(session_name, dir)
+      const matched = allSessRows.filter(s => getSessionLabel(s.name, dir) === targetLabel)
       targetSessionIds = matched.length > 0 ? matched.map(s => s.id) : allSessRows.map(s => s.id)
     } else {
       targetSessionIds = allSessRows.map(s => s.id)
@@ -510,12 +531,17 @@ export async function POST(request: NextRequest) {
     if (pickup_time) {
       const { data: cls } = await service.from('classes').select('session_id').eq('id', class_id).single()
       if (cls) {
-        const { data: sess } = await service.from('class_sessions').select('name').eq('id', cls.session_id).single()
+        const { data: sess } = await service.from('class_sessions').select('name, time_range').eq('id', cls.session_id).single()
         const sessName = sess?.name ?? null
-        if (!validatePickupTime(sessName, pickup_time, dir)) {
+        const sessTimeRange = sess?.time_range ?? null
+        if (!validatePickupTime(sessName, pickup_time, dir, sessTimeRange)) {
+          const label = dir === 'dep' ? '하원' : '등원'
+          if (dir === 'arr' && sessTimeRange) {
+            const sessStart = sessTimeRange.split('~')[0]?.trim() ?? ''
+            return NextResponse.json({ error: `등원 시간 오류: ${sessName} 세션의 등원 시간은 세션 시작(${sessStart}) 이전이어야 합니다.` }, { status: 400 })
+          }
           const minMin = dir === 'dep' ? getMinDepTime(sessName) : getMinArrTime(sessName)
           const minStr = `${Math.floor(minMin / 60)}:${String(minMin % 60).padStart(2, '0')}`
-          const label = dir === 'dep' ? '하원' : '등원'
           return NextResponse.json({ error: `${label} 시간 오류: ${sessName} 세션의 최소 ${label} 시간(${minStr}) 이후여야 합니다.` }, { status: 400 })
         }
       }

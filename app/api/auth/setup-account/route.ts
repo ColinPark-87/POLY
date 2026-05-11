@@ -50,5 +50,6 @@ export async function POST(request: NextRequest) {
   const { error: loginErr } = await supabase.auth.signInWithPassword({ email, password })
   if (loginErr) return NextResponse.json({ error: loginErr.message }, { status: 401 })
 
-  return NextResponse.json({ ok: true, role: 'employee' })
+  const { data: updated } = await service.from('users').select('role, position').eq('id', record.id).single()
+  return NextResponse.json({ ok: true, role: updated?.role ?? 'employee', position: updated?.position ?? '' })
 }

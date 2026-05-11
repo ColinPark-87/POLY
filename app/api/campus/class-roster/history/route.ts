@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
   if (!campusId) return NextResponse.json({ error: '캠퍼스 없음' }, { status: 400 })
 
   const { data: logs } = await service.from('enrollment_history')
-    .select('id, student_name, type, class_name, effective_date, note, created_at')
+    .select('id, student_name, type, class_name, class_id, effective_date, note, created_at')
     .eq('campus_id', campusId)
     .order('created_at', { ascending: false })
     .limit(200)

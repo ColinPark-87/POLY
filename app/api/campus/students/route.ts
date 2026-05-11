@@ -47,3 +47,31 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({ student: data })
 }
+
+export async function PATCH(request: NextRequest) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
+
+  const service = createServiceClient()
+  const { data: profile } = await service.from('users').select('campus_id, position, role').eq('id', user.id).single()
+  const campusId = profile?.campus_id
+  if (!campusId) return NextResponse.json({ error: '캠퍼스 없음' }, { status: 400 })
+  if (profile?.role !== 'campus_admin' && !/상담/.test(profile?.position ?? ''))
+    return NextResponse.json({ error: '권한 없음' }, { status: 403 })
+
+  const body = await request.json()
+  const { id, name, english_name } = body
+  if (!id) return NextResponse.json({ error: 'id 필수' }, { status: 400 })
+  if (!name?.trim()) return NextResponse.json({ error: '이름 필수' }, { status: 400 })
+
+  const { data, error } = await service.from('campus_students')
+    .update({ name: name.trim(), english_name: english_name?.trim() || null })
+    .eq('id', id)
+    .eq('campus_id', campusId)
+    .select()
+    .single()
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  return NextResponse.json({ student: data })
+}

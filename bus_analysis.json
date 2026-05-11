@@ -1,0 +1,2312 @@
+{
+  "toRemove": [
+    {
+      "enrollmentId": "0b89512c-546c-459f-bf5a-3e8569295371",
+      "studentName": "이지성",
+      "label": "2일반",
+      "dir": "arr",
+      "bus": "7호차"
+    },
+    {
+      "enrollmentId": "d305f54d-0984-4574-8af8-ecc439121049",
+      "studentName": "이지성",
+      "label": "2일반",
+      "dir": "arr",
+      "bus": "7호차"
+    },
+    {
+      "enrollmentId": "0b89512c-546c-459f-bf5a-3e8569295371",
+      "studentName": "이지성",
+      "label": "2일반",
+      "dir": "dep",
+      "bus": "7호차"
+    },
+    {
+      "enrollmentId": "d305f54d-0984-4574-8af8-ecc439121049",
+      "studentName": "이지성",
+      "label": "2일반",
+      "dir": "dep",
+      "bus": "7호차"
+    },
+    {
+      "enrollmentId": "d872aad2-b9ab-4172-9127-f5d436b34516",
+      "studentName": "김도윤",
+      "label": "3일반",
+      "dir": "arr",
+      "bus": "7호차"
+    },
+    {
+      "enrollmentId": "73e8077a-6750-4d88-8fce-ad93f300dd67",
+      "studentName": "김민규",
+      "label": "3일반",
+      "dir": "arr",
+      "bus": "7호차"
+    },
+    {
+      "enrollmentId": "d872aad2-b9ab-4172-9127-f5d436b34516",
+      "studentName": "김도윤",
+      "label": "3일반",
+      "dir": "dep",
+      "bus": "7호차"
+    },
+    {
+      "enrollmentId": "eea05051-e610-4a82-ac8a-6289fa31261e",
+      "studentName": "홍연재",
+      "label": "3일반",
+      "dir": "dep",
+      "bus": "8호차"
+    },
+    {
+      "enrollmentId": "2444a2c9-147a-4cfc-8e5b-77c13ca36630",
+      "studentName": "김태인",
+      "label": "매일반",
+      "dir": "arr",
+      "bus": "3호차"
+    },
+    {
+      "enrollmentId": "c032fd4b-72fd-4378-b008-928581f7c8d5",
+      "studentName": "하이진",
+      "label": "매일반",
+      "dir": "arr",
+      "bus": "6호차"
+    },
+    {
+      "enrollmentId": "d1f68eac-d3a1-4283-bbb9-b5fba7025ffa",
+      "studentName": "정근서",
+      "label": "매일반",
+      "dir": "arr",
+      "bus": "7호차"
+    },
+    {
+      "enrollmentId": "c434aac6-b077-4ac4-84b7-305894bdcec9",
+      "studentName": "송다온",
+      "label": "매일반",
+      "dir": "dep",
+      "bus": "1호차"
+    },
+    {
+      "enrollmentId": "2444a2c9-147a-4cfc-8e5b-77c13ca36630",
+      "studentName": "김태인",
+      "label": "매일반",
+      "dir": "dep",
+      "bus": "2호차"
+    },
+    {
+      "enrollmentId": "d1f68eac-d3a1-4283-bbb9-b5fba7025ffa",
+      "studentName": "정근서",
+      "label": "매일반",
+      "dir": "dep",
+      "bus": "7호차"
+    },
+    {
+      "enrollmentId": "c032fd4b-72fd-4378-b008-928581f7c8d5",
+      "studentName": "하이진",
+      "label": "매일반",
+      "dir": "dep",
+      "bus": "7호차"
+    },
+    {
+      "enrollmentId": "bd5c6813-4d92-4561-a9f2-f7e8734ef874",
+      "studentName": "신건우",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "1호차"
+    },
+    {
+      "enrollmentId": "9ebe2ea0-4207-4ed1-83f5-7cd9504c511a",
+      "studentName": "신건우",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "1호차"
+    },
+    {
+      "enrollmentId": "d19e0500-ced1-4f73-b66c-0a8183b94ef2",
+      "studentName": "신건우",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "1호차"
+    },
+    {
+      "enrollmentId": "008e8470-c1df-4861-a643-60417cb3b024",
+      "studentName": "신동주",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "1호차"
+    },
+    {
+      "enrollmentId": "81e8588f-4aad-4deb-98d7-4c8611ea1383",
+      "studentName": "신동주",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "1호차"
+    },
+    {
+      "enrollmentId": "f870d290-8d18-4369-ae7e-a77c0afd5b40",
+      "studentName": "양세인",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "1호차"
+    },
+    {
+      "enrollmentId": "6fa9ff3b-c61d-448b-bcd6-6bc52d02b3f0",
+      "studentName": "양세인",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "1호차"
+    },
+    {
+      "enrollmentId": "ea50bea9-06ba-47d6-b521-a6d51326b79c",
+      "studentName": "이시훈",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "1호차"
+    },
+    {
+      "enrollmentId": "8d52ac43-0714-4f04-93b2-6457bb28d4ad",
+      "studentName": "이시훈",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "1호차"
+    },
+    {
+      "enrollmentId": "36c66386-6f3e-4719-9e66-9f083b529046",
+      "studentName": "장재이",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "1호차"
+    },
+    {
+      "enrollmentId": "789dc108-b13c-403e-99d4-fd163ad5bda5",
+      "studentName": "장재이",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "1호차"
+    },
+    {
+      "enrollmentId": "8a401d6b-91ca-4751-8d48-b1ffa1dcf69b",
+      "studentName": "김주안",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "2호차"
+    },
+    {
+      "enrollmentId": "d530675d-10e6-4977-8607-1eb710924532",
+      "studentName": "김주안",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "2호차"
+    },
+    {
+      "enrollmentId": "e3a000ba-7fb4-49f8-b23e-607cc4dd2c39",
+      "studentName": "김주안",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "2호차"
+    },
+    {
+      "enrollmentId": "15e187cb-7a18-4177-9f79-7e616a40583d",
+      "studentName": "김지안",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "2호차"
+    },
+    {
+      "enrollmentId": "7047a4c3-7086-487a-bfc6-83a6e5d517dc",
+      "studentName": "김지안",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "2호차"
+    },
+    {
+      "enrollmentId": "2cd840c2-2bc4-4671-8de5-3069521b490a",
+      "studentName": "김지안",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "2호차"
+    },
+    {
+      "enrollmentId": "c118f23a-e649-4f33-82f1-2db331534b6e",
+      "studentName": "김태안",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "2호차"
+    },
+    {
+      "enrollmentId": "cb7c119e-9061-4a36-a57d-5c5beff63422",
+      "studentName": "김태안",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "2호차"
+    },
+    {
+      "enrollmentId": "f38874f1-ecc5-43bb-9fb1-707c6e946176",
+      "studentName": "김태안",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "2호차"
+    },
+    {
+      "enrollmentId": "1861288e-fefc-4fa9-9a95-f528a328a833",
+      "studentName": "안유비",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "2호차"
+    },
+    {
+      "enrollmentId": "62956644-76e8-4a05-861b-ea1401943483",
+      "studentName": "안유비",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "2호차"
+    },
+    {
+      "enrollmentId": "40c5cee7-8238-4e8a-9b69-d9a7375a2bdb",
+      "studentName": "오현우",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "2호차"
+    },
+    {
+      "enrollmentId": "738ade4e-832f-461e-94ca-271dc1c5837d",
+      "studentName": "오현우",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "2호차"
+    },
+    {
+      "enrollmentId": "ea3a4dbc-1ba6-417b-b41c-7632154f6468",
+      "studentName": "오현우",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "2호차"
+    },
+    {
+      "enrollmentId": "86c3094d-1ddd-45e6-b289-83aad5689b5f",
+      "studentName": "김준서",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "3호차"
+    },
+    {
+      "enrollmentId": "e26e7313-2be3-487d-b93d-9b1628902a68",
+      "studentName": "김준서",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "3호차"
+    },
+    {
+      "enrollmentId": "2bbdcaad-b093-41f1-ae2f-0333f7bb784b",
+      "studentName": "김준서",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "3호차"
+    },
+    {
+      "enrollmentId": "b55263b1-2438-4bea-adf2-3e7db6c26c74",
+      "studentName": "박선하",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "3호차"
+    },
+    {
+      "enrollmentId": "fcfa1c33-36c0-4b79-89eb-ebb7ef7928e4",
+      "studentName": "유준상",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "3호차"
+    },
+    {
+      "enrollmentId": "36299d43-8676-4807-9c3b-bc7b29e6e28b",
+      "studentName": "유준상",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "3호차"
+    },
+    {
+      "enrollmentId": "0af0e0ce-7737-46ef-9c73-c2ae8c140855",
+      "studentName": "유준상",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "3호차"
+    },
+    {
+      "enrollmentId": "54471b8f-94ff-477f-af0e-63f12adb518b",
+      "studentName": "이승빈",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "3호차"
+    },
+    {
+      "enrollmentId": "3f3329ff-162f-407a-8b59-ae9147b843e8",
+      "studentName": "이승빈",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "3호차"
+    },
+    {
+      "enrollmentId": "0db7a19f-8243-44af-a377-93d559b76d24",
+      "studentName": "이승빈",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "3호차"
+    },
+    {
+      "enrollmentId": "f186200f-7ab2-4020-a90e-cf20c9605d8e",
+      "studentName": "이지아",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "3호차"
+    },
+    {
+      "enrollmentId": "14c3c749-4b3f-4d24-8d52-a8e803c663ca",
+      "studentName": "이지아",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "3호차"
+    },
+    {
+      "enrollmentId": "f23961c4-edbc-4d6f-bdcc-17c0fdd61915",
+      "studentName": "이지아",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "3호차"
+    },
+    {
+      "enrollmentId": "faf509df-ab87-468d-bb92-1154f7d45c5b",
+      "studentName": "이지아",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "3호차"
+    },
+    {
+      "enrollmentId": "ac54d32c-3941-4b6c-9277-0cde93f82f18",
+      "studentName": "임서하",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "3호차"
+    },
+    {
+      "enrollmentId": "0d921be1-032e-441b-8deb-9aaa3553098a",
+      "studentName": "임서하",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "3호차"
+    },
+    {
+      "enrollmentId": "4796fd7e-95d4-4eb3-b4f7-5c4338f2da17",
+      "studentName": "조하윤",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "3호차"
+    },
+    {
+      "enrollmentId": "1c78442d-720c-4b2e-bfb9-c5e09356adc3",
+      "studentName": "조하윤",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "3호차"
+    },
+    {
+      "enrollmentId": "3d19be7c-02ba-4442-a3b7-4b3a5c5c9d28",
+      "studentName": "조하윤",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "3호차"
+    },
+    {
+      "enrollmentId": "5c381097-261b-4f54-878a-c60d418740e4",
+      "studentName": "지서율",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "3호차"
+    },
+    {
+      "enrollmentId": "d198b6fe-b153-4bca-a340-72cd7aab5288",
+      "studentName": "지서율",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "3호차"
+    },
+    {
+      "enrollmentId": "5da5344c-289a-43b1-a18f-ea69a4d56ce4",
+      "studentName": "한휘",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "3호차"
+    },
+    {
+      "enrollmentId": "0fefd8c5-b570-46b4-99f7-f589346495f8",
+      "studentName": "김강민",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "5호차"
+    },
+    {
+      "enrollmentId": "1b0da2c6-8969-45b1-9ba7-43d079ae01df",
+      "studentName": "김강민",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "5호차"
+    },
+    {
+      "enrollmentId": "249624de-8347-498a-a085-509c3f543321",
+      "studentName": "김강민",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "5호차"
+    },
+    {
+      "enrollmentId": "a6cd3f9e-289f-4491-90f8-5c09e9ccf25d",
+      "studentName": "박은호",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "5호차"
+    },
+    {
+      "enrollmentId": "2eee53f5-d3e4-47bd-b4f7-62fc3ee05b2d",
+      "studentName": "박은호",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "5호차"
+    },
+    {
+      "enrollmentId": "d69852e5-a00a-4a2d-8e97-b2f21802684f",
+      "studentName": "박은호",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "5호차"
+    },
+    {
+      "enrollmentId": "06f2da07-bf08-424f-a4fd-9fb41e8234a8",
+      "studentName": "이도겸",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "5호차"
+    },
+    {
+      "enrollmentId": "527fa7b1-4db0-4fb6-a460-8d1f60ac5536",
+      "studentName": "이도겸",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "5호차"
+    },
+    {
+      "enrollmentId": "388a7d54-972a-4111-a467-d1d19349dcd2",
+      "studentName": "이도겸",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "5호차"
+    },
+    {
+      "enrollmentId": "f9646222-9896-4cf1-bedb-0958f1dce847",
+      "studentName": "이예림",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "5호차"
+    },
+    {
+      "enrollmentId": "1c67231e-4e3e-4795-9c52-c73e9070e6a9",
+      "studentName": "김윤",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "6호차"
+    },
+    {
+      "enrollmentId": "cdc64438-ce36-4876-855e-ae13e87cb102",
+      "studentName": "김윤",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "6호차"
+    },
+    {
+      "enrollmentId": "86cc0bb6-1d0e-4501-a0d3-f1e989121605",
+      "studentName": "박서준",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "6호차"
+    },
+    {
+      "enrollmentId": "cbf3e2bc-e93c-46ae-bc80-f129a65f7a35",
+      "studentName": "박서준",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "6호차"
+    },
+    {
+      "enrollmentId": "7ee62fb8-cdb9-435b-bdb8-dcf933b2a247",
+      "studentName": "박서준",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "6호차"
+    },
+    {
+      "enrollmentId": "1db52b03-c70c-4b1d-a0d4-51a3d2eedab0",
+      "studentName": "박서준",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "6호차"
+    },
+    {
+      "enrollmentId": "216f430e-2337-48a7-b63c-c6112486aa11",
+      "studentName": "서영인",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "6호차"
+    },
+    {
+      "enrollmentId": "9450e87b-32b5-4ade-ba6b-69fe30c37cbb",
+      "studentName": "서영인",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "6호차"
+    },
+    {
+      "enrollmentId": "de979c69-67fd-41c6-a675-0b733933e9a0",
+      "studentName": "이용호",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "6호차"
+    },
+    {
+      "enrollmentId": "2bf523d4-05f2-4f14-a3bc-9e96005925c9",
+      "studentName": "이용호",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "6호차"
+    },
+    {
+      "enrollmentId": "87c08be0-1cd0-4848-92ac-c80a066f3c7e",
+      "studentName": "이용호",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "6호차"
+    },
+    {
+      "enrollmentId": "582c270c-7b29-487c-88e4-e7fa1d46c9e7",
+      "studentName": "장유진",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "6호차"
+    },
+    {
+      "enrollmentId": "3d887a3d-d3d1-4fb5-ae51-ffc1149ffd04",
+      "studentName": "장유진",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "6호차"
+    },
+    {
+      "enrollmentId": "01201495-860a-4645-9d8f-0f146585bf7c",
+      "studentName": "진유현",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "6호차"
+    },
+    {
+      "enrollmentId": "fc8f2c51-993c-4f80-ae46-1354e394dd9c",
+      "studentName": "진유현",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "6호차"
+    },
+    {
+      "enrollmentId": "d5e6e584-5b77-4f78-9296-f39aa7342631",
+      "studentName": "한서아",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "6호차"
+    },
+    {
+      "enrollmentId": "092c238a-aa62-48c3-a1d4-e64caa19aaed",
+      "studentName": "한서아",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "6호차"
+    },
+    {
+      "enrollmentId": "7ae517c7-2948-40d4-ba38-f893ebeff7f7",
+      "studentName": "한서아",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "6호차"
+    },
+    {
+      "enrollmentId": "e5c4b058-9409-44dc-a82a-ada2391ed12a",
+      "studentName": "허윤겸",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "6호차"
+    },
+    {
+      "enrollmentId": "c82a0825-20ce-4799-bf14-5d9fc5da7f05",
+      "studentName": "허윤겸",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "6호차"
+    },
+    {
+      "enrollmentId": "66d7e5c2-6bda-43c9-8400-8e3a7099c085",
+      "studentName": "강민재",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "7호차"
+    },
+    {
+      "enrollmentId": "2972f064-d30d-4774-90b0-f7690a69f11f",
+      "studentName": "강민재",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "7호차"
+    },
+    {
+      "enrollmentId": "5174f35b-2b8e-429c-bba4-bb8b389d5040",
+      "studentName": "강민재",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "7호차"
+    },
+    {
+      "enrollmentId": "17f53d2c-a1c0-40c2-a829-2663ec04fd08",
+      "studentName": "권준범",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "7호차"
+    },
+    {
+      "enrollmentId": "5a49d596-f5c8-46b4-b245-452bff1e5453",
+      "studentName": "권준범",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "7호차"
+    },
+    {
+      "enrollmentId": "bb6006f4-5e8d-4c78-8f98-3b7625d9771f",
+      "studentName": "김민선",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "7호차"
+    },
+    {
+      "enrollmentId": "45169ebb-3ace-4cfb-b9c9-3a0fdfd2abe8",
+      "studentName": "김민선",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "7호차"
+    },
+    {
+      "enrollmentId": "86dc3dc9-6e46-4b16-b354-80aa05011f4d",
+      "studentName": "김태이",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "7호차"
+    },
+    {
+      "enrollmentId": "1504532d-7d82-4ff0-a3a3-d9eabb142b4f",
+      "studentName": "김태이",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "7호차"
+    },
+    {
+      "enrollmentId": "42c0e34a-d4cb-424f-9c19-b7c3edf1f1e1",
+      "studentName": "김태이",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "7호차"
+    },
+    {
+      "enrollmentId": "541c68f4-7b92-40fb-8039-dadf075ce367",
+      "studentName": "정유준",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "7호차"
+    },
+    {
+      "enrollmentId": "bcd399ae-2bcf-465f-aed4-cc660fdcd093",
+      "studentName": "한세아",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "7호차"
+    },
+    {
+      "enrollmentId": "3f212c48-eafe-436c-9e5f-31287cea9e8d",
+      "studentName": "한세아",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "7호차"
+    },
+    {
+      "enrollmentId": "38617ab4-7776-4316-a4d4-507153190bb8",
+      "studentName": "김건우",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "8호차"
+    },
+    {
+      "enrollmentId": "e24bd1db-ebba-42fa-ae70-a3b91a176b81",
+      "studentName": "김건우",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "8호차"
+    },
+    {
+      "enrollmentId": "3c0b930b-47ee-4652-a3ff-f7c09da2f847",
+      "studentName": "김건우",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "8호차"
+    },
+    {
+      "enrollmentId": "ca255251-f2c8-4d6b-9f4a-937fd8cc4560",
+      "studentName": "김태리",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "8호차"
+    },
+    {
+      "enrollmentId": "77472fa3-3ae8-426b-b13c-dee9bcbce9ca",
+      "studentName": "김태리",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "8호차"
+    },
+    {
+      "enrollmentId": "77eb50b2-a2e5-49bf-a717-c24ecf0f6df9",
+      "studentName": "김태리",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "8호차"
+    },
+    {
+      "enrollmentId": "5cce16ba-f0b7-4526-81b4-e4da1e6f8ddd",
+      "studentName": "박준수",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "8호차"
+    },
+    {
+      "enrollmentId": "deb3747b-71be-4cf3-ab5f-362f498f2ef3",
+      "studentName": "박준수",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "8호차"
+    },
+    {
+      "enrollmentId": "5b746beb-26b0-4d3e-8871-07599b7c9e5f",
+      "studentName": "박준수",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "8호차"
+    },
+    {
+      "enrollmentId": "f186200f-7ab2-4020-a90e-cf20c9605d8e",
+      "studentName": "이지아",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "8호차"
+    },
+    {
+      "enrollmentId": "14c3c749-4b3f-4d24-8d52-a8e803c663ca",
+      "studentName": "이지아",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "8호차"
+    },
+    {
+      "enrollmentId": "f23961c4-edbc-4d6f-bdcc-17c0fdd61915",
+      "studentName": "이지아",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "8호차"
+    },
+    {
+      "enrollmentId": "faf509df-ab87-468d-bb92-1154f7d45c5b",
+      "studentName": "이지아",
+      "label": "유치부",
+      "dir": "arr",
+      "bus": "8호차"
+    },
+    {
+      "enrollmentId": "008e8470-c1df-4861-a643-60417cb3b024",
+      "studentName": "신동주",
+      "label": "유치부",
+      "dir": "dep",
+      "bus": "1호차"
+    },
+    {
+      "enrollmentId": "81e8588f-4aad-4deb-98d7-4c8611ea1383",
+      "studentName": "신동주",
+      "label": "유치부",
+      "dir": "dep",
+      "bus": "1호차"
+    },
+    {
+      "enrollmentId": "8a401d6b-91ca-4751-8d48-b1ffa1dcf69b",
+      "studentName": "김주안",
+      "label": "유치부",
+      "dir": "dep",
+      "bus": "2호차"
+    },
+    {
+      "enrollmentId": "d530675d-10e6-4977-8607-1eb710924532",
+      "studentName": "김주안",
+      "label": "유치부",
+      "dir": "dep",
+      "bus": "2호차"
+    },
+    {
+      "enrollmentId": "e3a000ba-7fb4-49f8-b23e-607cc4dd2c39",
+      "studentName": "김주안",
+      "label": "유치부",
+      "dir": "dep",
+      "bus": "2호차"
+    },
+    {
+      "enrollmentId": "c118f23a-e649-4f33-82f1-2db331534b6e",
+      "studentName": "김태안",
+      "label": "유치부",
+      "dir": "dep",
+      "bus": "2호차"
+    },
+    {
+      "enrollmentId": "cb7c119e-9061-4a36-a57d-5c5beff63422",
+      "studentName": "김태안",
+      "label": "유치부",
+      "dir": "dep",
+      "bus": "2호차"
+    },
+    {
+      "enrollmentId": "f38874f1-ecc5-43bb-9fb1-707c6e946176",
+      "studentName": "김태안",
+      "label": "유치부",
+      "dir": "dep",
+      "bus": "2호차"
+    },
+    {
+      "enrollmentId": "1861288e-fefc-4fa9-9a95-f528a328a833",
+      "studentName": "안유비",
+      "label": "유치부",
+      "dir": "dep",
+      "bus": "2호차"
+    },
+    {
+      "enrollmentId": "62956644-76e8-4a05-861b-ea1401943483",
+      "studentName": "안유비",
+      "label": "유치부",
+      "dir": "dep",
+      "bus": "2호차"
+    },
+    {
+      "enrollmentId": "b55263b1-2438-4bea-adf2-3e7db6c26c74",
+      "studentName": "박선하",
+      "label": "유치부",
+      "dir": "dep",
+      "bus": "3호차"
+    },
+    {
+      "enrollmentId": "f186200f-7ab2-4020-a90e-cf20c9605d8e",
+      "studentName": "이지아",
+      "label": "유치부",
+      "dir": "dep",
+      "bus": "3호차"
+    },
+    {
+      "enrollmentId": "14c3c749-4b3f-4d24-8d52-a8e803c663ca",
+      "studentName": "이지아",
+      "label": "유치부",
+      "dir": "dep",
+      "bus": "3호차"
+    },
+    {
+      "enrollmentId": "f23961c4-edbc-4d6f-bdcc-17c0fdd61915",
+      "studentName": "이지아",
+      "label": "유치부",
+      "dir": "dep",
+      "bus": "3호차"
+    },
+    {
+      "enrollmentId": "faf509df-ab87-468d-bb92-1154f7d45c5b",
+      "studentName": "이지아",
+      "label": "유치부",
+      "dir": "dep",
+      "bus": "3호차"
+    },
+    {
+      "enrollmentId": "5c381097-261b-4f54-878a-c60d418740e4",
+      "studentName": "지서율",
+      "label": "유치부",
+      "dir": "dep",
+      "bus": "3호차"
+    },
+    {
+      "enrollmentId": "d198b6fe-b153-4bca-a340-72cd7aab5288",
+      "studentName": "지서율",
+      "label": "유치부",
+      "dir": "dep",
+      "bus": "3호차"
+    },
+    {
+      "enrollmentId": "8a1a96f5-3464-44af-942a-b7604819e008",
+      "studentName": "정지호",
+      "label": "유치부",
+      "dir": "dep",
+      "bus": "5호차"
+    },
+    {
+      "enrollmentId": "1c67231e-4e3e-4795-9c52-c73e9070e6a9",
+      "studentName": "김윤",
+      "label": "유치부",
+      "dir": "dep",
+      "bus": "6호차"
+    },
+    {
+      "enrollmentId": "cdc64438-ce36-4876-855e-ae13e87cb102",
+      "studentName": "김윤",
+      "label": "유치부",
+      "dir": "dep",
+      "bus": "6호차"
+    },
+    {
+      "enrollmentId": "86cc0bb6-1d0e-4501-a0d3-f1e989121605",
+      "studentName": "박서준",
+      "label": "유치부",
+      "dir": "dep",
+      "bus": "6호차"
+    },
+    {
+      "enrollmentId": "cbf3e2bc-e93c-46ae-bc80-f129a65f7a35",
+      "studentName": "박서준",
+      "label": "유치부",
+      "dir": "dep",
+      "bus": "6호차"
+    },
+    {
+      "enrollmentId": "7ee62fb8-cdb9-435b-bdb8-dcf933b2a247",
+      "studentName": "박서준",
+      "label": "유치부",
+      "dir": "dep",
+      "bus": "6호차"
+    },
+    {
+      "enrollmentId": "1db52b03-c70c-4b1d-a0d4-51a3d2eedab0",
+      "studentName": "박서준",
+      "label": "유치부",
+      "dir": "dep",
+      "bus": "6호차"
+    },
+    {
+      "enrollmentId": "d5e6e584-5b77-4f78-9296-f39aa7342631",
+      "studentName": "한서아",
+      "label": "유치부",
+      "dir": "dep",
+      "bus": "6호차"
+    },
+    {
+      "enrollmentId": "092c238a-aa62-48c3-a1d4-e64caa19aaed",
+      "studentName": "한서아",
+      "label": "유치부",
+      "dir": "dep",
+      "bus": "6호차"
+    },
+    {
+      "enrollmentId": "7ae517c7-2948-40d4-ba38-f893ebeff7f7",
+      "studentName": "한서아",
+      "label": "유치부",
+      "dir": "dep",
+      "bus": "6호차"
+    },
+    {
+      "enrollmentId": "bb6006f4-5e8d-4c78-8f98-3b7625d9771f",
+      "studentName": "김민선",
+      "label": "유치부",
+      "dir": "dep",
+      "bus": "7호차"
+    },
+    {
+      "enrollmentId": "45169ebb-3ace-4cfb-b9c9-3a0fdfd2abe8",
+      "studentName": "김민선",
+      "label": "유치부",
+      "dir": "dep",
+      "bus": "7호차"
+    },
+    {
+      "enrollmentId": "541c68f4-7b92-40fb-8039-dadf075ce367",
+      "studentName": "정유준",
+      "label": "유치부",
+      "dir": "dep",
+      "bus": "7호차"
+    }
+  ],
+  "fbBuses": {
+    "유치부": {
+      "arr": {
+        "1호차": [
+          "김나윤",
+          "김도율",
+          "김연서",
+          "이노엘",
+          "이리제",
+          "이소민"
+        ],
+        "2호차": [
+          "김채아",
+          "김현재",
+          "최서아",
+          "최서윤"
+        ],
+        "3호차": [
+          "권지호",
+          "김규리",
+          "문선재",
+          "박지우",
+          "손채민",
+          "신지유",
+          "한 휘",
+          "현지희"
+        ],
+        "5호차": [
+          "백서우",
+          "이서준",
+          "이예림(Elsa) * 등원만",
+          "정지호",
+          "조윤아",
+          "조준우"
+        ],
+        "6호차": [
+          "강리아",
+          "김도하",
+          "박서아",
+          "박시준",
+          "배서현",
+          "신해인",
+          "정유이",
+          "홍세이"
+        ],
+        "7호차": [
+          "강다온",
+          "김주현",
+          "류윤서",
+          "박서진",
+          "박우진",
+          "송유이"
+        ],
+        "8호차": [
+          "김하민",
+          "안리원",
+          "이유하"
+        ]
+      },
+      "dep": {
+        "1호차": [
+          "김나윤",
+          "김도율",
+          "김연서",
+          "신건우",
+          "양세인",
+          "이노엘",
+          "이리제",
+          "이소민",
+          "이시훈",
+          "장재이"
+        ],
+        "2호차": [
+          "김도율",
+          "김지안",
+          "김채아",
+          "김현재",
+          "박서준",
+          "신동주",
+          "오현우",
+          "최서아",
+          "최서윤"
+        ],
+        "3호차": [
+          "권지호",
+          "김규리",
+          "김준서",
+          "문선재",
+          "박지우",
+          "손주안",
+          "손채민",
+          "신지유",
+          "유준상",
+          "임서하",
+          "조하윤",
+          "한휘",
+          "현지희"
+        ],
+        "5호차": [
+          "김강민",
+          "김주안",
+          "김태안",
+          "박은호",
+          "백서우",
+          "이도겸",
+          "이예림",
+          "정지호  [월,화,수,목,금]",
+          "조윤아",
+          "조준우"
+        ],
+        "6호차": [
+          "강리아",
+          "김도하",
+          "김민선",
+          "박서아",
+          "박시준",
+          "배서현",
+          "서영인",
+          "신해인",
+          "이승빈",
+          "이용호",
+          "장유진",
+          "정유이",
+          "진유현",
+          "한채이 (2026년 3월) 한우준 동생",
+          "허윤겸",
+          "홍세이"
+        ],
+        "7호차": [
+          "강다온",
+          "강민재",
+          "권준범",
+          "김주현",
+          "김태이",
+          "류윤서",
+          "박서진",
+          "박우진",
+          "송유이",
+          "한세아"
+        ],
+        "8호차": [
+          "김건우",
+          "김태리",
+          "김하민",
+          "박준수",
+          "안리원",
+          "이유하",
+          "이지아"
+        ]
+      }
+    },
+    "매일반": {
+      "arr": {
+        "1호차": [
+          "박세인",
+          "송다온",
+          "한서율",
+          "홍시연"
+        ],
+        "2호차": [
+          "권민준 (Minjun Kwon) 월수금 3:10",
+          "서지민",
+          "이샤론",
+          "장주호"
+        ],
+        "3호차": [
+          "김주아 (Stella Kim) [월,수,금 3:10]",
+          "김태인 (Chloe Kim) [월,수,금 3:10] 승차만 상명초",
+          "김하윤",
+          "문선우",
+          "박정우",
+          "봉주한",
+          "서지민",
+          "유재준",
+          "이선예",
+          "이세연",
+          "주선호"
+        ],
+        "5호차": [
+          "구이현",
+          "유서연",
+          "이윤우",
+          "장인우",
+          "한채아"
+        ],
+        "6호차": [
+          "김민채",
+          "김민채  [월,수,금 3:10]",
+          "김예원 수요일 등원",
+          "김이안",
+          "김채아",
+          "박리환",
+          "윤서진",
+          "윤슬아",
+          "윤슬아 월, 수 등원만",
+          "이로원 [월,수,금 3:10]",
+          "이승원",
+          "이승호",
+          "이지오",
+          "정리하",
+          "차혜윰",
+          "차혜윰 [월, 수]",
+          "하이진 (2026년 3월) * 등원만 6호"
+        ],
+        "7호차": [
+          "김예원",
+          "김예원 [월수금 3:10]",
+          "문예준",
+          "서아인",
+          "서아인 [월,수,금 3:10]",
+          "안시연",
+          "이로원",
+          "이로이",
+          "이유진",
+          "정근서 [월,수,금 3:10]"
+        ],
+        "8호차": [
+          "김도현",
+          "문채윤",
+          "문채윤 [월,수,금 3:10]",
+          "백주원",
+          "안시온",
+          "임재희  [월수금 3:10]"
+        ]
+      },
+      "dep": {
+        "1호차": [
+          "김도현",
+          "박세인",
+          "신건우 * 유치부 특강, 3/12",
+          "신동주 * 유치부 특강",
+          "양세인 * 유치부 특강 3/17",
+          "이시훈 * 유치부 특강, 3/12",
+          "장재이 * 유치부 특강, 3/12",
+          "한서율",
+          "홍시연"
+        ],
+        "2호차": [
+          "김지안 * 유치부 특강, 3/12",
+          "김태인 (Chloe Kim)  월수금 3:10",
+          "안유비  * 유치부 특강, 3/12",
+          "오현우 * 유치부 특강, 3/12",
+          "이도겸",
+          "이샤론",
+          "이지오",
+          "장주호"
+        ],
+        "3호차": [
+          "김준서 * 유치부 특강, 3/12",
+          "김하윤",
+          "문선우",
+          "박선하 * 유치부 특강, 3/12",
+          "박정우",
+          "봉주한",
+          "서지민",
+          "윤서진",
+          "이선예",
+          "이세연",
+          "이승호",
+          "임서하 * 유치부 특강, 3/12",
+          "조하윤 * 유치부 특강, 3/12",
+          "주선호",
+          "지서율 * 유치부 특강, 3/12"
+        ],
+        "5호차": [
+          "김강민 * 유치부 특강, 3/12",
+          "김주안 * 유치부 특강, 3/12",
+          "김태안 * 유치부 특강, 3/12",
+          "박은호 * 유치부 특강, 3/12",
+          "서지민",
+          "이도겸 * 유치부 특강, 3/12",
+          "이로원",
+          "이로원 [수, 금]",
+          "이로이",
+          "이로이 [수]",
+          "이윤우",
+          "이지아 * 유치부 특강, 3/12",
+          "한채아"
+        ],
+        "6호차": [
+          "김민선 * 유치부 특강, 3/12",
+          "김민채",
+          "김민채  [월,수,금 3:10]",
+          "김예원",
+          "김예원 금요일 하원.",
+          "김이안",
+          "김채아",
+          "박리환",
+          "서아인",
+          "서아인 [월,수,금 3:10]",
+          "오나윤",
+          "윤슬아",
+          "이도겸",
+          "이로원 [월,수,금 3:10]",
+          "이승빈 * 유치부 특강, 3/12",
+          "이승원",
+          "이용호 * 유치부 특강, 3/12",
+          "장유진 * 유치부 특강,  3/17",
+          "정리하",
+          "한서율",
+          "허윤겸 * 유치부 특강, 3/12",
+          "홍시연"
+        ],
+        "7호차": [
+          "강민재 * 유치부 특강, 3/12",
+          "김예원",
+          "김예원 [월수금 3:10]",
+          "김태이 * 유치부 특강, 3/12",
+          "문예준",
+          "박주희",
+          "안시연",
+          "유재준",
+          "이로원",
+          "이로이",
+          "이유진",
+          "차혜윰",
+          "하이진 (2026년 3월) * 하원만 7호",
+          "한세아 * 유치부 특강, 3/12"
+        ],
+        "8호차": [
+          "구이현",
+          "김건우 * 유치부 특강, 3/12",
+          "김도현",
+          "김태리 * 유치부 특강, 3/12",
+          "문채윤",
+          "문채윤 [월,수,금 3:10]",
+          "박준수 * 유치부 특강, 3/12",
+          "백주원",
+          "안시온",
+          "유서연",
+          "유서연 [월,수,금 3:10] * 하원만",
+          "이유주",
+          "임재희",
+          "임재희  [월수금 3:10]",
+          "장인우"
+        ]
+      }
+    },
+    "3일반": {
+      "arr": {
+        "1호차": [
+          "김도아",
+          "박시우",
+          "유지안",
+          "윤찬영"
+        ],
+        "2호차": [
+          "권하를",
+          "김재이",
+          "김태준",
+          "박수아",
+          "염하준",
+          "장유진",
+          "장지우",
+          "진은우",
+          "최승민"
+        ],
+        "3호차": [
+          "권하를",
+          "김서아",
+          "김휘",
+          "박봄",
+          "윤채원",
+          "이지율",
+          "조아인",
+          "주서현",
+          "함채윤"
+        ],
+        "5호차": [
+          "권하진",
+          "박이준",
+          "여서준",
+          "오유",
+          "이강민",
+          "이도원",
+          "이윤설",
+          "이윤우",
+          "장유나",
+          "장유진",
+          "장이안",
+          "장지우",
+          "조윤성",
+          "최이섭"
+        ],
+        "6호차": [
+          "김조이",
+          "박서연",
+          "박서윤",
+          "안재현 (Jayden Ahn) 신규",
+          "윤서진",
+          "윤서훈",
+          "윤찬서",
+          "이예나",
+          "전여원",
+          "전여진",
+          "정윤우",
+          "최우혁"
+        ],
+        "7호차": [
+          "고준",
+          "김태율",
+          "서아민",
+          "안성민",
+          "안이준",
+          "유지호",
+          "전태성",
+          "황도훈"
+        ],
+        "8호차": [
+          "김리한",
+          "김서윤",
+          "김세흔",
+          "박재율",
+          "박하윤",
+          "심서아",
+          "오윤성",
+          "오주안",
+          "위서준",
+          "정현준",
+          "최세영",
+          "최수현"
+        ]
+      },
+      "dep": {
+        "1호차": [
+          "김도아",
+          "박시우",
+          "유지안",
+          "윤찬영"
+        ],
+        "2호차": [
+          "권나은",
+          "권하를",
+          "김재이",
+          "김태준",
+          "염하준",
+          "이다인",
+          "진은우",
+          "최승민",
+          "홍유나"
+        ],
+        "3호차": [
+          "김서아",
+          "김휘",
+          "박봄",
+          "손동후",
+          "유은우",
+          "유하진",
+          "윤채원",
+          "이지율",
+          "조아인",
+          "주서현",
+          "함채윤"
+        ],
+        "5호차": [
+          "권하진",
+          "권하진 화랑로 51길 17 화랑타운",
+          "박수아",
+          "박이준",
+          "여서준",
+          "오유",
+          "이강민",
+          "이도원",
+          "이윤설",
+          "이윤우",
+          "장유나",
+          "장유진",
+          "장이안",
+          "장지우",
+          "조윤성",
+          "최이섭"
+        ],
+        "6호차": [
+          "박서연",
+          "박서윤",
+          "안재현 (Jayden Ahn) 신규",
+          "윤서진",
+          "윤서훈",
+          "윤찬서",
+          "이예나",
+          "전여원",
+          "전여진",
+          "정윤우",
+          "최우혁",
+          "최윤아"
+        ],
+        "7호차": [
+          "고준",
+          "김민규",
+          "김조이",
+          "김태율",
+          "서아민",
+          "안성민",
+          "안이준",
+          "유지호",
+          "전태성",
+          "황도훈"
+        ],
+        "8호차": [
+          "김리한",
+          "김서윤",
+          "김세흔",
+          "박재율",
+          "박재의",
+          "박하윤",
+          "심서아",
+          "오윤성",
+          "오주안",
+          "위서준",
+          "정현준",
+          "최세영",
+          "최수현"
+        ]
+      }
+    },
+    "2일반": {
+      "arr": {
+        "1호차": [
+          "강리아",
+          "강메이슨",
+          "고승연",
+          "김현서",
+          "이서준",
+          "이재아",
+          "조수아"
+        ],
+        "2호차": [
+          "김서우",
+          "김이준",
+          "김준서",
+          "김지훈",
+          "방준서",
+          "심지용",
+          "정민재"
+        ],
+        "3호차": [
+          "유영서",
+          "유준우",
+          "이지성",
+          "이태윤"
+        ],
+        "5호차": [
+          "김도윤",
+          "김주아",
+          "이민준",
+          "이서인",
+          "이아윤",
+          "조윤재"
+        ],
+        "6호차": [
+          "권도환",
+          "김건",
+          "김민서",
+          "박준휘",
+          "서다은",
+          "임서윤",
+          "임세연",
+          "임지원",
+          "정윤우",
+          "정윤우 화요일만"
+        ],
+        "7호차": [
+          "김준서",
+          "안시연",
+          "엄한빈",
+          "이유진",
+          "전봄",
+          "전솔",
+          "조재연",
+          "황채현"
+        ],
+        "8호차": [
+          "김시온",
+          "김하윤",
+          "유준서",
+          "이하영",
+          "전서율"
+        ]
+      },
+      "dep": {
+        "1호차": [
+          "강메이슨",
+          "김현서",
+          "노유영",
+          "이서준",
+          "이재아",
+          "정다현",
+          "조수아",
+          "조재현"
+        ],
+        "2호차": [
+          "김서우",
+          "김이준",
+          "김지훈",
+          "방준서",
+          "심지용",
+          "정민재"
+        ],
+        "3호차": [
+          "유영서",
+          "유준우",
+          "이지성",
+          "이태윤"
+        ],
+        "5호차": [
+          "김도윤",
+          "김주아",
+          "김지완 하원만",
+          "이민준",
+          "이서인",
+          "이아윤",
+          "조윤재"
+        ],
+        "6호차": [
+          "김건",
+          "김민서",
+          "박준휘",
+          "방서진",
+          "서다은",
+          "임서윤",
+          "임세연",
+          "장하은",
+          "정윤우"
+        ],
+        "7호차": [
+          "김준서",
+          "안시연",
+          "엄한빈",
+          "이유진",
+          "임지원",
+          "전봄",
+          "전솔",
+          "조재연",
+          "최나원",
+          "최윤후",
+          "최윤후 *화요일만 탑승",
+          "황채현"
+        ],
+        "8호차": [
+          "권도환",
+          "김시온",
+          "김하윤",
+          "유준서",
+          "이하영",
+          "전서율",
+          "전재후"
+        ]
+      }
+    }
+  },
+  "supaBuses": {
+    "유치부": {
+      "arr": {
+        "1호차": [
+          "김나윤",
+          "김도율",
+          "김연서",
+          "신건우",
+          "신동주",
+          "양세인",
+          "이노엘",
+          "이리제",
+          "이시훈",
+          "장재이"
+        ],
+        "2호차": [
+          "김주안",
+          "김지안",
+          "김태안",
+          "김현재",
+          "안유비",
+          "오현우",
+          "최서아",
+          "최서윤"
+        ],
+        "3호차": [
+          "권지호",
+          "김규리",
+          "김준서",
+          "문선재",
+          "박선하",
+          "박지우",
+          "손채민",
+          "신지유",
+          "유준상",
+          "이승빈",
+          "이지아",
+          "임서하",
+          "조하윤",
+          "지서율",
+          "한휘",
+          "현지희"
+        ],
+        "7호차": [
+          "강다온",
+          "강민재",
+          "권준범",
+          "김민선",
+          "김주현",
+          "김태이",
+          "류윤서",
+          "박서진",
+          "박우진",
+          "송유이",
+          "정유준",
+          "한세아"
+        ],
+        "8호차": [
+          "김건우",
+          "김태리",
+          "김하민",
+          "박준수",
+          "안리원",
+          "이유하",
+          "이지아"
+        ],
+        "5호차": [
+          "김강민",
+          "박은호",
+          "백서우",
+          "이도겸",
+          "이서준",
+          "이예림",
+          "정지호",
+          "조윤아",
+          "조준우"
+        ],
+        "6호차": [
+          "강리아",
+          "김도하",
+          "김윤",
+          "박서아",
+          "박서준",
+          "박시준",
+          "배서현",
+          "서영인",
+          "신해인",
+          "이용호",
+          "장유진",
+          "정유이",
+          "진유현",
+          "한서아",
+          "허윤겸",
+          "홍세이"
+        ]
+      },
+      "dep": {
+        "1호차": [
+          "김나윤",
+          "김도율",
+          "김연서",
+          "신건우",
+          "신동주",
+          "양세인",
+          "이노엘",
+          "이리제",
+          "이시훈",
+          "장재이"
+        ],
+        "2호차": [
+          "김도율",
+          "김주안",
+          "김지안",
+          "김태안",
+          "김현재",
+          "박서준",
+          "신동주",
+          "안유비",
+          "오현우",
+          "최서아",
+          "최서윤"
+        ],
+        "3호차": [
+          "권지호",
+          "김규리",
+          "김준서",
+          "문선재",
+          "박선하",
+          "박지우",
+          "손채민",
+          "신지유",
+          "유준상",
+          "이지아",
+          "임서하",
+          "조하윤",
+          "지서율",
+          "한휘",
+          "현지희"
+        ],
+        "7호차": [
+          "강다온",
+          "강민재",
+          "권준범",
+          "김민선",
+          "김주현",
+          "김태이",
+          "류윤서",
+          "박서진",
+          "박우진",
+          "송유이",
+          "정유준",
+          "한세아"
+        ],
+        "8호차": [
+          "김건우",
+          "김태리",
+          "김하민",
+          "박준수",
+          "안리원",
+          "이유하",
+          "이지아"
+        ],
+        "5호차": [
+          "김강민",
+          "김주안",
+          "김태안",
+          "박은호",
+          "백서우",
+          "이도겸",
+          "이예림",
+          "정지호",
+          "조윤아",
+          "조준우"
+        ],
+        "6호차": [
+          "강리아",
+          "김도하",
+          "김민선",
+          "김윤",
+          "박서아",
+          "박서준",
+          "박시준",
+          "배서현",
+          "서영인",
+          "신해인",
+          "이승빈",
+          "이용호",
+          "장유진",
+          "정유이",
+          "진유현",
+          "한서아",
+          "허윤겸",
+          "홍세이"
+        ]
+      }
+    },
+    "3일반": {
+      "arr": {
+        "7호차": [
+          "고준",
+          "김도윤",
+          "김민규",
+          "김태율",
+          "서아민",
+          "안성민",
+          "안이준",
+          "유지호",
+          "전태성",
+          "황도훈"
+        ],
+        "8호차": [
+          "김리한",
+          "김서윤",
+          "김세흔",
+          "박재율",
+          "박하윤",
+          "심서아",
+          "오윤성",
+          "오주안",
+          "위서준",
+          "정현준",
+          "최세영",
+          "최수현"
+        ],
+        "5호차": [
+          "권하진",
+          "박이준",
+          "여서준",
+          "오유",
+          "이강민",
+          "이도원",
+          "이윤설",
+          "이윤우",
+          "장유나",
+          "장유진",
+          "장이안",
+          "장지우",
+          "조윤성",
+          "최이섭"
+        ],
+        "6호차": [
+          "김조이",
+          "박서연",
+          "박서윤",
+          "윤서진",
+          "윤서훈",
+          "윤찬서",
+          "이예나",
+          "전여원",
+          "전여진",
+          "정윤우",
+          "최우혁"
+        ],
+        "3호차": [
+          "권하를",
+          "김서아",
+          "김휘",
+          "박봄",
+          "윤채원",
+          "이지율",
+          "조아인",
+          "주서현",
+          "함채윤"
+        ],
+        "2호차": [
+          "권하를",
+          "김재이",
+          "김태준",
+          "박수아",
+          "염하준",
+          "장유진",
+          "장지우",
+          "진은우",
+          "최승민"
+        ],
+        "1호차": [
+          "김도아",
+          "박시우",
+          "유지안",
+          "윤찬영"
+        ]
+      },
+      "dep": {
+        "7호차": [
+          "고준",
+          "김도윤",
+          "김민규",
+          "김조이",
+          "김태율",
+          "서아민",
+          "안성민",
+          "안이준",
+          "유지호",
+          "전태성",
+          "황도훈"
+        ],
+        "8호차": [
+          "김리한",
+          "김서윤",
+          "김세흔",
+          "박재율",
+          "박재의",
+          "박하윤",
+          "심서아",
+          "오윤성",
+          "오주안",
+          "위서준",
+          "정현준",
+          "최세영",
+          "최수현",
+          "홍연재"
+        ],
+        "5호차": [
+          "권하진",
+          "박수아",
+          "박이준",
+          "여서준",
+          "오유",
+          "이강민",
+          "이도원",
+          "이윤설",
+          "이윤우",
+          "장유나",
+          "장유진",
+          "장이안",
+          "장지우",
+          "조윤성",
+          "최이섭"
+        ],
+        "6호차": [
+          "박서연",
+          "박서윤",
+          "윤서진",
+          "윤서훈",
+          "윤찬서",
+          "이예나",
+          "전여원",
+          "전여진",
+          "정윤우",
+          "최우혁",
+          "최윤아"
+        ],
+        "3호차": [
+          "김서아",
+          "김휘",
+          "박봄",
+          "손동후",
+          "유은우",
+          "유하진",
+          "윤채원",
+          "이지율",
+          "조아인",
+          "주서현",
+          "함채윤"
+        ],
+        "2호차": [
+          "권나은",
+          "권하를",
+          "김재이",
+          "김태준",
+          "염하준",
+          "이다인",
+          "진은우",
+          "최승민",
+          "홍유나"
+        ],
+        "1호차": [
+          "김도아",
+          "박시우",
+          "유지안",
+          "윤찬영"
+        ]
+      }
+    },
+    "2일반": {
+      "arr": {
+        "7호차": [
+          "김준서",
+          "안시연",
+          "엄한빈",
+          "이유진",
+          "이지성",
+          "전봄",
+          "전솔",
+          "조재연",
+          "황채현"
+        ],
+        "5호차": [
+          "김도윤",
+          "김주아",
+          "이민준",
+          "조윤재"
+        ],
+        "1호차": [
+          "강메이슨",
+          "김현서",
+          "이재아",
+          "조수아"
+        ],
+        "3호차": [
+          "유영서",
+          "유준우",
+          "이지성",
+          "이태윤"
+        ],
+        "8호차": [
+          "김시온",
+          "김하윤",
+          "유준서",
+          "이하영",
+          "전서율"
+        ],
+        "6호차": [
+          "권도환",
+          "김건",
+          "김민서",
+          "박준휘",
+          "서다은",
+          "임서윤",
+          "임세연",
+          "임지원",
+          "정윤우"
+        ],
+        "2호차": [
+          "김서우",
+          "김이준",
+          "김준서",
+          "정민재"
+        ]
+      },
+      "dep": {
+        "7호차": [
+          "김준서",
+          "안시연",
+          "엄한빈",
+          "이유진",
+          "이지성",
+          "임지원",
+          "전봄",
+          "전솔",
+          "조재연",
+          "최나원",
+          "최윤후",
+          "황채현"
+        ],
+        "5호차": [
+          "김도윤",
+          "김주아",
+          "이민준",
+          "조윤재"
+        ],
+        "1호차": [
+          "강메이슨",
+          "김현서",
+          "노유영",
+          "이재아",
+          "조수아",
+          "조재현"
+        ],
+        "3호차": [
+          "유영서",
+          "유준우",
+          "이지성",
+          "이태윤"
+        ],
+        "8호차": [
+          "권도환",
+          "김시온",
+          "김하윤",
+          "유준서",
+          "이하영",
+          "전서율",
+          "전재후"
+        ],
+        "6호차": [
+          "김건",
+          "김민서",
+          "박준휘",
+          "방서진",
+          "서다은",
+          "임서윤",
+          "임세연",
+          "정윤우"
+        ],
+        "2호차": [
+          "김서우",
+          "김이준",
+          "정민재"
+        ]
+      }
+    },
+    "매일반": {
+      "arr": {
+        "3호차": [
+          "김태인",
+          "김하윤",
+          "문선우",
+          "박정우",
+          "서지민",
+          "유재준",
+          "이선예",
+          "이세연",
+          "주선호"
+        ],
+        "6호차": [
+          "김민채",
+          "김이안",
+          "김채아",
+          "박리환",
+          "윤서진",
+          "윤슬아",
+          "이승원",
+          "이승호",
+          "이지오",
+          "정리하",
+          "차혜윰",
+          "하이진"
+        ],
+        "8호차": [
+          "김도현",
+          "문채윤",
+          "백주원",
+          "안시온"
+        ],
+        "7호차": [
+          "김예원",
+          "문예준",
+          "서아인",
+          "이로원",
+          "이로이",
+          "정근서"
+        ],
+        "5호차": [
+          "구이현",
+          "유서연",
+          "장인우",
+          "한채아"
+        ],
+        "2호차": [
+          "서지민",
+          "이샤론",
+          "장주호"
+        ],
+        "1호차": [
+          "박세인",
+          "송다온",
+          "한서율",
+          "홍시연"
+        ]
+      },
+      "dep": {
+        "3호차": [
+          "김하윤",
+          "문선우",
+          "박정우",
+          "서지민",
+          "윤서진",
+          "이선예",
+          "이세연",
+          "이승호",
+          "주선호"
+        ],
+        "6호차": [
+          "김민채",
+          "김예원",
+          "김이안",
+          "김채아",
+          "박리환",
+          "서아인",
+          "오나윤",
+          "윤슬아",
+          "이도겸",
+          "이승원",
+          "정리하",
+          "한서율",
+          "홍시연"
+        ],
+        "8호차": [
+          "구이현",
+          "김도현",
+          "문채윤",
+          "백주원",
+          "안시온",
+          "유서연",
+          "이유주",
+          "임재희",
+          "장인우"
+        ],
+        "1호차": [
+          "김도현",
+          "박세인",
+          "송다온",
+          "한서율",
+          "홍시연"
+        ],
+        "5호차": [
+          "서지민",
+          "이로원",
+          "이로이",
+          "한채아"
+        ],
+        "7호차": [
+          "김예원",
+          "문예준",
+          "박주희",
+          "유재준",
+          "이로원",
+          "이로이",
+          "정근서",
+          "차혜윰",
+          "하이진"
+        ],
+        "2호차": [
+          "김태인",
+          "이도겸",
+          "이샤론",
+          "이지오",
+          "장주호"
+        ]
+      }
+    }
+  }
+}

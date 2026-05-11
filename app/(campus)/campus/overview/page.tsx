@@ -1,6 +1,12 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import FullCalendar from '@fullcalendar/react'
+import dayGridPlugin from '@fullcalendar/daygrid'
+import koLocale from '@fullcalendar/core/locales/ko'
+import { LEAVE_TYPE_LABELS, type LeaveType } from '@/lib/types'
+import { downloadLeaveForm } from '@/lib/downloadLeaveForm'
 
 const CATS = ['원장', '관리자', 'KT', 'FT', '상담부', '기타'] as const
 type Cat = typeof CATS[number]
@@ -46,18 +52,63 @@ function Ring({ pct, color, size = 44 }: { pct: number; color: string; size?: nu
   )
 }
 
-const MONTHS = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월']
+const leaveTypes: LeaveType[] = ['annual', 'half_am', 'half_pm', 'quarter', 'sick', 'event', 'other']
+const DIRECT_DEPT_ORDER = ['원장', '관리자', '상담부', 'FT', 'KT', 'POLY안전선생님', '사서', '미화', '기타']
+
+interface ApprovalRequest {
+  id: string; type: LeaveType; start_date: string; end_date: string
+  days_used: number; reason: string | null; signature_data_url: string | null
+  created_at: string
+  users: { id: string; name: string; email: string; position: string } | null
+}
+
+interface DirectEmployee { id: string; name: string; position: string }
+interface DirectCalData {
+  campusLeaves: { type: LeaveType; start_date: string; end_date: string; users: { name: string } }[]
+  myLeaves: { type: LeaveType; start_date: string; end_date: string; status: string }[]
+  holidays: { date: string; name: string }[]
+}
+function leaveColor(type: LeaveType) {
+  if (type === 'half_am' || type === 'half_pm') return { bg: '#FFF7ED', border: '#FDBA74', text: '#C2410C' }
+  if (type === 'quarter') return { bg: '#EAF2FB', border: '#9BBFE8', text: '#003E83' }
+  return { bg: '#CFE0F4', border: '#93C5FD', text: '#002F65' }
+}
+function leaveTag(type: LeaveType) {
+  if (type === 'half_am') return '[오전]'
+  if (type === 'half_pm') return '[오후]'
+  return ''
+}
 
 export default function OverviewPage() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const [rows, setRows] = useState<BalanceRow[]>([])
   const [year, setYear] = useState(new Date().getFullYear())
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [tab, setTab] = useState<'overview'|'balances'>('overview')
+  const initTab = searchParams.get('tab') as 'overview'|'approvals'|'direct' | null
+  const [tab, setTab] = useState<'overview'|'approvals'|'direct'>(initTab ?? 'overview')
   const [editRow, setEditRow] = useState<BalanceRow | null>(null)
   const [editForm, setEditForm] = useState({ total_days: 0, carried_over: 0, extra_days: 0 })
   const [editLoading, setEditLoading] = useState(false)
-  const [expandedRow, setExpandedRow] = useState<string | null>(null)
+
+  // 연차 신청 관리 state
+  const [approvals, setApprovals] = useState<ApprovalRequest[]>([])
+  const [approvalsTab, setApprovalsTab] = useState<'pending'|'approved'>('pending')
+  const [approvalsLoading, setApprovalsLoading] = useState(false)
+  const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [noteMap, setNoteMap] = useState<Record<string, string>>({})
+  const [selectedSig, setSelectedSig] = useState<string | null>(null)
+
+  // 연차 직접입력 state
+  const [directEmployees, setDirectEmployees] = useState<DirectEmployee[]>([])
+  const [directForm, setDirectForm] = useState({ user_id: '', type: 'annual' as LeaveType, start_date: '', end_date: '', reason: '' })
+  const [directLoading, setDirectLoading] = useState(false)
+  const [directSuccess, setDirectSuccess] = useState(false)
+  const [directError, setDirectError] = useState('')
+  const [calEvents, setCalEvents] = useState<object[]>([])
+  const [empSearch, setEmpSearch] = useState('')
+  const [sortBy, setSortBy] = useState<'name'|'position'>('name')
 
   async function load(y: number) {
     setLoading(true)
@@ -68,6 +119,86 @@ export default function OverviewPage() {
   }
 
   useEffect(() => { load(year) }, [year])
+
+  async function loadApprovals(status: 'pending'|'approved') {
+    setApprovalsLoading(true)
+    const res = await fetch(`/api/campus/approvals?status=${status}`)
+    const d = await res.json()
+    setApprovals(d.requests ?? [])
+    setApprovalsLoading(false)
+  }
+
+  useEffect(() => { if (tab === 'approvals') loadApprovals(approvalsTab) }, [tab, approvalsTab])
+
+  async function handleApprovalAction(id: string, status: 'approved'|'rejected'|'cancelled') {
+    const labels: Record<string, string> = { approved: '승인', rejected: '반려', cancelled: '취소' }
+    if (!confirm(`이 신청을 ${labels[status]}하시겠습니까?`)) return
+    setActionLoading(id)
+    const res = await fetch(`/api/campus/approvals/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status, reviewer_note: noteMap[id] ?? null }),
+    })
+    setActionLoading(null)
+    if (res.ok) loadApprovals(approvalsTab)
+    else { const d = await res.json(); alert(d.error) }
+  }
+
+  useEffect(() => {
+    fetch('/api/campus/employees')
+      .then(r => r.json())
+      .then(d => setDirectEmployees((d.employees ?? []).filter((e: DirectEmployee & { is_active: boolean }) => e.is_active)))
+  }, [])
+
+  const filteredEmployees = directEmployees
+    .filter(e => !empSearch || e.name.includes(empSearch) || e.position.includes(empSearch))
+    .sort((a, b) => {
+      if (sortBy === 'position') {
+        const ai = DIRECT_DEPT_ORDER.indexOf(a.position) >= 0 ? DIRECT_DEPT_ORDER.indexOf(a.position) : 99
+        const bi = DIRECT_DEPT_ORDER.indexOf(b.position) >= 0 ? DIRECT_DEPT_ORDER.indexOf(b.position) : 99
+        if (ai !== bi) return ai - bi
+      }
+      return a.name.localeCompare(b.name, 'ko')
+    })
+
+  async function loadCalEvents(yr: string, month: string) {
+    const res = await fetch(`/api/calendar?year=${yr}&month=${month}`)
+    const data: DirectCalData = await res.json()
+    const ev: object[] = []
+    ;(data.campusLeaves ?? []).forEach(r => {
+      const c = leaveColor(r.type)
+      const tag = leaveTag(r.type)
+      ev.push({ title: `${r.users?.name ?? ''}${tag} · ${LEAVE_TYPE_LABELS[r.type]}`, start: r.start_date, end: r.end_date, backgroundColor: c.bg, borderColor: c.border, textColor: c.text })
+    })
+    ;(data.myLeaves ?? []).forEach(r => {
+      const tag = leaveTag(r.type)
+      ev.push({ title: `[나]${tag} ${LEAVE_TYPE_LABELS[r.type]}`, start: r.start_date, end: r.end_date, backgroundColor: '#10B981', borderColor: '#059669', textColor: '#fff' })
+    })
+    ;(data.holidays ?? []).forEach(h => {
+      ev.push({ title: h.name, start: h.date, backgroundColor: '#FEE2E2', borderColor: '#FCA5A5', textColor: '#DC2626', display: 'background' })
+    })
+    setCalEvents(ev)
+  }
+
+  async function handleDirectSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setDirectError('')
+    setDirectSuccess(false)
+    if (!directForm.user_id) { setDirectError('직원을 선택해주세요.'); return }
+    if (!directForm.start_date) { setDirectError('날짜를 입력해주세요.'); return }
+    setDirectLoading(true)
+    const res = await fetch('/api/campus/direct-entry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...directForm, end_date: directForm.end_date || directForm.start_date }),
+    })
+    const d = await res.json()
+    setDirectLoading(false)
+    if (!res.ok) { setDirectError(d.error); return }
+    setDirectSuccess(true)
+    setDirectForm(f => ({ ...f, user_id: '', start_date: '', end_date: '', reason: '' }))
+    load(year)
+  }
 
   function openEdit(row: BalanceRow) {
     setEditRow(row)
@@ -109,9 +240,32 @@ export default function OverviewPage() {
 
   return (
     <div className="max-w-full">
+      {/* 탭 — 최상단 */}
+      <div className="flex gap-0 border-b border-[#E2E8F0] mb-5 flex-wrap">
+        <button onClick={() => setTab('overview')}
+          className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${tab === 'overview' ? 'border-[#004EA2] text-[#004EA2]' : 'border-transparent text-[#64748B] hover:text-[#1E293B]'}`}>
+          연차 현황
+        </button>
+        <button onClick={() => router.push('/campus/balances')}
+          className="px-5 py-2.5 text-sm font-medium border-b-2 border-transparent text-[#64748B] hover:text-[#1E293B]">
+          잔여 관리
+        </button>
+        <button onClick={() => setTab('approvals')}
+          className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 ${tab === 'approvals' ? 'border-[#004EA2] text-[#004EA2]' : 'border-transparent text-[#64748B] hover:text-[#1E293B]'}`}>
+          연차 신청 관리
+          {approvalsTab === 'pending' && approvals.length > 0 && tab === 'approvals' && (
+            <span className="bg-[#EF4444] text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">{approvals.length}</span>
+          )}
+        </button>
+        <button onClick={() => setTab('direct')}
+          className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${tab === 'direct' ? 'border-[#004EA2] text-[#004EA2]' : 'border-transparent text-[#64748B] hover:text-[#1E293B]'}`}>
+          연차 직접입력
+        </button>
+      </div>
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
-        <h1 className="text-xl md:text-2xl font-bold text-[#1E293B]">전체 연차 현황</h1>
+        <h1 className="text-xl md:text-2xl font-bold text-[#1E293B]">통합 연차관리</h1>
         <div className="flex items-center gap-2 flex-wrap">
           <select value={year} onChange={e => setYear(parseInt(e.target.value))}
             className="border border-[#E2E8F0] rounded-xl px-3 py-2 text-sm focus:outline-none bg-white">
@@ -179,18 +333,6 @@ export default function OverviewPage() {
                 })}
               </div>
             </div>
-          </div>
-
-          {/* 탭 */}
-          <div className="flex gap-0 border-b border-[#E2E8F0] mb-4">
-            <button onClick={() => setTab('overview')}
-              className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${tab === 'overview' ? 'border-[#004EA2] text-[#004EA2]' : 'border-transparent text-[#64748B] hover:text-[#1E293B]'}`}>
-              연차 현황
-            </button>
-            <button onClick={() => setTab('balances')}
-              className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${tab === 'balances' ? 'border-[#004EA2] text-[#004EA2]' : 'border-transparent text-[#64748B] hover:text-[#1E293B]'}`}>
-              잔여 관리
-            </button>
           </div>
 
           {/* 연차 현황 탭 */}
@@ -281,79 +423,216 @@ export default function OverviewPage() {
           )}
           </>}
 
-          {/* 잔여 관리 탭 */}
-          {tab === 'balances' && (
-            <div className="space-y-2">
-              {filtered.map(row => {
-                const isOver = row.remaining < 0
-                const isExpanded = expandedRow === row.id
-                const colors = CAT_COLORS[getCat(row.position, row.role)]
-                return (
-                  <div key={row.id} className={`bg-white rounded-2xl border shadow-sm overflow-hidden transition-colors ${isOver ? 'border-[#FCA5A5]' : 'border-[#E2E8F0]'}`}>
-                    {/* 행 헤더 */}
-                    <button
-                      onClick={() => setExpandedRow(isExpanded ? null : row.id)}
-                      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-[#F7F8FA] text-left">
-                      <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0"
-                        style={{ backgroundColor: colors.bar }}>
-                        {row.name[0]}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-sm font-semibold text-[#1E293B]">{row.name}</span>
-                          <span className="text-[10px] text-[#94A3B8]">{row.position}</span>
-                          {isOver && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-[#FEE2E2] text-[#EF4444]">초과</span>}
-                        </div>
-                        {/* 미니 프로그레스바 */}
-                        <div className="flex items-center gap-2 mt-1">
-                          <div className="flex-1 h-1.5 bg-[#F1F5F9] rounded-full overflow-hidden">
-                            <div className="h-full rounded-full transition-all"
-                              style={{ width: `${Math.min(row.total > 0 ? (row.totalUsed / row.total) * 100 : 0, 100)}%`, backgroundColor: isOver ? '#EF4444' : colors.bar }} />
-                          </div>
-                          <span className="text-[10px] text-[#94A3B8] flex-shrink-0">{row.total}일 중 {fmtDays(row.totalUsed)}일 사용</span>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-4 flex-shrink-0 text-right">
+          {/* 연차 신청 관리 탭 */}
+          {tab === 'approvals' && (
+            <div className="max-w-4xl">
+              <div className="flex gap-2 mb-5">
+                <button onClick={() => setApprovalsTab('pending')}
+                  className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${approvalsTab === 'pending' ? 'bg-[#004EA2] text-white' : 'bg-white border border-[#E2E8F0] text-[#64748B] hover:bg-[#F7F8FA]'}`}>
+                  대기중 {approvalsTab === 'pending' && approvals.length > 0 ? `(${approvals.length})` : ''}
+                </button>
+                <button onClick={() => setApprovalsTab('approved')}
+                  className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${approvalsTab === 'approved' ? 'bg-[#059669] text-white' : 'bg-white border border-[#E2E8F0] text-[#64748B] hover:bg-[#F7F8FA]'}`}>
+                  승인완료 {approvalsTab === 'approved' && approvals.length > 0 ? `(${approvals.length})` : ''}
+                </button>
+              </div>
+              {approvalsLoading ? (
+                <div className="flex justify-center py-16"><div className="w-8 h-8 border-4 border-[#004EA2] border-t-transparent rounded-full animate-spin" /></div>
+              ) : approvals.length === 0 ? (
+                <div className="bg-white rounded-2xl p-12 text-center border border-[#E2E8F0]">
+                  <p className="text-3xl mb-3">{approvalsTab === 'pending' ? '✅' : '📋'}</p>
+                  <p className="text-[#64748B]">{approvalsTab === 'pending' ? '대기 중인 신청이 없습니다.' : '승인된 신청이 없습니다.'}</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {approvals.map(r => (
+                    <div key={r.id} className="bg-white rounded-2xl border border-[#E2E8F0] shadow-sm overflow-hidden">
+                      <div className="flex justify-between items-start p-4 md:p-5 border-b border-[#F1F5F9]">
                         <div>
-                          <p className="text-[9px] text-[#94A3B8]">잔여</p>
-                          <p className={`text-base font-bold ${isOver ? 'text-[#EF4444]' : 'text-[#10B981]'}`}>{fmtDays(row.remaining)}일</p>
+                          <p className="font-semibold text-[#1E293B]">{r.users?.name ?? '-'}</p>
+                          <p className="text-xs text-[#64748B]">{r.users?.position} · {r.users?.email}</p>
                         </div>
-                        <button onClick={e => { e.stopPropagation(); openEdit(row) }}
-                          className="text-xs text-[#004EA2] hover:bg-blue-50 px-2 py-1 rounded-lg border border-[#E2E8F0]">
-                          수정
-                        </button>
-                        <span className="text-[#94A3B8] text-xs">{isExpanded ? '▲' : '▼'}</span>
+                        <span className={`text-xs px-2.5 py-1 rounded-full font-medium shrink-0 ${approvalsTab === 'pending' ? 'bg-[#FEF3C7] text-[#D97706]' : 'bg-[#D1FAE5] text-[#059669]'}`}>
+                          {approvalsTab === 'pending' ? '대기중' : '승인완료'}
+                        </span>
                       </div>
-                    </button>
-
-                    {/* 월별 펼치기 */}
-                    {isExpanded && (
-                      <div className="border-t border-[#F1F5F9] px-4 py-3">
-                        <div className="grid grid-cols-6 sm:grid-cols-12 gap-1.5">
-                          {MONTHS.map((m, i) => {
-                            const used = row.monthly[i] ?? 0
-                            return (
-                              <div key={m} className={`rounded-lg p-1.5 text-center ${used > 0 ? 'bg-[#EAF2FB]' : 'bg-[#F7F8FA]'}`}>
-                                <p className="text-[9px] text-[#94A3B8]">{m}</p>
-                                <p className={`text-xs font-bold ${used > 0 ? 'text-[#004EA2]' : 'text-[#CBD5E1]'}`}>{used > 0 ? used : '-'}</p>
-                              </div>
-                            )
-                          })}
+                      <div className="p-4 md:p-5 space-y-2">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                          <div><p className="text-xs text-[#64748B]">종류</p><p className="font-medium">{LEAVE_TYPE_LABELS[r.type]}</p></div>
+                          <div><p className="text-xs text-[#64748B]">기간</p><p className="font-medium">{r.start_date}{r.start_date !== r.end_date ? ` ~ ${r.end_date}` : ''}</p></div>
+                          <div><p className="text-xs text-[#64748B]">일수</p><p className="font-medium">{r.type === 'quarter' ? 0.25 : r.days_used}일</p></div>
+                          <div><p className="text-xs text-[#64748B]">신청일</p><p className="font-medium">{r.created_at.slice(0, 10)}</p></div>
                         </div>
-                        <div className="flex gap-4 mt-2 text-[10px] text-[#64748B]">
-                          <span>연차 {fmtDays(row.annualDays)}일</span>
-                          <span>반차 {fmtDays(row.halfDays)}일</span>
-                          <span>반반차 {fmtDays(row.quarterDays)}일</span>
+                        {r.reason && <p className="text-sm text-[#64748B]">사유: {r.reason}</p>}
+                        <div className="flex items-center gap-3">
+                          {r.signature_data_url && (
+                            <button onClick={() => setSelectedSig(r.signature_data_url!)} className="text-xs text-[#004EA2] underline">서명 보기</button>
+                          )}
+                          <button
+                            onClick={() => downloadLeaveForm({ name: r.users?.name ?? '-', position: r.users?.position ?? '-', email: r.users?.email, typeLabel: LEAVE_TYPE_LABELS[r.type], start_date: r.start_date, end_date: r.end_date, days_used: r.type === 'quarter' ? 0.25 : r.days_used, reason: r.reason, created_at: r.created_at, signature_data_url: r.signature_data_url })}
+                            className="text-xs bg-[#EAF2FB] text-[#004EA2] hover:bg-[#CFE0F4] px-2.5 py-1 rounded-lg font-semibold">
+                            신청서 출력
+                          </button>
                         </div>
                       </div>
-                    )}
-                  </div>
-                )
-              })}
-              {filtered.length === 0 && <p className="text-sm text-[#64748B] text-center py-10">데이터가 없습니다.</p>}
+                      <div className="p-4 md:p-5 bg-[#F7F8FA] border-t border-[#F1F5F9] space-y-3">
+                        {approvalsTab === 'pending' && (
+                          <input type="text" placeholder="메모 (선택) — 반려 시 사유 입력"
+                            value={noteMap[r.id] ?? ''}
+                            onChange={e => setNoteMap(m => ({ ...m, [r.id]: e.target.value }))}
+                            className="w-full border border-[#E2E8F0] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2] bg-white" />
+                        )}
+                        {actionLoading === r.id ? (
+                          <p className="text-sm text-[#64748B] text-center py-2">처리 중...</p>
+                        ) : approvalsTab === 'pending' ? (
+                          <div className="flex gap-3">
+                            <button onClick={() => handleApprovalAction(r.id, 'rejected')}
+                              className="flex-1 border border-[#FCA5A5] text-[#DC2626] font-semibold py-2.5 rounded-xl hover:bg-[#FEF2F2] transition-colors text-sm">반려</button>
+                            <button onClick={() => handleApprovalAction(r.id, 'approved')}
+                              className="flex-1 bg-[#004EA2] hover:bg-[#003E83] text-white font-semibold py-2.5 rounded-xl transition-colors text-sm">승인</button>
+                          </div>
+                        ) : (
+                          <button onClick={() => handleApprovalAction(r.id, 'cancelled')}
+                            className="w-full border border-[#FCA5A5] text-[#DC2626] font-semibold py-2.5 rounded-xl hover:bg-[#FEF2F2] transition-colors text-sm">승인 취소</button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
+
+          {/* 연차 직접입력 탭 */}
+          {tab === 'direct' && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* 캠퍼스 캘린더 */}
+              <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-sm overflow-hidden">
+                <div className="px-4 py-3 border-b border-[#F1F5F9] flex items-center justify-between">
+                  <h2 className="text-sm font-semibold text-[#1E293B]">캠퍼스 캘린더</h2>
+                  <div className="flex gap-3 text-xs text-[#64748B]">
+                    <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-[#CFE0F4] border border-[#93C5FD] inline-block" />동료 연차</span>
+                    <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-[#10B981] inline-block" />내 일정</span>
+                    <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-[#FEE2E2] border border-[#FCA5A5] inline-block" />공휴일</span>
+                  </div>
+                </div>
+                <div className="p-3">
+                  <style>{`
+                    .direct-cal .fc-toolbar-title { font-size: 0.9rem; font-weight: 600; }
+                    .direct-cal .fc-col-header-cell-cushion { font-size: 0.72rem; }
+                    .direct-cal .fc-daygrid-day-number { font-size: 0.72rem; }
+                    .direct-cal .fc-event-title { font-size: 0.65rem; }
+                    .direct-cal .fc-day-sun .fc-daygrid-day-number { color: #DC2626; font-weight: 600; }
+                    .direct-cal .fc-day-sat .fc-daygrid-day-number { color: #004EA2; font-weight: 600; }
+                    .direct-cal .fc-col-header-cell.fc-day-sun { color: #DC2626; }
+                    .direct-cal .fc-col-header-cell.fc-day-sat { color: #004EA2; }
+                  `}</style>
+                  <div className="direct-cal">
+                    <FullCalendar
+                      plugins={[dayGridPlugin]}
+                      initialView="dayGridMonth"
+                      locale={koLocale}
+                      events={calEvents}
+                      datesSet={info => {
+                        const d = (info as { view: { currentStart: Date } }).view.currentStart
+                        loadCalEvents(String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, '0'))
+                      }}
+                      headerToolbar={{ left: 'prev,next', center: 'title', right: '' }}
+                      height="auto"
+                      dayMaxEvents={2}
+                      weekends={true}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* 입력 폼 */}
+              <div className="bg-white rounded-2xl p-4 md:p-6 border border-[#E2E8F0] shadow-sm">
+                <form onSubmit={handleDirectSubmit} className="space-y-4">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-sm font-semibold text-[#1E293B]">직원 선택</label>
+                      <div className="flex border border-[#E2E8F0] rounded-lg overflow-hidden text-xs">
+                        <button type="button" onClick={() => setSortBy('name')}
+                          className={`px-2.5 py-1 font-medium transition-colors ${sortBy === 'name' ? 'bg-[#1E293B] text-white' : 'text-[#64748B] hover:bg-[#F7F8FA]'}`}>
+                          가나다순
+                        </button>
+                        <button type="button" onClick={() => setSortBy('position')}
+                          className={`px-2.5 py-1 font-medium transition-colors ${sortBy === 'position' ? 'bg-[#1E293B] text-white' : 'text-[#64748B] hover:bg-[#F7F8FA]'}`}>
+                          직급별
+                        </button>
+                      </div>
+                    </div>
+                    <input type="text" value={empSearch} onChange={e => setEmpSearch(e.target.value)}
+                      placeholder="이름 또는 직급 검색..."
+                      className="w-full border border-[#E2E8F0] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2] mb-2" />
+                    <select value={directForm.user_id} onChange={e => setDirectForm(f => ({ ...f, user_id: e.target.value }))}
+                      size={6}
+                      className="w-full border border-[#E2E8F0] rounded-xl px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2] bg-white">
+                      <option value="">-- 직원 선택 --</option>
+                      {filteredEmployees.map(emp => (
+                        <option key={emp.id} value={emp.id}>[{emp.position}] {emp.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-[#1E293B] mb-2">휴무 종류</label>
+                    <select value={directForm.type} onChange={e => setDirectForm(f => ({ ...f, type: e.target.value as LeaveType }))}
+                      className="w-full border border-[#E2E8F0] rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2] bg-white">
+                      {leaveTypes.map(t => <option key={t} value={t}>{LEAVE_TYPE_LABELS[t]}</option>)}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-semibold text-[#1E293B] mb-2">시작일</label>
+                      <input type="date" value={directForm.start_date}
+                        onChange={e => setDirectForm(f => ({ ...f, start_date: e.target.value, end_date: e.target.value }))}
+                        required
+                        className="w-full border border-[#E2E8F0] rounded-xl px-3 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-[#1E293B] mb-2">종료일</label>
+                      <input type="date" value={directForm.end_date} min={directForm.start_date}
+                        onChange={e => setDirectForm(f => ({ ...f, end_date: e.target.value }))}
+                        className="w-full border border-[#E2E8F0] rounded-xl px-3 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-[#1E293B] mb-2">비고 (선택)</label>
+                    <input type="text" value={directForm.reason}
+                      onChange={e => setDirectForm(f => ({ ...f, reason: e.target.value }))}
+                      placeholder="사유 또는 메모"
+                      className="w-full border border-[#E2E8F0] rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]" />
+                  </div>
+                  {directError && <p className="text-[#EF4444] text-sm">{directError}</p>}
+                  {directSuccess && (
+                    <div className="bg-[#D1FAE5] border border-[#6EE7B7] rounded-xl px-4 py-3 text-sm text-[#059669] font-medium">
+                      ✅ 연차가 기록되었습니다.
+                    </div>
+                  )}
+                  <button type="submit" disabled={directLoading}
+                    className="w-full bg-[#004EA2] hover:bg-[#003E83] text-white font-semibold py-3 rounded-xl transition-colors disabled:opacity-50">
+                    {directLoading ? '저장 중...' : '직접 입력 저장'}
+                  </button>
+                </form>
+              </div>
+            </div>
+          )}
+
         </>
+      )}
+
+      {/* 서명 모달 */}
+      {selectedSig && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setSelectedSig(null)}>
+          <div className="bg-white rounded-2xl p-5 shadow-2xl max-w-sm w-full" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="font-semibold">전자서명</h3>
+              <button onClick={() => setSelectedSig(null)} className="text-2xl text-[#64748B] leading-none">×</button>
+            </div>
+            <img src={selectedSig} alt="서명" className="border border-[#E2E8F0] rounded-xl w-full" />
+          </div>
+        </div>
       )}
 
       {/* Edit modal */}

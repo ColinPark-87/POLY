@@ -38,14 +38,36 @@ export async function proxy(request: NextRequest) {
     )
     const { data: profile } = await adminClient
       .from('users')
-      .select('role')
+      .select('role, position')
       .eq('id', user.id)
-      .single()
+      .maybeSingle()
 
-    const role = profile?.role
+    const role = profile?.role ?? ''
+    const position = profile?.position ?? ''
 
-    if (path.startsWith('/campus') && role !== 'campus_admin' && role !== 'hq_admin') {
-      return NextResponse.redirect(new URL('/dashboard', request.url))
+    const isCampusAdmin = role === 'campus_admin' || role === 'hq_admin'
+    const isCampusStaffOnly =
+      !isCampusAdmin && (
+        position.includes('상담') ||
+        position.includes('KT') ||
+        position.includes('관리자') ||
+        position.includes('POLY안전')
+      )
+
+    if (path.startsWith('/campus')) {
+      if (!isCampusAdmin && !isCampusStaffOnly) {
+        // 일반 직원 — 캠퍼스 접근 불가
+        return NextResponse.redirect(new URL('/dashboard', request.url))
+      }
+      if (isCampusStaffOnly) {
+        // 상담부/관리자 등 — 개설반 현황, 차량 관리만 허용
+        const allowed =
+          path.startsWith('/campus/class-roster') ||
+          path.startsWith('/campus/vehicles')
+        if (!allowed) {
+          return NextResponse.redirect(new URL('/dashboard', request.url))
+        }
+      }
     }
 
     if (path.startsWith('/hq') && role !== 'hq_admin') {

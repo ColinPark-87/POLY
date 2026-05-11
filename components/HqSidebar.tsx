@@ -19,7 +19,6 @@ const navSections = [
   {
     title: '인사 · 연차',
     items: [
-      { href: '/hq/employees', label: '전체 직원', icon: '👥' },
       { href: '/hq/calendar', label: '통합 캘린더', icon: '📅' },
       { href: '/hq/leaves', label: '연차 신청 이력', icon: '📄' },
     ],

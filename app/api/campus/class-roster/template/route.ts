@@ -2,132 +2,101 @@ import { NextRequest, NextResponse } from 'next/server'
 import * as XLSX from 'xlsx'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 
-const DAYS = ['월', '화', '수', '목', '금']
+const DAYS_KO = ['월', '화', '수', '목', '금'] as const
+
+/** "09:40" → Excel 소수 (0.402777...) */
+function timeToExcel(t: string | undefined | null): number | '' {
+  if (!t) return ''
+  const m = t.match(/^(\d{1,2}):(\d{2})/)
+  if (!m) return ''
+  return (parseInt(m[1]) * 60 + parseInt(m[2])) / 1440
+}
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
 
-  const service = createServiceClient()
-  const { data: profile } = await service.from('users').select('campus_id').eq('id', user.id).single()
-  const campusId = profile?.campus_id
-
   const wb = XLSX.utils.book_new()
 
-  // ── 시트 1: 세션설정 ──────────────────────────────────────────
-  const sessHeaders = ['세션명', '운영월', '시작시간', '종료시간', '정렬순서']
-  const sessData = [
-    sessHeaders,
-    ['유치부', '2026년 6월', '13:00', '15:00', '1'],
-    ['방과후', '2026년 6월', '15:30', '18:00', '2'],
-    ['매일반', '2026년 6월', '15:30', '18:30', '3'],
-    ['월수금반', '2026년 6월', '15:30', '18:30', '4'],
-    ['화목반', '2026년 6월', '15:30', '18:30', '5'],
+  // ── ① 반 시트 ─────────────────────────────────────────────────
+  const banHeader: unknown[] = [
+    '세션', '운영시간', '반이름', '교실이름', 'KT', 'FT',
+    '학생 한글이름', '학생 영어이름', '차량탑승', '등원',
+    '월', '', '화', '', '수', '', '목', '', '금', '',
+    '하원',
+    '월', '', '화', '', '수', '', '목', '', '금', '',
   ]
-  const ws1 = XLSX.utils.aoa_to_sheet(sessData)
-  ws1['!cols'] = [{ wch: 22 }, { wch: 14 }, { wch: 11 }, { wch: 11 }, { wch: 10 }]
-  XLSX.utils.book_append_sheet(wb, ws1, '①세션설정')
 
-  // ── 시트 2: 반편성_차량 ───────────────────────────────────────
-  const arrHeaders = DAYS.flatMap(d => [`등원_${d}_호차`, `등원_${d}_장소`])
-  const depHeaders = DAYS.flatMap(d => [`하원_${d}_호차`, `하원_${d}_장소`])
-  const headers2 = [
-    '세션명', '레벨', '강의실(알파벳순)', '학생명', '영문명',
-    ...arrHeaders,
-    ...depHeaders,
-    '등원시간', '하원시간', '대기여부(대기/공백)',
+  const sampleRow: unknown[] = [
+    '유치부', '09:40~14:40', 'ECP5', 'America', '김KT', 'Liz',
+    '홍길동', 'Gildong Hong', '3호차', '',
+    '중계역 2번출구', timeToExcel('09:40'),
+    '중계역 2번출구', timeToExcel('09:40'),
+    '중계역 2번출구', timeToExcel('09:40'),
+    '중계역 2번출구', timeToExcel('09:40'),
+    '중계역 2번출구', timeToExcel('09:40'),
+    '',
+    '폴리앞', timeToExcel('14:40'),
+    '폴리앞', timeToExcel('14:40'),
+    '폴리앞', timeToExcel('14:40'),
+    '폴리앞', timeToExcel('14:40'),
+    '폴리앞', timeToExcel('14:40'),
   ]
-  const sampleRows = [
-    [
-      '유치부', 'ECP5', 'America', '홍길동', 'Gildong Hong',
-      '1호차', '중계역 2번출구', '1호차', '중계역 2번출구', '1호차', '중계역 2번출구', '1호차', '중계역 2번출구', '1호차', '중계역 2번출구',
-      '2호차', '폴리앞', '2호차', '폴리앞', '2호차', '폴리앞', '2호차', '폴리앞', '2호차', '폴리앞',
-      '13:00', '15:00', '',
-    ],
-    [
-      '매일반', 'MGT3A', 'Belgium', '김영희', 'Younghee Kim',
-      '3호차', '태릉입구역', '3호차', '태릉입구역', '3호차', '태릉입구역', '3호차', '태릉입구역', '3호차', '태릉입구역',
-      '5호차', '', '5호차', '', '5호차', '', '5호차', '', '5호차', '',
-      '15:30', '18:30', '',
-    ],
-    [
-      '화목반', 'ELP2', 'Canada', '박지훈', 'Jihun Park',
-      '2호차', '한진그랑빌', '', '', '2호차', '한진그랑빌', '', '', '2호차', '한진그랑빌',
-      '3호차', '', '', '', '3호차', '', '', '', '3호차', '',
-      '15:30', '18:30', '대기',
-    ],
-  ]
-  const ws2 = XLSX.utils.aoa_to_sheet([headers2, ...sampleRows])
-  ws2['!cols'] = headers2.map((_, i) => ({ wch: i < 5 ? 20 : 13 }))
-  XLSX.utils.book_append_sheet(wb, ws2, '②반편성_차량')
 
-  // ── 시트 3: 차량정보 ──────────────────────────────────────────
-  const busHeaders = ['호차명', '기사명', '기사연락처', '안전교사', '안전연락처', 'KT담당자', 'KT연락처']
-  const busData = [
-    busHeaders,
-    ['1호차', '김기사', '010-1234-5678', '박안전', '010-2345-6789', '이KT', '010-3456-7890'],
-    ['2호차', '이기사', '010-4567-8901', '최안전', '010-5678-9012', '', ''],
-    ['3호차', '박기사', '010-7890-1234', '', '', '', ''],
-  ]
-  const ws3 = XLSX.utils.aoa_to_sheet(busData)
-  ws3['!cols'] = busHeaders.map(() => ({ wch: 17 }))
-  XLSX.utils.book_append_sheet(wb, ws3, '③차량정보')
+  const banData = [banHeader, sampleRow]
 
-  // ── 시트 4: 정류장좌표 ────────────────────────────────────────
-  // 기존 수강 데이터에서 정류장 자동 추출 (없으면 예시 행 표시)
-  const coordHeaders = ['정류장명', '방향', '호차', '주소 (입력시 위도경도 자동변환)', '위도', '경도']
-  const coordRows: unknown[][] = [coordHeaders]
+  const wsBan = XLSX.utils.aoa_to_sheet(banData)
 
-  if (campusId) {
-    const { data: enrList } = await service
-      .from('class_enrollments')
-      .select('arr_schedule, dep_schedule')
-      .eq('campus_id', campusId)
-      .eq('is_waitlist', false)
-
-    const stopMap = new Map<string, { buses: Set<string>; directions: Set<string> }>()
-    for (const enr of enrList ?? []) {
-      for (const day of DAYS) {
-        const arrBus = (enr.arr_schedule as Record<string, string>)?.[day]
-        const arrLoc = (enr.arr_schedule as Record<string, string>)?.[`${day}_loc`]
-        if (arrBus && arrLoc) {
-          if (!stopMap.has(arrLoc)) stopMap.set(arrLoc, { buses: new Set(), directions: new Set() })
-          stopMap.get(arrLoc)!.buses.add(arrBus)
-          stopMap.get(arrLoc)!.directions.add('등원')
-        }
-        const depBus = (enr.dep_schedule as Record<string, string>)?.[day]
-        const depLoc = (enr.dep_schedule as Record<string, string>)?.[`${day}_loc`]
-        if (depBus && depLoc) {
-          if (!stopMap.has(depLoc)) stopMap.set(depLoc, { buses: new Set(), directions: new Set() })
-          stopMap.get(depLoc)!.buses.add(depBus)
-          stopMap.get(depLoc)!.directions.add('하원')
-        }
-      }
-    }
-
-    if (stopMap.size > 0) {
-      // 등원 → 하원 → 공통 순 정렬
-      const sorted = [...stopMap.entries()].sort((a, b) => {
-        const da = [...a[1].directions].join(''), db = [...b[1].directions].join('')
-        return da.localeCompare(db) || a[0].localeCompare(b[0])
-      })
-      for (const [name, info] of sorted) {
-        coordRows.push([name, [...info.directions].join(', '), [...info.buses].join(', '), '', '', ''])
+  // 시간 컬럼 포맷 (소수 → HH:MM 표시)
+  // 시간 컬럼 인덱스: 11,13,15,17,19,22,24,26,28,30 (0-indexed)
+  const timeCols = [11, 13, 15, 17, 19, 22, 24, 26, 28, 30]
+  const range = XLSX.utils.decode_range(wsBan['!ref'] ?? 'A1')
+  for (let R = 1; R <= range.e.r; R++) {
+    for (const C of timeCols) {
+      const addr = XLSX.utils.encode_cell({ r: R, c: C })
+      if (wsBan[addr] && typeof wsBan[addr].v === 'number') {
+        wsBan[addr].t = 'n'
+        wsBan[addr].z = 'HH:MM'
       }
     }
   }
 
-  if (coordRows.length === 1) {
-    // 기존 데이터 없음 — 예시 행
-    coordRows.push(['중계역 2번출구', '등원, 하원', '1호차, 2호차', '', '37.618530', '127.065030'])
-    coordRows.push(['태릉입구역', '하원', '3호차', '서울 노원구 태릉입구역', '', ''])
-    coordRows.push(['공릉동 주민센터', '등원', '2호차', '서울 노원구 공릉동 주민센터', '', ''])
-  }
+  wsBan['!cols'] = [
+    { wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 12 }, { wch: 8 }, { wch: 8 },
+    { wch: 12 }, { wch: 18 }, { wch: 8 }, { wch: 4 },
+    { wch: 24 }, { wch: 7 },
+    { wch: 24 }, { wch: 7 },
+    { wch: 24 }, { wch: 7 },
+    { wch: 24 }, { wch: 7 },
+    { wch: 24 }, { wch: 7 },
+    { wch: 4 },
+    { wch: 24 }, { wch: 7 },
+    { wch: 24 }, { wch: 7 },
+    { wch: 24 }, { wch: 7 },
+    { wch: 24 }, { wch: 7 },
+    { wch: 24 }, { wch: 7 },
+  ]
+  XLSX.utils.book_append_sheet(wb, wsBan, '반')
 
-  const ws4 = XLSX.utils.aoa_to_sheet(coordRows)
-  ws4['!cols'] = [{ wch: 30 }, { wch: 12 }, { wch: 22 }, { wch: 42 }, { wch: 14 }, { wch: 14 }]
-  XLSX.utils.book_append_sheet(wb, ws4, '④정류장좌표')
+  // ── ② 정류장별 주소 시트 ──────────────────────────────────────
+  const stopHeader = ['정류장 명', '주소']
+  const stopData: unknown[][] = [stopHeader]
+  stopData.push(['중계역 2번출구', '서울시 노원구 중계동 중계역'])
+  stopData.push(['폴리앞', '서울시 노원구 중계동 폴리어학원 앞'])
+  const wsStop = XLSX.utils.aoa_to_sheet(stopData)
+  wsStop['!cols'] = [{ wch: 30 }, { wch: 40 }]
+  XLSX.utils.book_append_sheet(wb, wsStop, '정류장별 주소')
+
+  // ── ③ 차량정보 시트 ───────────────────────────────────────────
+  const busHeader = ['호차명', '기사명', '기사연락처', 'POLY 안전선생님', '안전연락처', 'KT담당자', 'KT연락처']
+  const busData: unknown[][] = [busHeader]
+  busData.push(['1호차', '김기사', '010-1234-5678', '박안전', '010-2345-6789', '이KT', '010-3456-7890'])
+  busData.push(['2호차', '이기사', '010-4567-8901', '최안전', '010-5678-9012', '', ''])
+  busData.push(['3호차', '박기사', '010-7890-1234', '', '', '', ''])
+  const wsBus = XLSX.utils.aoa_to_sheet(busData)
+  wsBus['!cols'] = busHeader.map(() => ({ wch: 16 }))
+  XLSX.utils.book_append_sheet(wb, wsBus, '차량정보')
 
   const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })
   return new NextResponse(buf, {

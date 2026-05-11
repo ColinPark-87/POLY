@@ -83,6 +83,13 @@ export default function Sidebar({ userName, userPosition }: { userName: string; 
             <NavItem href="/vehicles" label="오늘 등하원" icon="🚌" />
           </div>
         )}
+        {(userPosition?.includes('상담') || userPosition?.includes('KT') || userPosition?.includes('관리자') || userPosition?.includes('POLY안전')) && (
+          <div>
+            <p className="text-[10px] font-semibold text-[#94A3B8] uppercase tracking-wider px-3 mb-1">캠퍼스</p>
+            <NavItem href="/campus/class-roster" label="개설반 현황" icon="🏫" />
+            <NavItem href="/campus/vehicles" label="차량 관리" icon="🚌" />
+          </div>
+        )}
         <div>
           <p className="text-[10px] font-semibold text-[#94A3B8] uppercase tracking-wider px-3 mb-1">계정</p>
           <NavItem href="/settings" label="내 설정" icon="⚙️" />

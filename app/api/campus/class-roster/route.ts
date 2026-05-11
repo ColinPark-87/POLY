@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { resolvePermissions } from '@/lib/permissions'
 
 // GET: 세션 목록 + 반 + 수강생 (월별)
 export async function GET(request: NextRequest) {
@@ -8,9 +9,24 @@ export async function GET(request: NextRequest) {
   if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
 
   const service = createServiceClient()
-  const { data: profile } = await service.from('users').select('campus_id').eq('id', user.id).single()
+  const { data: profile } = await service
+    .from('users')
+    .select('campus_id, role, position, perm_class_roster, perm_vehicles, perm_vehicles_restricted')
+    .eq('id', user.id)
+    .single()
   const campusId = profile?.campus_id
   if (!campusId) return NextResponse.json({ error: '캠퍼스 없음' }, { status: 400 })
+
+  const permissions = resolvePermissions({
+    role: profile?.role ?? 'employee',
+    position: profile?.position ?? null,
+    perm_class_roster: profile?.perm_class_roster ?? null,
+    perm_vehicles: profile?.perm_vehicles ?? null,
+    perm_vehicles_restricted: profile?.perm_vehicles_restricted ?? null,
+  })
+  if (!permissions.classRoster) {
+    return NextResponse.json({ error: '권한 없음' }, { status: 403 })
+  }
 
   const { searchParams } = new URL(request.url)
   const month = searchParams.get('month') // e.g. "2026년 4월"
@@ -36,7 +52,7 @@ export async function GET(request: NextRequest) {
 
   // 반 목록
   const { data: classes, error: clsErr } = await service
-    .from('classes').select('*').in('session_id', sessionIds).order('sort_order').order('created_at')
+    .from('classes').select('*').in('session_id', sessionIds).order('sort_order').order('id')
   if (clsErr) return NextResponse.json({ error: clsErr.message }, { status: 500 })
 
   const classIds = (classes ?? []).map(c => c.id)
@@ -66,10 +82,20 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
 
   const service = createServiceClient()
-  const { data: profile } = await service.from('users').select('campus_id, position, role').eq('id', user.id).single()
+  const { data: profile } = await service
+    .from('users')
+    .select('campus_id, role, position, perm_class_roster, perm_vehicles, perm_vehicles_restricted')
+    .eq('id', user.id).single()
   const campusId = profile?.campus_id
   if (!campusId) return NextResponse.json({ error: '캠퍼스 없음' }, { status: 400 })
-  if (profile?.role !== 'campus_admin' && !/상담/.test(profile?.position ?? ''))
+  const permissions = resolvePermissions({
+    role: profile?.role ?? 'employee',
+    position: profile?.position ?? null,
+    perm_class_roster: profile?.perm_class_roster ?? null,
+    perm_vehicles: profile?.perm_vehicles ?? null,
+    perm_vehicles_restricted: profile?.perm_vehicles_restricted ?? null,
+  })
+  if (!permissions.classRoster)
     return NextResponse.json({ error: '권한 없음' }, { status: 403 })
 
   const body = await request.json()
@@ -87,34 +113,30 @@ export async function POST(request: NextRequest) {
   if (action === 'add_class') {
     const { session_id, level, room, teacher, kt_teacher, color } = body
     const { data, error } = await service.from('classes').insert({
-      campus_id: campusId, session_id, level, room, teacher, color: color ?? '#3b82f6',
+      campus_id: campusId, session_id, level, room, teacher,
+      kt_teacher: kt_teacher || null,
+      color: color ?? '#3b82f6',
     }).select().single()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    // kt_teacher RPC로 별도 저장
-    if (kt_teacher && data?.id) {
-      await service.rpc('update_class_kt_teacher', {
-        p_id: data.id,
-        p_campus_id: campusId,
-        p_kt_teacher: kt_teacher,
-      })
-    }
     return NextResponse.json({ class: data })
   }
 
   if (action === 'update_class') {
     const { class_id, level, room, teacher, kt_teacher, color } = body
-    const { data, error } = await service.from('classes').update({ level, room, teacher, color })
-      .eq('id', class_id).eq('campus_id', campusId).select().single()
+    const updatePayload: Record<string, unknown> = { level, room, teacher, color }
+    if (kt_teacher !== undefined) updatePayload.kt_teacher = kt_teacher || null
+    const { error } = await service.from('classes').update(updatePayload)
+      .eq('id', class_id).eq('campus_id', campusId)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    // kt_teacher는 RPC로 별도 업데이트 (schema cache 우회)
-    if (kt_teacher !== undefined) {
-      await service.rpc('update_class_kt_teacher', {
-        p_id: class_id,
-        p_campus_id: campusId,
-        p_kt_teacher: kt_teacher || null,
-      })
-    }
-    return NextResponse.json({ class: data })
+    return NextResponse.json({ ok: true })
+  }
+
+  if (action === 'reorder_classes') {
+    const { orders } = body // [{id, sort_order}]
+    await Promise.all((orders as { id: string; sort_order: number }[]).map(({ id, sort_order }) =>
+      service.from('classes').update({ sort_order }).eq('id', id).eq('campus_id', campusId)
+    ))
+    return NextResponse.json({ ok: true })
   }
 
   if (action === 'delete_class') {
@@ -259,12 +281,11 @@ export async function POST(request: NextRequest) {
     const { enrollment_id, arr_schedule, dep_schedule, highlight_color } = body
     const updateData: Record<string, unknown> = { arr_schedule, dep_schedule }
     if (highlight_color !== undefined) updateData.highlight_color = highlight_color || null
-    const { data, error } = await service.from('class_enrollments')
+    const { error } = await service.from('class_enrollments')
       .update(updateData)
-      .eq('id', enrollment_id).eq('campus_id', campusId)
-      .select().single()
+      .eq('id', enrollment_id)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    return NextResponse.json({ enrollment: data })
+    return NextResponse.json({ ok: true })
   }
 
   if (action === 'copy_month') {

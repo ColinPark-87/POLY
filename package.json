@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "ship": "git push origin master && vercel --prod"
   },
   "dependencies": {
     "@fullcalendar/daygrid": "^6.1.20",
