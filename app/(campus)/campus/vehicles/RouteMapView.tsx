@@ -378,22 +378,49 @@ export default function RouteMapView({ campusId, campusName }: { campusId?: stri
     })
   }, [mapReady, candidateCoord, candidateStop])
 
-  // 티맵 경로 fetch (버스별, 좌표가 2개 이상일 때)
+  // 티맵 경로 fetch — 브라우저에서 직접 호출 (한국 IP 필요)
   useEffect(() => {
-    if (!selectedBuses.length) return
+    const appKey = process.env.NEXT_PUBLIC_TMAP_APP_KEY
+    if (!appKey || !selectedBuses.length) return
     const newRoutes: Record<string, [number, number][]> = {}
     let pending = 0
+
     for (const busName of selectedBuses) {
       const stops = (routeStopsByBus[busName] ?? []).filter(s => coords[s.name])
       if (stops.length < 2) continue
       pending++
-      const stopPayload = stops.map(s => ({ name: s.name, lat: coords[s.name].lat, lng: coords[s.name].lng }))
-      fetch('/api/tmap-route', {
+
+      const start = stops[0]
+      const end = stops[stops.length - 1]
+      const waypoints = stops.slice(1, -1)
+
+      const body: Record<string, string> = {
+        startX: String(coords[start.name].lng),
+        startY: String(coords[start.name].lat),
+        startName: start.name,
+        endX: String(coords[end.name].lng),
+        endY: String(coords[end.name].lat),
+        endName: end.name,
+        reqCoordType: 'WGS84GEO',
+        resCoordType: 'WGS84GEO',
+        searchOption: '0',
+      }
+      if (waypoints.length > 0) {
+        body.passList = waypoints.slice(0, 5).map(w => `${coords[w.name].lng},${coords[w.name].lat}`).join('_')
+      }
+
+      fetch('https://apis.openapi.sk.com/tmap/routes?version=1&format=json', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ stops: stopPayload }),
-      }).then(r => r.json()).then(d => {
-        if (d.coordinates?.length > 1) newRoutes[busName] = d.coordinates
+        headers: { appKey, 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams(body).toString(),
+      }).then(r => r.json()).then((data: any) => {
+        const pts: [number, number][] = []
+        for (const f of data.features ?? []) {
+          if (f.geometry?.type === 'LineString') {
+            for (const c of f.geometry.coordinates ?? []) pts.push([c[1], c[0]])
+          }
+        }
+        if (pts.length > 1) newRoutes[busName] = pts
       }).catch(() => {}).finally(() => {
         pending--
         if (pending === 0) setTmapRoutes(prev => ({ ...prev, ...newRoutes }))
