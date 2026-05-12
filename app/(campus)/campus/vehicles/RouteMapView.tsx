@@ -106,6 +106,7 @@ export default function RouteMapView({ campusId, campusName }: { campusId?: stri
 
   const [tmapRoutes, setTmapRoutes] = useState<Record<string, [number, number][]>>({})
   const [tmapLoading, setTmapLoading] = useState(false)
+  const [tmapDebug, setTmapDebug] = useState<string>('')
 
   const [batchLoading, setBatchLoading] = useState(false)
   const [batchProgress, setBatchProgress] = useState(0)
@@ -381,9 +382,12 @@ export default function RouteMapView({ campusId, campusName }: { campusId?: stri
   // 티맵 경로 fetch — 브라우저에서 직접 호출 (한국 IP 필요)
   useEffect(() => {
     const appKey = process.env.NEXT_PUBLIC_TMAP_APP_KEY
-    if (!appKey || !selectedBuses.length) return
+    if (!selectedBuses.length) return
+    if (!appKey) { setTmapDebug('❌ appKey 없음'); return }
+
     const newRoutes: Record<string, [number, number][]> = {}
     let pending = 0
+    setTmapDebug('⏳ 티맵 경로 요청 중...')
 
     for (const busName of selectedBuses) {
       const stops = (routeStopsByBus[busName] ?? []).filter(s => coords[s.name])
@@ -413,20 +417,25 @@ export default function RouteMapView({ campusId, campusName }: { campusId?: stri
         method: 'POST',
         headers: { appKey, 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams(body).toString(),
-      }).then(r => r.json()).then((data: any) => {
+      }).then(async r => {
+        const text = await r.text()
+        if (!r.ok) { setTmapDebug(`❌ HTTP ${r.status}: ${text.slice(0, 100)}`); return }
+        let data: any
+        try { data = JSON.parse(text) } catch { setTmapDebug(`❌ JSON 파싱 실패: ${text.slice(0, 100)}`); return }
         const pts: [number, number][] = []
         for (const f of data.features ?? []) {
           if (f.geometry?.type === 'LineString') {
             for (const c of f.geometry.coordinates ?? []) pts.push([c[1], c[0]])
           }
         }
-        if (pts.length > 1) newRoutes[busName] = pts
-      }).catch(() => {}).finally(() => {
+        if (pts.length > 1) { newRoutes[busName] = pts; setTmapDebug(`✅ ${busName}: ${pts.length}개 좌표`) }
+        else setTmapDebug(`⚠️ features: ${data.features?.length ?? 0}개, 좌표 없음`)
+      }).catch(e => { setTmapDebug(`❌ fetch 오류: ${String(e).slice(0, 100)}`) }).finally(() => {
         pending--
         if (pending === 0) setTmapRoutes(prev => ({ ...prev, ...newRoutes }))
       })
     }
-    if (pending === 0) setTmapRoutes({})
+    if (pending === 0) { setTmapRoutes({}); setTmapDebug('⚠️ 좌표 설정된 정류장 2개 미만') }
   }, [selectedBuses, routeStopsByBus, coords])
 
   // 노선 렌더 (선택된 모든 버스, 버스별 색상)
@@ -1177,6 +1186,15 @@ export default function RouteMapView({ campusId, campusName }: { campusId?: stri
                 </span>
               ))}
               <span className="text-xs text-[#64748B] shrink-0">{dir === 'arr' ? '등원' : '하원'}</span>
+            </div>
+          </div>
+        )}
+
+        {/* 티맵 디버그 */}
+        {tmapDebug && panelView === 'route' && selectedBuses.length > 0 && (
+          <div className="absolute bottom-3 left-3 z-[1000] pointer-events-none">
+            <div className="bg-black/75 text-white text-[10px] font-mono px-2 py-1 rounded-lg max-w-xs break-all">
+              TMAP: {tmapDebug}
             </div>
           </div>
         )}
