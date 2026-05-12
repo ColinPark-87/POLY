@@ -413,9 +413,9 @@ export default function RouteMapView({ campusId, campusName }: { campusId?: stri
         body.passList = waypoints.slice(0, 5).map(w => `${coords[w.name].lng},${coords[w.name].lat}`).join('_')
       }
 
-      fetch('https://apis.openapi.sk.com/tmap/routes?version=1&format=json', {
+      fetch(`https://apis.openapi.sk.com/tmap/routes?version=1&format=json&appKey=${encodeURIComponent(appKey)}`, {
         method: 'POST',
-        headers: { appKey, 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams(body).toString(),
       }).then(async r => {
         const text = await r.text()
