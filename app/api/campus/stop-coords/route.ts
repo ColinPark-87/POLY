@@ -53,9 +53,17 @@ export async function POST(request: NextRequest) {
 
   if (rows.length === 0) return NextResponse.json({ ok: true, saved: 0 })
 
+  // 기존 데이터 삭제 후 삽입 (upsert unique constraint 문제 방지)
+  const { error: delErr } = await service
+    .from('campus_stop_coords')
+    .delete()
+    .eq('campus_id', campusId)
+
+  if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 })
+
   const { error } = await service
     .from('campus_stop_coords')
-    .upsert(rows, { onConflict: 'campus_id,stop_name' })
+    .insert(rows)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 

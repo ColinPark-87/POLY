@@ -140,45 +140,35 @@ export default function RouteMapView({ campusId, campusName }: { campusId?: stri
 
   // DB에서 좌표 로드 (localStorage는 캐시 역할)
   useEffect(() => {
-    const schoolBase = campusId ? {} : { [SCHOOL_STOP.name]: { lat: SCHOOL_STOP.lat, lng: SCHOOL_STOP.lng } }
+    // 중계 캠퍼스: DB에 학원 좌표 없으면 하드코딩 기본값 사용 (DB 값이 있으면 DB 우선)
+    const schoolFallback = campusId ? {} : { [SCHOOL_STOP.name]: { lat: SCHOOL_STOP.lat, lng: SCHOOL_STOP.lng } }
     // 먼저 localStorage로 빠르게 표시
     try {
       const s = localStorage.getItem(coordsKey)
-      if (s) setCoords({ ...schoolBase, ...JSON.parse(s) })
-      else setCoords(schoolBase)
-    } catch { setCoords(schoolBase) }
-    // DB에서 최신 데이터 가져와 덮어쓰기
+      if (s) setCoords({ ...schoolFallback, ...JSON.parse(s) })
+      else setCoords(schoolFallback)
+    } catch { setCoords(schoolFallback) }
+    // DB에서 최신 데이터 가져와 덮어쓰기 (DB 값이 있으면 하드코딩보다 우선)
     fetch(`/api/campus/stop-coords${campusId ? `?campus_id=${campusId}` : ''}`)
       .then(r => r.ok ? r.json() : null)
       .then(d => {
         if (!d?.coords) return
-        const merged = { ...schoolBase, ...d.coords }
+        const merged = { ...schoolFallback, ...d.coords }
         setCoords(merged)
-        localStorage.setItem(coordsKey, JSON.stringify(d.coords))
+        localStorage.setItem(coordsKey, JSON.stringify(merged))
       })
       .catch(() => {})
   }, [])
 
   const updateCoords = useCallback(async (c: Record<string, { lat: number; lng: number }>) => {
-    let toSave: Record<string, { lat: number; lng: number }>
-    if (campusId) {
-      // 외부 캠퍼스: 캠퍼스 위치 포함 모든 좌표 저장
-      setCoords(c)
-      toSave = c
-    } else {
-      // 중계: 학원 좌표는 하드코딩이므로 DB 저장 제외
-      const { [SCHOOL_STOP.name]: _school, ...rest } = c
-      setCoords({ [SCHOOL_STOP.name]: { lat: SCHOOL_STOP.lat, lng: SCHOOL_STOP.lng }, ...rest })
-      toSave = rest
-    }
-    localStorage.setItem(coordsKey, JSON.stringify(toSave))
-    // DB 저장
+    setCoords(c)
+    localStorage.setItem(coordsKey, JSON.stringify(c))
     setCoordsSaving(true)
     try {
       await fetch(`/api/campus/stop-coords${campusId ? `?campus_id=${campusId}` : ''}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ coords: toSave }),
+        body: JSON.stringify({ coords: c }),
       })
     } catch {}
     setCoordsSaving(false)
