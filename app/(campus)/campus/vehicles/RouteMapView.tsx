@@ -66,8 +66,12 @@ interface KakaoResult { name: string; address: string; lat: number; lng: number 
 
 type PanelView = 'route' | 'coords'
 
-export default function RouteMapView({ campusId }: { campusId?: string }) {
+export default function RouteMapView({ campusId, campusName }: { campusId?: string; campusName?: string }) {
   const cqs = campusId ? `&campus_id=${campusId}` : ''
+  // campusId가 없으면 중계(hardcoded), 있으면 해당 캠퍼스 이름 사용 (없으면 null)
+  const effectiveSchoolName = campusId ? (campusName ?? null) : SCHOOL_STOP.name
+  // localStorage 키를 캠퍼스별로 분리 (캠퍼스 간 좌표 오염 방지)
+  const coordsKey = campusId ? `${COORDS_KEY}-${campusId}` : COORDS_KEY
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<any>(null)
   const markersRef = useRef<any[]>([])
@@ -94,6 +98,15 @@ export default function RouteMapView({ campusId }: { campusId?: string }) {
   const [candidateStop, setCandidateStop] = useState<string | null>(null)
   const [candidateCoord, setCandidateCoord] = useState<{ lat: number; lng: number } | null>(null)
 
+  const [manualCoord, setManualCoord] = useState<Record<string, { lat: string; lng: string }>>({})
+  const [searchOpen, setSearchOpen] = useState<Record<string, boolean>>({})
+  const [stopAddress, setStopAddress] = useState<Record<string, string>>({})
+  const [stopRename, setStopRename] = useState<Record<string, string>>({})
+  const [renaming, setRenaming] = useState<Record<string, boolean>>({})
+
+  const [tmapRoutes, setTmapRoutes] = useState<Record<string, [number, number][]>>({})
+  const [tmapLoading, setTmapLoading] = useState(false)
+
   const [batchLoading, setBatchLoading] = useState(false)
   const [batchProgress, setBatchProgress] = useState(0)
   const [uploadMsg, setUploadMsg] = useState('')
@@ -115,12 +128,21 @@ export default function RouteMapView({ campusId }: { campusId?: string }) {
     })
   }, [])
 
+  // 주소 로드 (localStorage)
+  const addressKey = `${coordsKey}-address`
+  useEffect(() => {
+    try {
+      const s = localStorage.getItem(addressKey)
+      if (s) setStopAddress(JSON.parse(s))
+    } catch {}
+  }, [addressKey])
+
   // DB에서 좌표 로드 (localStorage는 캐시 역할)
   useEffect(() => {
-    const schoolBase = { [SCHOOL_STOP.name]: { lat: SCHOOL_STOP.lat, lng: SCHOOL_STOP.lng } }
+    const schoolBase = campusId ? {} : { [SCHOOL_STOP.name]: { lat: SCHOOL_STOP.lat, lng: SCHOOL_STOP.lng } }
     // 먼저 localStorage로 빠르게 표시
     try {
-      const s = localStorage.getItem(COORDS_KEY)
+      const s = localStorage.getItem(coordsKey)
       if (s) setCoords({ ...schoolBase, ...JSON.parse(s) })
       else setCoords(schoolBase)
     } catch { setCoords(schoolBase) }
@@ -131,27 +153,35 @@ export default function RouteMapView({ campusId }: { campusId?: string }) {
         if (!d?.coords) return
         const merged = { ...schoolBase, ...d.coords }
         setCoords(merged)
-        localStorage.setItem(COORDS_KEY, JSON.stringify(d.coords))
+        localStorage.setItem(coordsKey, JSON.stringify(d.coords))
       })
       .catch(() => {})
   }, [])
 
   const updateCoords = useCallback(async (c: Record<string, { lat: number; lng: number }>) => {
-    // 학원 좌표 제외하고 저장
-    const { [SCHOOL_STOP.name]: _school, ...rest } = c
-    setCoords({ [SCHOOL_STOP.name]: { lat: SCHOOL_STOP.lat, lng: SCHOOL_STOP.lng }, ...rest })
-    localStorage.setItem(COORDS_KEY, JSON.stringify(rest))
+    let toSave: Record<string, { lat: number; lng: number }>
+    if (campusId) {
+      // 외부 캠퍼스: 캠퍼스 위치 포함 모든 좌표 저장
+      setCoords(c)
+      toSave = c
+    } else {
+      // 중계: 학원 좌표는 하드코딩이므로 DB 저장 제외
+      const { [SCHOOL_STOP.name]: _school, ...rest } = c
+      setCoords({ [SCHOOL_STOP.name]: { lat: SCHOOL_STOP.lat, lng: SCHOOL_STOP.lng }, ...rest })
+      toSave = rest
+    }
+    localStorage.setItem(coordsKey, JSON.stringify(toSave))
     // DB 저장
     setCoordsSaving(true)
     try {
       await fetch(`/api/campus/stop-coords${campusId ? `?campus_id=${campusId}` : ''}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ coords: rest }),
+        body: JSON.stringify({ coords: toSave }),
       })
     } catch {}
     setCoordsSaving(false)
-  }, [])
+  }, [campusId])
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -188,10 +218,9 @@ export default function RouteMapView({ campusId }: { campusId?: string }) {
       .map(([label, info]) => ({ label, color: getSessionColor(label), arr: info.arr, dep: info.dep }))
   }, [bothDirGroups])
 
-  // 세션 자동 선택
+  // 선택된 세션이 더 이상 존재하지 않을 때만 초기화 (자동 첫 선택 없음)
   useEffect(() => {
-    if (!sessionOptions.length) return
-    setSelectedSession(prev => (!prev || !sessionOptions.find(s => s.label === prev)) ? sessionOptions[0].label : prev)
+    setSelectedSession(prev => prev && !sessionOptions.find(s => s.label === prev) ? null : prev)
   }, [sessionOptions])
 
   // 선택 세션의 버스 목록
@@ -206,10 +235,10 @@ export default function RouteMapView({ campusId }: { campusId?: string }) {
     return buses.filter(b => names.has(b.name))
   }, [groups, dir, selectedSession, buses])
 
-  // 버스 자동 선택 (세션 바뀌면 전체 선택)
+  // 세션 바뀌면 현재 선택된 호차 중 유효하지 않은 것만 제거 (자동 전체선택 없음)
   useEffect(() => {
-    if (!sessionBuses.length) return
-    setSelectedBuses(sessionBuses.map(b => b.name))
+    const validNames = new Set(sessionBuses.map(b => b.name))
+    setSelectedBuses(prev => prev.filter(n => validNames.has(n)))
   }, [sessionBuses])
 
   function toggleBus(name: string) {
@@ -222,7 +251,7 @@ export default function RouteMapView({ campusId }: { campusId?: string }) {
   const routeStopsByBus = useMemo((): Record<string, RouteStop[]> => {
     if (!selectedSession) return {}
     const result: Record<string, RouteStop[]> = {}
-    const schoolStop: RouteStop = { name: SCHOOL_STOP.name, time: null, count: 0, studentNames: [] }
+    const schoolStop: RouteStop = { name: effectiveSchoolName ?? SCHOOL_STOP.name, time: null, count: 0, studentNames: [] }
     for (const busName of selectedBuses) {
       const locMap = new Map<string, { time: string | null; count: number; names: string[] }>()
       for (const g of groups) {
@@ -305,7 +334,12 @@ export default function RouteMapView({ campusId }: { campusId?: string }) {
   useEffect(() => {
     if (!mapReady || !mapRef.current) return
     const map = mapRef.current
-    const h = (e: any) => { if (candidateStop) setCandidateCoord({ lat: e.latlng.lat, lng: e.latlng.lng }) }
+    const h = (e: any) => {
+      if (!candidateStop) return
+      const { lat, lng } = e.latlng
+      setCandidateCoord({ lat, lng })
+      setManualCoord(prev => ({ ...prev, [candidateStop]: { lat: lat.toFixed(6), lng: lng.toFixed(6) } }))
+    }
     map.on('click', h)
     return () => map.off('click', h)
   }, [mapReady, candidateStop])
@@ -315,26 +349,58 @@ export default function RouteMapView({ campusId }: { campusId?: string }) {
     if (c) c.style.cursor = candidateStop ? 'crosshair' : ''
   }, [candidateStop])
 
-  // 후보 마커
+  // 후보 마커 (드래그 가능)
   useEffect(() => {
     if (!mapReady || !mapRef.current) return
     import('leaflet').then(L => {
       const map = mapRef.current; if (!map) return
       if (candidateMarkerRef.current) { map.removeLayer(candidateMarkerRef.current); candidateMarkerRef.current = null }
       if (!candidateCoord || !candidateStop) return
-      candidateMarkerRef.current = L.marker([candidateCoord.lat, candidateCoord.lng], {
+      const marker = L.marker([candidateCoord.lat, candidateCoord.lng], {
         icon: L.divIcon({
           className: '',
-          html: `<div style="display:flex;flex-direction:column;align-items:center">
+          html: `<div style="display:flex;flex-direction:column;align-items:center;cursor:grab">
             <div style="background:#FCD34D;border:3px solid #F59E0B;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 12px rgba(0,0,0,.4)">
               <div style="width:8px;height:8px;background:#92400E;border-radius:50%"></div></div>
             <div style="margin-top:3px;background:#1E293B;color:#fff;font-size:10px;font-weight:700;padding:2px 8px;border-radius:6px;white-space:nowrap;max-width:130px;overflow:hidden;text-overflow:ellipsis;box-shadow:0 2px 6px rgba(0,0,0,.3)">${candidateStop}</div>
           </div>`,
           iconSize: [30, 54], iconAnchor: [15, 15],
-        }), zIndexOffset: 1000,
+        }),
+        draggable: true,
+        zIndexOffset: 1000,
       }).addTo(map)
+      marker.on('dragend', () => {
+        const { lat, lng } = marker.getLatLng()
+        setCandidateCoord({ lat, lng })
+        setManualCoord(prev => ({ ...prev, [candidateStop]: { lat: lat.toFixed(6), lng: lng.toFixed(6) } }))
+      })
+      candidateMarkerRef.current = marker
     })
   }, [mapReady, candidateCoord, candidateStop])
+
+  // 티맵 경로 fetch (버스별, 좌표가 2개 이상일 때)
+  useEffect(() => {
+    if (!selectedBuses.length) return
+    const newRoutes: Record<string, [number, number][]> = {}
+    let pending = 0
+    for (const busName of selectedBuses) {
+      const stops = (routeStopsByBus[busName] ?? []).filter(s => coords[s.name])
+      if (stops.length < 2) continue
+      pending++
+      const stopPayload = stops.map(s => ({ name: s.name, lat: coords[s.name].lat, lng: coords[s.name].lng }))
+      fetch('/api/tmap-route', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stops: stopPayload }),
+      }).then(r => r.json()).then(d => {
+        if (d.coordinates?.length > 1) newRoutes[busName] = d.coordinates
+      }).catch(() => {}).finally(() => {
+        pending--
+        if (pending === 0) setTmapRoutes(prev => ({ ...prev, ...newRoutes }))
+      })
+    }
+    if (pending === 0) setTmapRoutes({})
+  }, [selectedBuses, routeStopsByBus, coords])
 
   // 노선 렌더 (선택된 모든 버스, 버스별 색상)
   useEffect(() => {
@@ -354,11 +420,17 @@ export default function RouteMapView({ campusId }: { campusId?: string }) {
         const pts: [number, number][] = stops.filter(s => coords[s.name]).map(s => [coords[s.name].lat, coords[s.name].lng])
         pts.forEach(p => allPts.push(p))
 
-        if (pts.length > 1) {
-          polylinesRef.current.push(L.polyline(pts, { color, weight: 5, opacity: 0.85 }).addTo(map))
-          for (let i = 0; i < pts.length - 1; i++) {
-            const mid: [number, number] = [(pts[i][0]+pts[i+1][0])/2, (pts[i][1]+pts[i+1][1])/2]
-            const angle = Math.atan2(pts[i+1][1]-pts[i][1], pts[i+1][0]-pts[i][0]) * 180 / Math.PI
+        // 티맵 경로가 있으면 도로 경로, 없으면 직선 폴백
+        const routePts: [number, number][] = tmapRoutes[busName] ?? pts
+
+        if (routePts.length > 1) {
+          polylinesRef.current.push(L.polyline(routePts, { color, weight: 5, opacity: 0.85 }).addTo(map))
+          // 방향 화살표는 중간 지점마다 표시
+          const arrowPts = tmapRoutes[busName] ? routePts.filter((_, i) => i % 8 === 4) : routePts
+          for (let i = 0; i < arrowPts.length - 1; i++) {
+            const cur = arrowPts[i], next = arrowPts[i + 1]
+            const mid: [number, number] = [(cur[0]+next[0])/2, (cur[1]+next[1])/2]
+            const angle = Math.atan2(next[1]-cur[1], next[0]-cur[0]) * 180 / Math.PI
             markersRef.current.push(L.marker(mid, {
               icon: L.divIcon({ className: '', html: `<div style="transform:rotate(${angle}deg);color:${color};font-size:16px;text-shadow:0 0 4px white">▶</div>`, iconSize:[16,16], iconAnchor:[8,8] }),
               interactive: false,
@@ -369,14 +441,14 @@ export default function RouteMapView({ campusId }: { campusId?: string }) {
         let num = 0
         for (const stop of stops) {
           const c = coords[stop.name]; if (!c) continue
-          const isSchool = stop.name === SCHOOL_STOP.name
+          const isSchool = stop.name === (effectiveSchoolName ?? SCHOOL_STOP.name)
           num++
           const timeStr = stop.time ? normalizeTime(stop.time) : ''
           const names = stop.studentNames.slice(0, 6).join(', ') + (stop.studentNames.length > 6 ? ` 외 ${stop.studentNames.length-6}명` : '')
           const markerHtml = isSchool
             ? `<div style="display:flex;flex-direction:column;align-items:center">
                 <div style="background:#004EA2;border:3px solid #fff;border-radius:8px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:900;box-shadow:0 3px 12px rgba(0,0,0,.4)">P</div>
-                <div style="margin-top:2px;background:#004EA2;color:#fff;font-size:8px;font-weight:800;padding:1px 5px;border-radius:4px;white-space:nowrap;max-width:80px;overflow:hidden;text-overflow:ellipsis;box-shadow:0 1px 4px rgba(0,0,0,.2)">중계폴리</div>
+                <div style="margin-top:2px;background:#004EA2;color:#fff;font-size:8px;font-weight:800;padding:1px 5px;border-radius:4px;white-space:nowrap;max-width:80px;overflow:hidden;text-overflow:ellipsis;box-shadow:0 1px 4px rgba(0,0,0,.2)">${effectiveSchoolName ?? '학원'}</div>
               </div>`
             : `<div style="display:flex;flex-direction:column;align-items:center">
                 <div style="background:${color};border:2.5px solid #fff;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:800;box-shadow:0 2px 10px rgba(0,0,0,.35)">${num}</div>
@@ -406,7 +478,7 @@ export default function RouteMapView({ campusId }: { campusId?: string }) {
 
       if (allPts.length > 0) map.fitBounds(L.latLngBounds(allPts), { padding: [50, 50] })
     })
-  }, [mapReady, routeStopsByBus, coords, selectedBuses, buses])
+  }, [mapReady, routeStopsByBus, coords, selectedBuses, buses, tmapRoutes])
 
   // ── 검색 함수들
   async function searchStop(stopName: string) {
@@ -422,6 +494,13 @@ export default function RouteMapView({ campusId }: { campusId?: string }) {
 
   function applyCandidate(stopName: string, result: KakaoResult) {
     setCandidateStop(stopName); setCandidateCoord({ lat: result.lat, lng: result.lng })
+    setManualCoord(prev => ({ ...prev, [stopName]: { lat: result.lat.toFixed(6), lng: result.lng.toFixed(6) } }))
+    // 검색 결과 주소 자동 채우기
+    setStopAddress(prev => {
+      const next = { ...prev, [stopName]: result.address }
+      try { localStorage.setItem(addressKey, JSON.stringify(next)) } catch {}
+      return next
+    })
     mapRef.current?.flyTo([result.lat, result.lng], 17, { animate: true, duration: 0.6 })
   }
 
@@ -433,10 +512,58 @@ export default function RouteMapView({ campusId }: { campusId?: string }) {
     if (candidateStop !== stopName) { setCandidateStop(null); setCandidateCoord(null) }
   }
 
-  function saveStop(stopName: string) {
-    if (!candidateCoord) return
-    updateCoords({ ...coords, [stopName]: candidateCoord })
-    setCandidateStop(null); setCandidateCoord(null); setExpandedStop(null)
+  function saveStop(stopName: string) { saveCoord(stopName) }
+
+  function saveCoord(stopName: string) {
+    // candidateCoord 우선, 없으면 manualCoord 사용
+    let lat: number, lng: number
+    if (candidateCoord && candidateStop === stopName) {
+      lat = candidateCoord.lat; lng = candidateCoord.lng
+    } else {
+      const m = manualCoord[stopName]
+      if (!m) return
+      lat = parseFloat(m.lat); lng = parseFloat(m.lng)
+      if (isNaN(lat) || isNaN(lng)) return
+    }
+    updateCoords({ ...coords, [stopName]: { lat, lng } })
+    setCandidateStop(null); setCandidateCoord(null)
+    setManualCoord(prev => { const n = { ...prev }; delete n[stopName]; return n })
+    // 주소 저장
+    const addr = stopAddress[stopName]
+    if (addr !== undefined) {
+      try { localStorage.setItem(addressKey, JSON.stringify(stopAddress)) } catch {}
+    }
+  }
+
+  async function renameStop(stopName: string) {
+    const newName = (stopRename[stopName] ?? '').trim()
+    if (!newName || newName === stopName) return
+    setRenaming(prev => ({ ...prev, [stopName]: true }))
+    const coord = coords[stopName]
+    try {
+      await fetch(`/api/campus/stop-coords${campusId ? `?campus_id=${campusId}` : ''}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ oldName: stopName, newName, ...(coord ?? {}) }),
+      })
+      // 로컬 coords 갱신
+      const newCoords = { ...coords }
+      if (coord) { newCoords[newName] = coord; delete newCoords[stopName] }
+      else delete newCoords[stopName]
+      setCoords(newCoords)
+      localStorage.setItem(coordsKey, JSON.stringify(newCoords))
+      // 로컬 주소 갱신
+      if (stopAddress[stopName] !== undefined) {
+        const newAddr = { ...stopAddress, [newName]: stopAddress[stopName] }
+        delete newAddr[stopName]
+        setStopAddress(newAddr)
+        try { localStorage.setItem(addressKey, JSON.stringify(newAddr)) } catch {}
+      }
+      setStopRename(prev => { const n = { ...prev }; delete n[stopName]; return n })
+      setExpandedStop(newName)
+    } finally {
+      setRenaming(prev => { const n = { ...prev }; delete n[stopName]; return n })
+    }
   }
 
   async function runBatchSearch() {
@@ -524,99 +651,175 @@ export default function RouteMapView({ campusId }: { campusId?: string }) {
     setTimeout(() => setUploadMsg(''), 8000)
   }
 
-  // ── 공통 정류장 확장 패널 렌더
+  // ── 공통 정류장 확장 패널 렌더 (통합형 — 항상 전체 컨트롤 표시)
   function renderStopExpanded(stopName: string) {
     const hasCoord = !!coords[stopName]
     const isCandidate = candidateStop === stopName
     const results = stopResults[stopName] ?? []
     const searching = stopSearching[stopName] ?? false
+    const isSearchOpen = searchOpen[stopName] ?? false
+    const canSave = isCandidate
+      ? true
+      : !!(manualCoord[stopName]?.lat && manualCoord[stopName]?.lng)
+    const renameVal = stopRename[stopName] ?? stopName
+    const isRenamingNow = renaming[stopName] ?? false
 
     return (
-      <div className="px-3 pb-3 space-y-2 border-t border-[#F1F5F9]">
+      <div className="px-3 pb-3 space-y-2.5 border-t border-[#F1F5F9] pt-2.5">
 
-        {/* ① 현재 설정된 좌표 + 삭제 버튼 */}
-        {hasCoord && (
-          <div className="mt-2 flex items-center justify-between bg-[#F0FDF4] border border-[#BBF7D0] rounded-xl px-3 py-2">
-            <div>
-              <p className="text-[9px] text-[#16A34A] font-bold mb-0.5">현재 위치</p>
-              <p className="text-[10px] font-mono text-[#14532D]">
-                {coords[stopName].lat.toFixed(5)}, {coords[stopName].lng.toFixed(5)}
+        {/* ── 위치 이동 중 배너 */}
+        {isCandidate && candidateCoord && (
+          <div className="bg-[#FFFBEB] border border-[#FDE68A] rounded-xl px-3 py-2 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-[#F59E0B] animate-pulse shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-[9px] text-[#92400E] font-bold">위치 이동 중 — 마커를 드래그하세요</p>
+              <p className="text-[10px] font-mono text-[#78350F] truncate">
+                {candidateCoord.lat.toFixed(6)}, {candidateCoord.lng.toFixed(6)}
               </p>
             </div>
-            <button
-              onClick={() => { const c = { ...coords }; delete c[stopName]; updateCoords(c) }}
-              className="text-[11px] font-bold text-[#EF4444] border border-[#FCA5A5] px-3 py-1.5 rounded-lg hover:bg-[#FEF2F2] transition-colors shrink-0">
-              삭제
+            <button onClick={() => { setCandidateStop(null); setCandidateCoord(null) }}
+              className="text-[10px] text-[#64748B] px-2 py-1 rounded-lg border border-[#E2E8F0] hover:bg-[#F1F5F9] shrink-0">
+              취소
             </button>
           </div>
         )}
 
-        {/* ② 검색 입력 */}
-        <div className={`flex gap-1.5 ${hasCoord ? '' : 'pt-2'}`}>
+        {/* ── 정류장명 변경 */}
+        <div className="space-y-1">
+          <p className="text-[9px] font-bold text-[#94A3B8] uppercase tracking-wider">정류장명</p>
+          <div className="flex gap-1.5">
+            <input
+              value={renameVal}
+              onChange={e => setStopRename(prev => ({ ...prev, [stopName]: e.target.value }))}
+              onKeyDown={e => e.key === 'Enter' && renameVal !== stopName && renameStop(stopName)}
+              className="flex-1 text-[11px] px-2.5 py-2 border border-[#E2E8F0] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004EA2]"
+            />
+            <button
+              onClick={() => renameStop(stopName)}
+              disabled={!renameVal || renameVal === stopName || isRenamingNow}
+              className="px-3 py-2 text-[11px] font-bold rounded-xl border border-[#E2E8F0] text-[#004EA2] hover:bg-[#EAF2FB] disabled:opacity-40 transition-colors shrink-0">
+              {isRenamingNow ? '…' : '변경'}
+            </button>
+          </div>
+        </div>
+
+        {/* ── 저장된 주소 */}
+        <div className="space-y-1">
+          <p className="text-[9px] font-bold text-[#94A3B8] uppercase tracking-wider">저장된 주소</p>
           <input
-            value={stopQuery[stopName] ?? stopName}
-            onChange={e => setStopQuery(prev => ({ ...prev, [stopName]: e.target.value }))}
-            onKeyDown={e => e.key === 'Enter' && searchStop(stopName)}
-            placeholder="장소명 또는 주소 입력"
-            className="flex-1 text-[11px] px-2.5 py-2 border border-[#E2E8F0] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004EA2]"
+            value={stopAddress[stopName] ?? ''}
+            onChange={e => {
+              const next = { ...stopAddress, [stopName]: e.target.value }
+              setStopAddress(next)
+              try { localStorage.setItem(addressKey, JSON.stringify(next)) } catch {}
+            }}
+            placeholder="주소 검색 시 자동 입력, 직접 수정 가능"
+            className="w-full text-[11px] px-2.5 py-2 border border-[#E2E8F0] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004EA2]"
           />
-          <button onClick={() => searchStop(stopName)} disabled={searching}
-            className="px-3 py-2 bg-[#004EA2] text-white text-[11px] font-bold rounded-xl disabled:opacity-50 hover:bg-[#003580] shrink-0">
-            {searching ? '…' : '검색'}
+        </div>
+
+        {/* ── 주소로 검색 (토글) */}
+        <div className="space-y-1">
+          <button
+            onClick={() => setSearchOpen(prev => ({ ...prev, [stopName]: !isSearchOpen }))}
+            className="w-full flex items-center justify-between text-[11px] font-bold text-[#004EA2] bg-[#EAF2FB] hover:bg-[#DBEAFE] rounded-xl px-3 py-2 transition-colors">
+            <span>🔍 주소로 검색</span>
+            <svg className={`w-3.5 h-3.5 transition-transform ${isSearchOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+          </button>
+          {isSearchOpen && (
+            <div className="space-y-1 pt-0.5">
+              <div className="flex gap-1.5">
+                <input
+                  value={stopQuery[stopName] ?? stopName}
+                  onChange={e => setStopQuery(prev => ({ ...prev, [stopName]: e.target.value }))}
+                  onKeyDown={e => e.key === 'Enter' && searchStop(stopName)}
+                  placeholder="장소명 또는 주소 입력"
+                  className="flex-1 text-[11px] px-2.5 py-2 border border-[#E2E8F0] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004EA2]"
+                  autoFocus
+                />
+                <button onClick={() => searchStop(stopName)} disabled={searching}
+                  className="px-3 py-2 bg-[#004EA2] text-white text-[11px] font-bold rounded-xl disabled:opacity-50 hover:bg-[#003580] shrink-0">
+                  {searching ? '…' : '검색'}
+                </button>
+              </div>
+              {results.length > 0 && (
+                <div className="space-y-1">
+                  {results.slice(0, 4).map((r, ri) => (
+                    <button key={ri} onClick={() => applyCandidate(stopName, r)}
+                      className="w-full text-left px-2.5 py-2 rounded-xl text-[10px] leading-relaxed bg-[#F7F8FA] text-[#475569] hover:bg-[#E8F0FB] transition-colors">
+                      <span className="font-bold block">{r.name}</span>
+                      <span className="opacity-75">{r.address}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {results.length === 0 && !searching && stopResults[stopName] !== undefined && (
+                <p className="text-[10px] text-[#94A3B8] text-center py-1">결과 없음 — 검색어를 바꿔보세요</p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ── 좌표 직접 입력 */}
+        <div className="space-y-1">
+          <p className="text-[9px] font-bold text-[#94A3B8] uppercase tracking-wider">좌표 직접 입력</p>
+          <div className="flex gap-1.5">
+            <input
+              type="text" inputMode="decimal"
+              value={manualCoord[stopName]?.lat ?? ''}
+              onChange={e => setManualCoord(prev => ({ ...prev, [stopName]: { lat: e.target.value, lng: prev[stopName]?.lng ?? '' } }))}
+              placeholder="위도 37.xxxx"
+              className="flex-1 text-[11px] px-2.5 py-2 border border-[#E2E8F0] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004EA2]"
+            />
+            <input
+              type="text" inputMode="decimal"
+              value={manualCoord[stopName]?.lng ?? ''}
+              onChange={e => setManualCoord(prev => ({ ...prev, [stopName]: { lat: prev[stopName]?.lat ?? '', lng: e.target.value } }))}
+              placeholder="경도 127.xxxx"
+              className="flex-1 text-[11px] px-2.5 py-2 border border-[#E2E8F0] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#004EA2]"
+            />
+          </div>
+        </div>
+
+        {/* ── 현재 저장된 좌표 표시 */}
+        {hasCoord && (
+          <div className="bg-[#F0FDF4] border border-[#BBF7D0] rounded-xl px-3 py-2">
+            <p className="text-[9px] text-[#16A34A] font-bold mb-0.5">현재 위치</p>
+            <p className="text-[10px] font-mono text-[#14532D]">
+              {coords[stopName].lat.toFixed(6)}, {coords[stopName].lng.toFixed(6)}
+            </p>
+          </div>
+        )}
+
+        {/* ── 액션 버튼 */}
+        <div className="flex gap-1.5">
+          <button
+            onClick={() => saveCoord(stopName)}
+            disabled={!canSave}
+            className="flex-1 py-2 rounded-xl text-[11px] font-bold text-white bg-[#004EA2] hover:bg-[#003580] disabled:opacity-40 transition-colors">
+            저장
+          </button>
+          <button
+            onClick={() => {
+              const c = coords[stopName] ?? candidateCoord
+              if (!c) return
+              setCandidateStop(stopName)
+              setCandidateCoord(c)
+              setManualCoord(prev => ({ ...prev, [stopName]: { lat: c.lat.toFixed(6), lng: c.lng.toFixed(6) } }))
+              mapRef.current?.flyTo([c.lat, c.lng], 17, { animate: true, duration: 0.5 })
+            }}
+            disabled={!hasCoord && !candidateCoord}
+            className="flex-1 py-2 rounded-xl text-[11px] font-bold text-[#004EA2] border border-[#BFDBFE] hover:bg-[#EAF2FB] disabled:opacity-40 transition-colors">
+            위치이동
+          </button>
+          <button
+            onClick={() => { const c = { ...coords }; delete c[stopName]; updateCoords(c) }}
+            disabled={!hasCoord}
+            className="flex-1 py-2 rounded-xl text-[11px] font-bold text-[#EF4444] border border-[#FCA5A5] hover:bg-[#FEF2F2] disabled:opacity-40 transition-colors">
+            삭제
           </button>
         </div>
 
-        {/* ③ 검색 결과 목록 */}
-        {results.length > 0 && (
-          <div className="space-y-1">
-            {results.slice(0, 4).map((r, ri) => {
-              const sel = isCandidate && candidateCoord?.lat === r.lat && candidateCoord?.lng === r.lng
-              return (
-                <button key={ri} onClick={() => applyCandidate(stopName, r)}
-                  className={`w-full text-left px-2.5 py-2 rounded-xl text-[10px] leading-relaxed transition-colors ${sel ? 'bg-[#004EA2] text-white' : 'bg-[#F7F8FA] text-[#475569] hover:bg-[#E8F0FB]'}`}>
-                  <span className="font-bold block">{r.name}</span>
-                  <span className="opacity-75">{r.address}</span>
-                </button>
-              )
-            })}
-          </div>
-        )}
-        {results.length === 0 && !searching && stopResults[stopName] !== undefined && (
-          <p className="text-[10px] text-[#94A3B8] text-center py-1">검색 결과 없음 — 검색어 변경 또는 지도 직접 클릭</p>
-        )}
-
-        {/* ④ 후보 선택됨 → 추가/변경/취소 버튼 */}
-        {isCandidate && candidateCoord ? (
-          <div className="bg-[#FEF9C3] border border-[#FCD34D] rounded-xl px-3 py-2.5 space-y-2">
-            <p className="text-[10px] text-[#92400E] font-semibold flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-[#F59E0B] animate-pulse inline-block shrink-0" />
-              지도 클릭으로 위치 미세 조정 가능
-            </p>
-            <p className="text-[10px] font-mono text-[#78350F]">
-              {candidateCoord.lat.toFixed(6)}, {candidateCoord.lng.toFixed(6)}
-            </p>
-            <div className="flex gap-1.5">
-              <button
-                onClick={() => { setCandidateStop(null); setCandidateCoord(null) }}
-                className="flex-1 py-2 rounded-xl text-[11px] font-semibold text-[#64748B] bg-white border border-[#E2E8F0] hover:bg-[#F7F8FA] transition-colors">
-                취소
-              </button>
-              <button
-                onClick={() => saveStop(stopName)}
-                className="flex-1 py-2 rounded-xl text-[11px] font-bold text-white transition-colors"
-                style={{ background: hasCoord ? '#D97706' : '#004EA2' }}>
-                {hasCoord ? '변경' : '추가'}
-              </button>
-            </div>
-          </div>
-        ) : (
-          /* ⑤ 후보 미선택 상태 안내 */
-          !hasCoord && results.length === 0 && stopResults[stopName] === undefined && (
-            <p className="text-[10px] text-[#CBD5E1] text-center pb-1">
-              검색하거나 지도를 클릭해 위치를 선택하세요
-            </p>
-          )
-        )}
       </div>
     )
   }
@@ -672,6 +875,31 @@ export default function RouteMapView({ campusId }: { campusId?: string }) {
             </button>
           ))}
         </div>
+
+        {/* 캠퍼스 좌표 지정 */}
+        {effectiveSchoolName !== null && (
+        <div className={`rounded-2xl border overflow-hidden bg-white ${expandedStop === effectiveSchoolName ? 'border-[#004EA2] shadow-md' : 'border-[#E2E8F0]'}`}>
+          <button
+            onClick={() => openStop(effectiveSchoolName)}
+            className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-[#F7F8FA] transition-colors"
+          >
+            <div className="w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-black text-white shrink-0 bg-[#004EA2]">P</div>
+            <div className="flex-1 text-left min-w-0">
+              <span className="text-xs font-bold text-[#004EA2]">캠퍼스 좌표 지정</span>
+              <p className="text-[9px] text-[#64748B] mt-0.5">{effectiveSchoolName} · 등원 도착지 · 하원 출발지</p>
+            </div>
+            {coords[effectiveSchoolName]
+              ? <span className="text-[9px] text-[#10B981] font-bold shrink-0">설정됨</span>
+              : <span className="text-[9px] text-[#EF4444] bg-[#FEF2F2] px-1.5 py-0.5 rounded font-bold shrink-0">미설정</span>
+            }
+            <svg className={`w-3 h-3 text-[#CBD5E1] transition-transform shrink-0 ${expandedStop === effectiveSchoolName ? 'rotate-180' : ''}`}
+              fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {expandedStop === effectiveSchoolName && renderStopExpanded(effectiveSchoolName)}
+        </div>
+        )}
 
         {/* ══ 노선 보기 ══ */}
         {panelView === 'route' && (
@@ -742,14 +970,14 @@ export default function RouteMapView({ campusId }: { campusId?: string }) {
                             <div className="absolute left-[23px] top-3 bottom-3 w-0.5 bg-[#E2E8F0] z-0" />
                             <div className="space-y-1.5 relative z-10">
                               {stops.map((stop, idx) => {
-                                const isSchool = stop.name === SCHOOL_STOP.name
+                                const isSchool = stop.name === (effectiveSchoolName ?? SCHOOL_STOP.name)
                                 const hasCoord = !!coords[stop.name]
                                 const isExpanded = expandedStop === stop.name
                                 if (isSchool) return (
                                   <div key="school" className="flex items-center gap-2 px-3 py-2 bg-[#EAF2FB] rounded-2xl border border-[#004EA2]/30">
                                     <div className="w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-black text-white shrink-0 bg-[#004EA2]">P</div>
                                     <div className="flex-1 min-w-0">
-                                      <span className="text-xs font-bold text-[#004EA2]">중계폴리어학원</span>
+                                      <span className="text-xs font-bold text-[#004EA2]">{effectiveSchoolName ?? SCHOOL_STOP.name}</span>
                                       <p className="text-[9px] text-[#64748B] mt-0.5">{dir === 'arr' ? '도착지' : '출발지'}</p>
                                     </div>
                                   </div>

@@ -68,6 +68,7 @@ export default function HqCampusesPage() {
   // ── 전체 직원 ─────────────────────────────────────────────────
   const [employees, setEmployees] = useState<Employee[]>([])
   const [totalBuses, setTotalBuses] = useState(0)
+  const [busesByCampus, setBusesByCampus] = useState<Record<string, number>>({})
   const [empLoading, setEmpLoading] = useState(false)
   const [empLoaded, setEmpLoaded] = useState(false)
   const [apiError, setApiError] = useState('')
@@ -113,6 +114,7 @@ export default function HqCampusesPage() {
       if (d.error) setApiError(d.error)
       setEmployees(d.employees ?? [])
       setTotalBuses(d.totalBuses ?? 0)
+      setBusesByCampus(d.busesByCampus ?? {})
       setEmpLoading(false)
       setEmpLoaded(true)
     }).catch(err => {
@@ -337,6 +339,9 @@ export default function HqCampusesPage() {
                         </svg>
                       </button>
                       <div className="flex items-center gap-2">
+                        {(busesByCampus[campus.id] ?? 0) > 0 && (
+                          <span className="text-xs text-[#D97706] bg-[#FFF7ED] border border-[#FDE68A] px-2.5 py-1 rounded-full">차량 {busesByCampus[campus.id]}대</span>
+                        )}
                         <span className="text-xs text-[#64748B] bg-white border border-[#E2E8F0] px-2.5 py-1 rounded-full">총 {total}명</span>
                         <button onClick={() => openAddEmp(campus.id, campus.name)}
                           className="text-xs bg-[#0F172A] text-white px-2.5 py-1 rounded-lg hover:bg-[#1E293B] transition-colors">

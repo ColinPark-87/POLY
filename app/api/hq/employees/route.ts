@@ -32,31 +32,18 @@ export async function GET(request: NextRequest) {
     campuses: u.campus_id ? { name: campusMap.get(u.campus_id) ?? '알 수 없음' } : null,
   }))
 
-  // 실제 운행 차량 수 = 현재 월 등록된 학생 스케줄에 실제로 배차된 고유 버스 이름 수
-  const currentMonth = new Date().toISOString().slice(0, 7) // "YYYY-MM"
-  const { data: sessions } = await service
-    .from('class_sessions').select('id').eq('month', currentMonth)
-  const sessionIds = (sessions ?? []).map(s => s.id)
+  // 캠퍼스별 차량 수 (campus_buses 테이블 기준, 비차량 항목 제외)
+  const { data: allBuses } = await service
+    .from('campus_buses').select('campus_id, name').order('sort_order')
 
-  let activeBusCount = 0
-  if (sessionIds.length) {
-    const { data: classes } = await service
-      .from('classes').select('id').in('session_id', sessionIds)
-    const classIds = (classes ?? []).map(c => c.id)
-
-    if (classIds.length) {
-      const { data: enrollments } = await service
-        .from('class_enrollments').select('arr_schedule, dep_schedule').in('class_id', classIds)
-      const busNames = new Set<string>()
-      for (const enr of enrollments ?? []) {
-        const arr = enr.arr_schedule as Record<string, string> | null
-        const dep = enr.dep_schedule as Record<string, string> | null
-        if (arr) Object.values(arr).forEach(v => v && busNames.add(v))
-        if (dep) Object.values(dep).forEach(v => v && busNames.add(v))
-      }
-      activeBusCount = busNames.size
-    }
+  // 결석, 안탐 등 실제 차량이 아닌 항목 제외
+  const EXCLUDED = /결석|안탐|없음|기타|마미버스/
+  const busesByCampus: Record<string, number> = {}
+  for (const b of allBuses ?? []) {
+    if (!b.campus_id || EXCLUDED.test(b.name)) continue
+    busesByCampus[b.campus_id] = (busesByCampus[b.campus_id] ?? 0) + 1
   }
+  const totalBuses = Object.values(busesByCampus).reduce((s, n) => s + n, 0)
 
-  return NextResponse.json({ employees, totalBuses: activeBusCount })
+  return NextResponse.json({ employees, totalBuses, busesByCampus })
 }

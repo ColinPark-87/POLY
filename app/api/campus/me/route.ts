@@ -12,7 +12,7 @@ export async function GET() {
   const service = createServiceClient()
   const { data: profile } = await service
     .from('users')
-    .select('role, position, perm_class_roster, perm_vehicles, perm_vehicles_restricted')
+    .select('role, position, campus_id, perm_class_roster, perm_vehicles, perm_vehicles_restricted')
     .eq('id', user.id)
     .single()
 
@@ -24,5 +24,11 @@ export async function GET() {
     perm_vehicles_restricted: profile?.perm_vehicles_restricted ?? null,
   })
 
-  return NextResponse.json({ permissions })
+  let campusName: string | null = null
+  if (profile?.campus_id) {
+    const { data: campus } = await service.from('campuses').select('name').eq('id', profile.campus_id).single()
+    campusName = campus?.name ?? null
+  }
+
+  return NextResponse.json({ permissions, campusName })
 }

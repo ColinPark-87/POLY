@@ -50,6 +50,20 @@ export async function POST(request: NextRequest) {
     const month = searchParams.get('month') ?? ''
     if (!month) return NextResponse.json({ error: '운영월을 선택해주세요.' }, { status: 400 })
 
+    // ── 해당 월 기존 데이터 전체 삭제 (완전 덮어쓰기)
+    const { data: oldSessions } = await service.from('class_sessions')
+      .select('id').eq('campus_id', campusId).eq('month', month)
+    const oldSessionIds = (oldSessions ?? []).map(s => s.id)
+    if (oldSessionIds.length > 0) {
+      const { data: oldClasses } = await service.from('classes').select('id').in('session_id', oldSessionIds)
+      const oldClassIds = (oldClasses ?? []).map(c => c.id)
+      if (oldClassIds.length > 0) {
+        await service.from('class_enrollments').delete().in('class_id', oldClassIds)
+      }
+      await service.from('classes').delete().in('session_id', oldSessionIds)
+      await service.from('class_sessions').delete().in('id', oldSessionIds)
+    }
+
     function excelToTimeStr(val: unknown): string {
       if (typeof val !== 'number' || val <= 0) return ''
       const totalMin = Math.round(val * 24 * 60)
@@ -143,12 +157,9 @@ export async function POST(request: NextRequest) {
         stats.students_created++
       }
 
-      // 기존 수강 데이터 (merge용)
-      const { data: exEnr } = await service.from('class_enrollments')
-        .select('arr_schedule, dep_schedule')
-        .eq('student_id', studentId).eq('class_id', classId).maybeSingle()
-      const arr_schedule: Record<string, string> = { ...(exEnr?.arr_schedule ?? {}) }
-      const dep_schedule: Record<string, string> = { ...(exEnr?.dep_schedule ?? {}) }
+      // 기존 데이터 사용 안 함 — 완전 덮어쓰기
+      const arr_schedule: Record<string, string> = {}
+      const dep_schedule: Record<string, string> = {}
 
       // 컬럼 인덱스: 등원 [10,12,14,16,18], 하원 [21,23,25,27,29]
       const ARR = [10, 12, 14, 16, 18]
@@ -259,6 +270,23 @@ export async function POST(request: NextRequest) {
     const month = isNewFormat ? str(row[1]) : str(row[1])
     return name && !name.startsWith('※') && month
   })
+
+  // ── 파일에 포함된 월 목록 수집 후 해당 월 기존 데이터 전체 삭제 (완전 덮어쓰기)
+  const monthsInFile = [...new Set(sessRows.map(row => str(row[1])).filter(Boolean))]
+  for (const m of monthsInFile) {
+    const { data: oldSessions } = await service.from('class_sessions')
+      .select('id').eq('campus_id', campusId).eq('month', m)
+    const oldSessionIds = (oldSessions ?? []).map(s => s.id)
+    if (oldSessionIds.length > 0) {
+      const { data: oldClasses } = await service.from('classes').select('id').in('session_id', oldSessionIds)
+      const oldClassIds = (oldClasses ?? []).map(c => c.id)
+      if (oldClassIds.length > 0) {
+        await service.from('class_enrollments').delete().in('class_id', oldClassIds)
+      }
+      await service.from('classes').delete().in('session_id', oldSessionIds)
+      await service.from('class_sessions').delete().in('id', oldSessionIds)
+    }
+  }
 
   const sessionMap: Record<string, string> = {}  // sessName → session_id
   const sessionDaysMap: Record<string, string[]> = {} // sessName → days[]
@@ -387,13 +415,9 @@ export async function POST(request: NextRequest) {
       // 세션 요일 기준으로 스케줄 생성
       const days = sessionDaysMap[sessName] ?? inferDaysFromName(sessName)
 
-      // 기존 수강 데이터 조회 (요일별 merge를 위해)
-      const { data: existing } = await service.from('class_enrollments')
-        .select('arr_schedule, dep_schedule')
-        .eq('student_id', studentId).eq('class_id', classId).maybeSingle()
-
-      const arr_schedule: Record<string, string> = { ...(existing?.arr_schedule ?? {}) }
-      const dep_schedule: Record<string, string> = { ...(existing?.dep_schedule ?? {}) }
+      // 기존 데이터 사용 안 함 — 완전 덮어쓰기
+      const arr_schedule: Record<string, string> = {}
+      const dep_schedule: Record<string, string> = {}
 
       for (const day of days) {
         if (arrBus) { arr_schedule[day] = arrBus; if (arrLoc) arr_schedule[`${day}_loc`] = arrLoc }

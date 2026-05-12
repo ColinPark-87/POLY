@@ -22,9 +22,14 @@ export default function HqImportPage() {
   const rosterFileRef = useRef<HTMLInputElement>(null)
   const [rosterCampusId, setRosterCampusId] = useState('')
   const [rosterFile, setRosterFile] = useState<File | null>(null)
+  const [rosterMonth, setRosterMonth] = useState(() => {
+    const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  })
   const [rosterLoading, setRosterLoading] = useState(false)
   const [rosterResult, setRosterResult] = useState<RosterResult | null>(null)
   const [rosterError, setRosterError] = useState('')
+  const [leaveDragging, setLeaveDragging] = useState(false)
+  const [rosterDragging, setRosterDragging] = useState(false)
 
   // 내보내기
   const [exportCampusId, setExportCampusId] = useState('')
@@ -68,7 +73,7 @@ export default function HqImportPage() {
     setRosterLoading(true); setRosterError(''); setRosterResult(null)
     const formData = new FormData()
     formData.append('file', rosterFile)
-    const res = await fetch(`/api/campus/class-roster/import?campus_id=${rosterCampusId}`, { method: 'POST', body: formData })
+    const res = await fetch(`/api/campus/class-roster/import?campus_id=${rosterCampusId}&month=${rosterMonth}`, { method: 'POST', body: formData })
     const d = await res.json()
     setRosterLoading(false)
     if (!res.ok) { setRosterError(d.error ?? '업로드 실패'); return }
@@ -125,10 +130,14 @@ export default function HqImportPage() {
             </div>
             <div>
               <label className="block text-sm font-semibold text-[#1E293B] mb-2">Excel 파일 선택</label>
-              <div className="border-2 border-dashed border-[#E2E8F0] rounded-2xl p-8 text-center cursor-pointer hover:border-[#004EA2] transition-colors"
-                onClick={() => fileRef.current?.click()}>
+              <div
+                className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-colors ${leaveDragging ? 'border-[#004EA2] bg-[#EAF2FB]' : 'border-[#E2E8F0] hover:border-[#004EA2]'}`}
+                onClick={() => fileRef.current?.click()}
+                onDragOver={e => { e.preventDefault(); setLeaveDragging(true) }}
+                onDragLeave={() => setLeaveDragging(false)}
+                onDrop={e => { e.preventDefault(); setLeaveDragging(false); const f = e.dataTransfer.files?.[0]; if (f) setFile(f) }}>
                 <p className="text-3xl mb-2">📊</p>
-                <p className="text-sm font-medium text-[#1E293B]">{file ? file.name : '파일을 클릭하여 선택'}</p>
+                <p className="text-sm font-medium text-[#1E293B]">{file ? file.name : '파일을 클릭하거나 드래그하여 선택'}</p>
                 <p className="text-xs text-[#94A3B8] mt-1">연차관리대장_XXXX.xlsx</p>
                 <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={e => setFile(e.target.files?.[0] ?? null)} />
               </div>
@@ -205,11 +214,20 @@ export default function HqImportPage() {
               </select>
             </div>
             <div>
+              <label className="block text-sm font-semibold text-[#1E293B] mb-2">운영월 <span className="text-[#94A3B8] font-normal text-xs">(단일시트 '반' 형식 시 필수)</span></label>
+              <input type="month" value={rosterMonth} onChange={e => setRosterMonth(e.target.value)}
+                className="w-full border border-[#E2E8F0] rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2] bg-white" />
+            </div>
+            <div>
               <label className="block text-sm font-semibold text-[#1E293B] mb-2">Excel 파일 선택</label>
-              <div className="border-2 border-dashed border-[#E2E8F0] rounded-2xl p-8 text-center cursor-pointer hover:border-[#004EA2] transition-colors"
-                onClick={() => rosterFileRef.current?.click()}>
+              <div
+                className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-colors ${rosterDragging ? 'border-[#004EA2] bg-[#EAF2FB]' : 'border-[#E2E8F0] hover:border-[#004EA2]'}`}
+                onClick={() => rosterFileRef.current?.click()}
+                onDragOver={e => { e.preventDefault(); setRosterDragging(true) }}
+                onDragLeave={() => setRosterDragging(false)}
+                onDrop={e => { e.preventDefault(); setRosterDragging(false); const f = e.dataTransfer.files?.[0]; if (f) setRosterFile(f) }}>
                 <p className="text-3xl mb-2">📋</p>
-                <p className="text-sm font-medium text-[#1E293B]">{rosterFile ? rosterFile.name : '파일을 클릭하여 선택'}</p>
+                <p className="text-sm font-medium text-[#1E293B]">{rosterFile ? rosterFile.name : '파일을 클릭하거나 드래그하여 선택'}</p>
                 <p className="text-xs text-[#94A3B8] mt-1">반편성현황_XXXX.xlsx</p>
                 <input ref={rosterFileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={e => setRosterFile(e.target.files?.[0] ?? null)} />
               </div>

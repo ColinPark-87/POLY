@@ -165,6 +165,7 @@ export default function VehiclesPage() {
 
   const [tab, setTab] = useState<'master'|'today'|'approval'|'history'|'map'|'settings'>('master')
   const [vehiclesRestricted, setVehiclesRestricted] = useState(false)
+  const [campusName, setCampusName] = useState<string | undefined>(undefined)
 
   // ── 백업 ─────────────────────────────────────────────────────
   const [backupModal, setBackupModal] = useState(false)
@@ -350,6 +351,7 @@ export default function VehiclesPage() {
           setVehiclesRestricted(true)
           setTab('today')
         }
+        if (d.campusName) setCampusName(d.campusName)
       })
   }, [])
 
@@ -1227,7 +1229,7 @@ export default function VehiclesPage() {
       )}
 
       {/* ═══ 노선 지도 탭 ════════════════════════════════════════ */}
-      {tab === 'map' && <RouteMapView />}
+      {tab === 'map' && <RouteMapView campusName={campusName} />}
 
       {/* ═══ 차량 설정 탭 ════════════════════════════════════════ */}
       {tab === 'settings' && (
