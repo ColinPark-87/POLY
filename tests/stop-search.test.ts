@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { buildStopSearchResults, getRunLabel } from '@/lib/utils/stop-search'
+import { buildStopSearchResults, getRunLabel, type TimeGroup } from '@/lib/utils/stop-search'
 
-const mockGroups = [
+const mockGroups: Array<{ group: TimeGroup; dir: 'arr' | 'dep' }> = [
   {
     group: {
       session_name: '매일반',

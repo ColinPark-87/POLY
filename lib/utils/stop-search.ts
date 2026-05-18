@@ -7,7 +7,7 @@ export interface StopSearchRow {
   count: number
 }
 
-interface StudentEntry {
+export interface StudentEntry {
   student_id: string
   name: string
   location: string | null
@@ -15,7 +15,7 @@ interface StudentEntry {
   days: string[]
 }
 
-interface TimeGroup {
+export interface TimeGroup {
   session_name: string
   time_range: string
   busMap: Record<string, StudentEntry[]>
