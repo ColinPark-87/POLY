@@ -43,6 +43,15 @@ interface ReqState {
   note: string
 }
 
+function nameFontClass(name: string): string {
+  const len = name.length
+  if (len <= 2) return 'text-2xl'
+  if (len === 3) return 'text-xl'
+  if (len === 4) return 'text-lg'
+  if (len === 5) return 'text-base'
+  return 'text-sm'
+}
+
 function normalizeTime(t: string): string {
   const m = t.match(/^(\d{1,2}):(\d{2})/)
   if (!m) return ''
@@ -243,7 +252,7 @@ export default function SafetyTodayView({
                     >
                       <div className="flex items-center gap-2">
                         <span
-                          className={`text-base font-semibold ${
+                          className={`${nameFontClass(stu.name)} font-bold leading-tight ${
                             stu.absent ? 'line-through text-[#94A3B8]' : 'text-[#1E293B]'
                           }`}
                         >
