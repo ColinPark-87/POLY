@@ -214,13 +214,13 @@ export default function SafetyTodayView({
                 {/* 버스 헤더 */}
                 <div className="px-4 py-3 bg-[#004EA2] text-white flex items-center justify-between">
                   <div>
-                    <span className="font-bold text-sm">{busName}</span>
-                    <span className="text-[11px] text-blue-200 ml-2">{group.session_name}</span>
+                    <span className="font-bold text-base">{busName}</span>
+                    <span className="text-xs text-blue-200 ml-2">{group.session_name}</span>
                     {group.time_range && (
-                      <span className="text-[10px] text-blue-300 ml-1">({group.time_range})</span>
+                      <span className="text-xs text-blue-300 ml-1">({group.time_range})</span>
                     )}
                   </div>
-                  <span className="text-[12px] font-bold bg-white text-[#004EA2] px-2 py-0.5 rounded-full">
+                  <span className="text-sm font-bold bg-white text-[#004EA2] px-2.5 py-1 rounded-full">
                     {students.filter(s => !s.absent).length}명
                   </span>
                 </div>
@@ -237,39 +237,39 @@ export default function SafetyTodayView({
                         days: [...stu.days],
                         note: '',
                       })}
-                      className={`w-full text-left px-4 py-2.5 flex items-center justify-between hover:bg-[#F7F8FA] transition-colors ${
+                      className={`w-full text-left px-4 py-3 flex items-center justify-between hover:bg-[#F7F8FA] transition-colors ${
                         stu.absent ? 'opacity-40' : ''
                       }`}
                     >
                       <div className="flex items-center gap-2">
                         <span
-                          className={`text-sm font-semibold ${
+                          className={`text-base font-semibold ${
                             stu.absent ? 'line-through text-[#94A3B8]' : 'text-[#1E293B]'
                           }`}
                         >
                           {stu.name}
                         </span>
                         {stu.absent && (
-                          <span className="text-[9px] bg-[#FEE2E2] text-[#EF4444] px-1.5 py-0.5 rounded-full font-bold">
+                          <span className="text-xs bg-[#FEE2E2] text-[#EF4444] px-2 py-0.5 rounded-full font-bold">
                             결석
                           </span>
                         )}
                         {stu.override && !stu.absent && (
-                          <span className="text-[9px] bg-[#FEF9C3] text-[#92400E] px-1.5 py-0.5 rounded-full font-bold">
+                          <span className="text-xs bg-[#FEF9C3] text-[#92400E] px-2 py-0.5 rounded-full font-bold">
                             변경
                           </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-2 text-[11px] text-[#64748B]">
+                      <div className="flex items-center gap-2 text-sm text-[#64748B]">
                         {stu.location && (
-                          <span className="max-w-[120px] truncate">📍 {stu.location}</span>
+                          <span className="max-w-[160px] truncate">📍 {stu.location}</span>
                         )}
                         {stu.pickup_time && (
                           <span className="font-semibold text-[#1E293B] tabular-nums">
                             ⏱ {normalizeTime(stu.pickup_time)}
                           </span>
                         )}
-                        <span className="text-[#CBD5E1] text-[10px]">›</span>
+                        <span className="text-[#CBD5E1] text-sm">›</span>
                       </div>
                     </button>
                   ))}
@@ -284,9 +284,9 @@ export default function SafetyTodayView({
               <p className="text-xs font-bold text-[#EF4444] mb-2">🚫 결석 ({myAbsents.length}명)</p>
               <div className="space-y-1">
                 {myAbsents.map(a => (
-                  <div key={`${a.student_id}-${a.bus_name}`} className="flex items-center gap-2 text-sm">
+                  <div key={`${a.student_id}-${a.bus_name}`} className="flex items-center gap-2 text-base">
                     <span className="text-[#1E293B] font-medium">{a.name}</span>
-                    <span className="text-[11px] text-[#94A3B8]">{a.bus_name}</span>
+                    <span className="text-sm text-[#94A3B8]">{a.bus_name}</span>
                   </div>
                 ))}
               </div>
