@@ -45,11 +45,11 @@ interface ReqState {
 
 function nameFontClass(name: string): string {
   const len = name.length
-  if (len <= 2) return 'text-2xl'
-  if (len === 3) return 'text-xl'
-  if (len === 4) return 'text-lg'
-  if (len === 5) return 'text-base'
-  return 'text-sm'
+  if (len <= 2) return 'text-4xl'
+  if (len === 3) return 'text-3xl'
+  if (len === 4) return 'text-2xl'
+  if (len === 5) return 'text-xl'
+  return 'text-lg'
 }
 
 function normalizeTime(t: string): string {
@@ -221,15 +221,15 @@ export default function SafetyTodayView({
                 className="bg-white rounded-2xl border border-[#E2E8F0] shadow-sm overflow-hidden"
               >
                 {/* 버스 헤더 */}
-                <div className="px-4 py-3 bg-[#004EA2] text-white flex items-center justify-between">
+                <div className="px-5 py-4 bg-[#004EA2] text-white flex items-center justify-between">
                   <div>
-                    <span className="font-bold text-base">{busName}</span>
-                    <span className="text-xs text-blue-200 ml-2">{group.session_name}</span>
+                    <span className="font-black text-2xl">{busName}</span>
+                    <span className="text-base text-blue-200 ml-2 font-medium">{group.session_name}</span>
                     {group.time_range && (
-                      <span className="text-xs text-blue-300 ml-1">({group.time_range})</span>
+                      <span className="text-sm text-blue-300 ml-1">({group.time_range})</span>
                     )}
                   </div>
-                  <span className="text-sm font-bold bg-white text-[#004EA2] px-2.5 py-1 rounded-full">
+                  <span className="text-xl font-black bg-white text-[#004EA2] px-3 py-1 rounded-full">
                     {students.filter(s => !s.absent).length}명
                   </span>
                 </div>
@@ -246,40 +246,37 @@ export default function SafetyTodayView({
                         days: [...stu.days],
                         note: '',
                       })}
-                      className={`w-full text-left px-4 py-3 flex items-center justify-between hover:bg-[#F7F8FA] transition-colors ${
+                      className={`w-full text-left px-5 py-4 hover:bg-[#F7F8FA] active:bg-[#EFF6FF] transition-colors ${
                         stu.absent ? 'opacity-40' : ''
                       }`}
                     >
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`${nameFontClass(stu.name)} font-bold leading-tight ${
-                            stu.absent ? 'line-through text-[#94A3B8]' : 'text-[#1E293B]'
-                          }`}
-                        >
-                          {stu.name}
-                        </span>
-                        {stu.absent && (
-                          <span className="text-xs bg-[#FEE2E2] text-[#EF4444] px-2 py-0.5 rounded-full font-bold">
-                            결석
+                      {/* 윗줄: 이름 + 시간 */}
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className={`${nameFontClass(stu.name)} font-black leading-none ${
+                            stu.absent ? 'line-through text-[#94A3B8]' : 'text-[#0F172A]'
+                          }`}>
+                            {stu.name}
                           </span>
-                        )}
-                        {stu.override && !stu.absent && (
-                          <span className="text-xs bg-[#FEF9C3] text-[#92400E] px-2 py-0.5 rounded-full font-bold">
-                            변경
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 text-sm text-[#64748B]">
-                        {stu.location && (
-                          <span className="max-w-[160px] truncate">📍 {stu.location}</span>
-                        )}
+                          {stu.absent && (
+                            <span className="text-sm bg-[#FEE2E2] text-[#EF4444] px-2 py-0.5 rounded-full font-bold shrink-0">결석</span>
+                          )}
+                          {stu.override && !stu.absent && (
+                            <span className="text-sm bg-[#FEF9C3] text-[#92400E] px-2 py-0.5 rounded-full font-bold shrink-0">변경</span>
+                          )}
+                        </div>
                         {stu.pickup_time && (
-                          <span className="font-semibold text-[#1E293B] tabular-nums">
-                            ⏱ {normalizeTime(stu.pickup_time)}
+                          <span className="text-2xl font-black tabular-nums text-[#004EA2] shrink-0">
+                            {normalizeTime(stu.pickup_time)}
                           </span>
                         )}
-                        <span className="text-[#CBD5E1] text-sm">›</span>
                       </div>
+                      {/* 아랫줄: 정류장 */}
+                      {stu.location && (
+                        <p className="text-lg text-[#475569] mt-1.5 font-medium">
+                          📍 {stu.location}
+                        </p>
+                      )}
                     </button>
                   ))}
                 </div>
