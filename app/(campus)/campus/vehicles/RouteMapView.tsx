@@ -75,6 +75,8 @@ interface Bus { id: string; name: string; sort_order: number; capacity?: number;
 interface StudentEntry {
   student_id: string; name: string; class_id?: string
   location: string | null; pickup_time: string | null; days: string[]
+  dayLocs?: Record<string, string>  // 요일별 탑승 장소
+  dayTimes?: Record<string, string>  // 요일별 탑승 시간 (정류장 자동 매칭)
   override?: boolean
 }
 interface TimeGroup {
@@ -598,13 +600,16 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
       for (const g of groups) {
         if (getRunLabel(g.session_name, dir) !== selectedSession) continue
         for (const s of (g.busMap[busName] ?? [])) {
-          if (!s.location) continue
-          const loc = s.location.trim()
-          if (!locMap.has(loc)) locMap.set(loc, { time: null, count: 0, names: [] })
-          const e = locMap.get(loc)!
-          e.count++
-          if (!e.names.includes(s.name)) e.names.push(s.name)
-          if (s.pickup_time && (!e.time || parseTimeMin(s.pickup_time) < parseTimeMin(e.time))) e.time = s.pickup_time
+          // 요일별로 펼침 — 각 요일의 장소/시간을 그 정류장에 반영 (같은 호차, 요일별 다른 지점)
+          for (const day of s.days) {
+            const loc = (s.dayLocs?.[day] ?? s.location ?? '').trim()
+            if (!loc) continue
+            const t = s.dayTimes?.[day] ?? s.pickup_time
+            if (!locMap.has(loc)) locMap.set(loc, { time: null, count: 0, names: [] })
+            const e = locMap.get(loc)!
+            if (!e.names.includes(s.name)) { e.names.push(s.name); e.count++ }  // 학생 distinct 카운트
+            if (t && (!e.time || parseTimeMin(t) < parseTimeMin(e.time))) e.time = t
+          }
         }
       }
       // 빈 정류장 마스터(학생 0명) 합집합 — 세션 무관, 해당 호차·방향만
@@ -634,13 +639,15 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
           if (d !== targetDir) continue
           if (getRunLabel(group.session_name, d) !== selectedSession) continue
           for (const s of (group.busMap[busName] ?? [])) {
-            if (!s.location) continue
-            const loc = s.location.trim()
-            if (!locMap.has(loc)) locMap.set(loc, { time: null, count: 0, names: [] })
-            const e = locMap.get(loc)!
-            e.count++
-            if (!e.names.includes(s.name)) e.names.push(s.name)
-            if (s.pickup_time && (!e.time || parseTimeMin(s.pickup_time) < parseTimeMin(e.time))) e.time = s.pickup_time
+            for (const day of s.days) {
+              const loc = (s.dayLocs?.[day] ?? s.location ?? '').trim()
+              if (!loc) continue
+              const t = s.dayTimes?.[day] ?? s.pickup_time
+              if (!locMap.has(loc)) locMap.set(loc, { time: null, count: 0, names: [] })
+              const e = locMap.get(loc)!
+              if (!e.names.includes(s.name)) { e.names.push(s.name); e.count++ }
+              if (t && (!e.time || parseTimeMin(t) < parseTimeMin(e.time))) e.time = t
+            }
           }
         }
         // 빈 정류장 마스터(학생 0명) 합집합 — 해당 호차·방향만
@@ -2432,11 +2439,15 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
     const { combined } = getScheduleData()
     const stopsMap = new Map<string, { time: string | null; students: StudentEntry[] }>()
     for (const s of (combined[busName] ?? [])) {
-      const loc = s.location?.trim() || '정류장 미설정'
-      if (!stopsMap.has(loc)) stopsMap.set(loc, { time: null, students: [] })
-      const e = stopsMap.get(loc)!
-      e.students.push(s)
-      if (s.pickup_time && (!e.time || parseTimeMin(s.pickup_time) < parseTimeMin(e.time))) e.time = s.pickup_time
+      // 요일별로 펼침 — 요일마다 다른 정류장/시간 반영
+      for (const day of s.days) {
+        const loc = (s.dayLocs?.[day] ?? s.location)?.trim() || '정류장 미설정'
+        if (!stopsMap.has(loc)) stopsMap.set(loc, { time: null, students: [] })
+        const e = stopsMap.get(loc)!
+        if (!e.students.some(x => x.student_id === s.student_id)) e.students.push(s)
+        const t = s.dayTimes?.[day] ?? s.pickup_time
+        if (t && (!e.time || parseTimeMin(t) < parseTimeMin(e.time))) e.time = t
+      }
     }
     for (const rs of registeredStops) {
       if (rs.bus_name !== busName || rs.direction !== dir) continue
