@@ -1288,18 +1288,21 @@ export default function VehiclesPage() {
                   ) : DAYS.filter(d => editSchedDays.includes(d)).map(d => {
                     const dloc = editSchedDayLocs[d] ?? editSchedLoc
                     const matched = stopTimeFor(editSchedBus, dloc)
+                    const opts = [...new Set([dloc, ...(editSchedModal.busLocs[editSchedBus] ?? [])].filter(Boolean))]
                     return (
                     <div key={d} className="flex items-center gap-1.5">
                       <span className="text-[11px] font-bold w-5 text-center text-[#475569] shrink-0">{d}</span>
-                      <input value={dloc}
+                      <select value={dloc}
                         onChange={e => setEditSchedDayLocs(prev => ({ ...prev, [d]: e.target.value }))}
-                        placeholder="장소"
-                        className="flex-1 min-w-0 border border-[#E2E8F0] rounded-lg px-2 py-1.5 text-[12px] focus:outline-none focus:ring-1 focus:ring-[#004EA2]" />
+                        className="flex-1 min-w-0 border border-[#E2E8F0] rounded-lg px-2 py-1.5 text-[12px] bg-white focus:outline-none focus:ring-1 focus:ring-[#004EA2]">
+                        <option value="">정류장 선택</option>
+                        {opts.map(loc => <option key={loc} value={loc}>{loc}</option>)}
+                      </select>
                       <span className="w-12 shrink-0 text-[11px] text-center font-bold text-[#004EA2]" style={{ fontVariantNumeric: 'tabular-nums' }}>{matched || '--:--'}</span>
                     </div>
                     )
                   })}
-                  <p className="text-[9px] text-[#94A3B8]">시간은 해당 정류장의 기존 운행 시간이 자동 매칭됩니다.</p>
+                  <p className="text-[9px] text-[#94A3B8]">위 정류장 목록에서 선택하면 시간이 자동 매칭됩니다.</p>
                 </div>
               )}
             </div>
