@@ -178,6 +178,7 @@ export async function GET(request: NextRequest) {
     class_id: string
     override?: boolean; location: string | null
     dayLocs?: Record<string, string>  // 요일별 탑승 장소 (같은 호차·요일별 다른 지점)
+    dayTimes?: Record<string, string>  // 요일별 탑승 시간 (정류장에 맞는 시간)
     days: string[]  // 해당 방향으로 탑승하는 요일 목록
     pickup_time: string | null  // arr_schedule["_time"] / dep_schedule["_time"]
     is_bangwaHu?: boolean  // 방과후 세션 + 하원 여부 (매일반 탭 내 유치 배지용)
@@ -244,11 +245,14 @@ export async function GET(request: NextRequest) {
         // → 방향별 defaultTime(session time_range 기반)으로 표시
         const resolvedTime = pickup_time || dayTime || null
         const location = cleanLoc
-        // 요일별 장소 수집 (같은 호차라도 요일마다 다른 지점 지원)
+        // 요일별 장소·시간 수집 (같은 호차라도 요일마다 다른 지점/시간 지원)
         const dayLocs: Record<string, string> = {}
+        const dayTimes: Record<string, string> = {}
         for (const day of assignedDays) {
           const { cleanLoc: dl } = parseLocTime(sched?.[day + '_loc'] ?? null)
           if (dl) dayLocs[day] = dl
+          const dt = sched?.[day + '_time'] as string | undefined
+          if (dt) dayTimes[day] = dt
         }
         const entry: StudentEntry = {
           student_id: enr.student_id,
@@ -258,6 +262,7 @@ export async function GET(request: NextRequest) {
           override: false,
           location,
           dayLocs,
+          dayTimes,
           days: assignedDays,
           pickup_time: resolvedTime,
           is_bangwaHu: !!(session_name?.includes('방과후') && !session_name?.includes('유치부') && direction === 'dep'),
@@ -626,7 +631,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === 'update_enrollment_schedule') {
-    const { student_id, class_id, direction: dir, days, bus_name, old_bus_name, location, pickup_time, day_locations } = body
+    const { student_id, class_id, direction: dir, days, bus_name, old_bus_name, location, pickup_time, day_locations, day_times } = body
     const campusErr = await assertClassInCampus(class_id)
     if (campusErr) return campusErr
     const { data: enr } = await service.from('class_enrollments')
@@ -679,7 +684,15 @@ export async function POST(request: NextRequest) {
       if (dloc === '' || dloc === null || dloc === undefined) delete sched[d + '_loc']
       else sched[d + '_loc'] = dloc
     }
-    if (pickup_time !== undefined) {
+    if (day_times && Object.keys(day_times).length > 0) {
+      // 요일별 시간 (요일별 정류장에 맞는 시간) — 각 요일 _time 설정, 단일 _time 제거
+      for (const d of dayList) {
+        const dt = day_times[d]
+        if (dt) sched[d + '_time'] = dt
+        else delete sched[d + '_time']
+      }
+      delete sched['_time']
+    } else if (pickup_time !== undefined) {
       if (pickup_time) sched['_time'] = pickup_time
       else delete sched['_time']
       clearPerDayTimes(sched)

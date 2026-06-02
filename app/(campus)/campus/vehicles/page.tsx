@@ -148,6 +148,7 @@ interface StudentEntry {
   class_id: string
   override?: boolean; location: string|null; days: string[]; pickup_time: string|null
   dayLocs?: Record<string, string>  // 요일별 탑승 장소 (같은 호차·요일별 다른 지점)
+  dayTimes?: Record<string, string>  // 요일별 탑승 시간 (정류장에 맞는 시간)
   is_bangwaHu?: boolean  // 방과후 세션 + 하원 → 매일반 탭 내 유치 배지용
 }
 interface AbsentEntry { student_id: string; name: string }
@@ -446,9 +447,11 @@ export default function VehiclesPage() {
     setEditSchedDays([...student.days])
     // 요일별 장소 prefill — 저장된 값이 요일마다 다르면 토글 자동 ON
     const dl = student.dayLocs ?? {}
+    const dt = student.dayTimes ?? {}
     setEditSchedDayLocs({ ...dl })
     const distinctLocs = new Set(student.days.map(d => dl[d] ?? (student.location ?? '')))
-    setEditSchedPerDayLoc(distinctLocs.size > 1)
+    const distinctTimes = new Set(student.days.map(d => dt[d] ?? (student.pickup_time ?? '')))
+    setEditSchedPerDayLoc(distinctLocs.size > 1 || distinctTimes.size > 1)
     setEditLocIsNew(false)
     setEditTimeEditing(false)
     setEditTimeDraft('')
@@ -458,6 +461,24 @@ export default function VehiclesPage() {
       mergedLocs[b] = [...new Set([...(mergedLocs[b] ?? []), ...locs])]
     }
     setEditSchedModal({ student, currentBus, busLocs: mergedLocs, sessionName: sessionName ?? '', defaultTime: defaultTime ?? '' })
+  }
+
+  // 정류장(호차·장소)의 기존 운행 시간 자동 매칭 — 등록 정류장 기본시간 → 기존 학생 시간 순
+  function stopTimeFor(bus: string, loc: string): string {
+    if (!bus || !loc) return ''
+    const reg = masterRegStopTimes[`${bus}|${loc.trim()}`]
+    if (reg) return normalizeTime(reg)
+    for (const g of masterGroups) {
+      for (const s of (g.busMap[bus] ?? [])) {
+        if ((s.location ?? '').trim() === loc.trim() && s.pickup_time) return normalizeTime(s.pickup_time)
+        if (s.dayLocs) {
+          for (const [d, l] of Object.entries(s.dayLocs)) {
+            if ((l ?? '').trim() === loc.trim() && s.dayTimes?.[d]) return normalizeTime(s.dayTimes[d])
+          }
+        }
+      }
+    }
+    return ''
   }
 
   async function handleSaveEditSched() {
@@ -478,7 +499,14 @@ export default function VehiclesPage() {
         bus_name: editSchedBus || undefined,
         old_bus_name: editSchedModal.currentBus || undefined,  // 원래 호차 — 호차 이동+요일제거 시 옛 호차의 빠진 요일 정리
         location: editSchedLoc,
-        ...(editSchedPerDayLoc ? { day_locations: Object.fromEntries(editSchedDays.map(d => [d, editSchedDayLocs[d] ?? editSchedLoc])) } : {}),
+        ...(editSchedPerDayLoc ? {
+          day_locations: Object.fromEntries(editSchedDays.map(d => [d, editSchedDayLocs[d] ?? editSchedLoc])),
+          // 시간은 각 요일 장소의 기존 정류장 운행시간을 자동 매칭 (없으면 기본 시간)
+          day_times: Object.fromEntries(editSchedDays.map(d => {
+            const dloc = editSchedDayLocs[d] ?? editSchedLoc
+            return [d, stopTimeFor(editSchedBus, dloc) || finalPickupTime]
+          })),
+        } : {}),
         pickup_time: finalPickupTime,
       }),
     })
@@ -1247,7 +1275,7 @@ export default function VehiclesPage() {
             {/* 요일별 장소 다름 (같은 호차, 요일마다 다른 지점) */}
             <div className="mb-4">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold text-[#64748B]">요일별 장소 다름</span>
+                <span className="text-[10px] font-bold text-[#64748B]">요일별 장소·시간 다름</span>
                 <button onClick={() => setEditSchedPerDayLoc(v => !v)}
                   className={`w-9 h-5 rounded-full transition-colors relative shrink-0 ${editSchedPerDayLoc ? 'bg-[#004EA2]' : 'bg-[#CBD5E1]'}`}>
                   <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${editSchedPerDayLoc ? 'left-4' : 'left-0.5'}`} />
@@ -1257,16 +1285,21 @@ export default function VehiclesPage() {
                 <div className="mt-2 space-y-1.5">
                   {editSchedDays.length === 0 ? (
                     <p className="text-[10px] text-[#94A3B8]">먼저 적용 요일을 선택하세요</p>
-                  ) : DAYS.filter(d => editSchedDays.includes(d)).map(d => (
-                    <div key={d} className="flex items-center gap-2">
+                  ) : DAYS.filter(d => editSchedDays.includes(d)).map(d => {
+                    const dloc = editSchedDayLocs[d] ?? editSchedLoc
+                    const matched = stopTimeFor(editSchedBus, dloc)
+                    return (
+                    <div key={d} className="flex items-center gap-1.5">
                       <span className="text-[11px] font-bold w-5 text-center text-[#475569] shrink-0">{d}</span>
-                      <input value={editSchedDayLocs[d] ?? editSchedLoc}
+                      <input value={dloc}
                         onChange={e => setEditSchedDayLocs(prev => ({ ...prev, [d]: e.target.value }))}
-                        placeholder="이 요일 탑승 장소"
-                        className="flex-1 border border-[#E2E8F0] rounded-lg px-2 py-1.5 text-[12px] focus:outline-none focus:ring-1 focus:ring-[#004EA2]" />
+                        placeholder="장소"
+                        className="flex-1 min-w-0 border border-[#E2E8F0] rounded-lg px-2 py-1.5 text-[12px] focus:outline-none focus:ring-1 focus:ring-[#004EA2]" />
+                      <span className="w-12 shrink-0 text-[11px] text-center font-bold text-[#004EA2]" style={{ fontVariantNumeric: 'tabular-nums' }}>{matched || '--:--'}</span>
                     </div>
-                  ))}
-                  <p className="text-[9px] text-[#94A3B8]">비우면 위 기본 장소가 적용됩니다.</p>
+                    )
+                  })}
+                  <p className="text-[9px] text-[#94A3B8]">시간은 해당 정류장의 기존 운행 시간이 자동 매칭됩니다.</p>
                 </div>
               )}
             </div>
