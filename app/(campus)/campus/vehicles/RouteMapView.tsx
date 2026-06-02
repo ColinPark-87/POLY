@@ -3210,11 +3210,11 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
           </div>
         )}
 
-        {/* ── 지도 FAB 컨트롤 (우하단 세로 스택) */}
-        <div className="absolute z-[1000] flex flex-col gap-2 pointer-events-auto items-end" style={{ bottom: 12, right: 12 }}>
+        {/* ── 지도 FAB 컨트롤 (좌하단 세로 스택 — 우측 플로팅 패널과 겹치지 않게) */}
+        <div className="absolute z-[1000] flex flex-col gap-2 pointer-events-auto items-start" style={{ bottom: 12, left: 12 }}>
           {/* 정류장 추가 (파랑) — 정류장 이동(초록)과 색으로 구분 */}
           <div className="group relative flex items-center">
-            <span className="absolute right-full mr-2 whitespace-nowrap rounded-lg bg-[#0B1220]/90 px-2.5 py-1 text-[11px] font-bold text-white opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-lg">정류장 추가</span>
+            <span className="absolute left-full ml-2 whitespace-nowrap rounded-lg bg-[#0B1220]/90 px-2.5 py-1 text-[11px] font-bold text-white opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-lg">정류장 추가</span>
             <button
               onClick={() => {
                 setAddStopModal({ bus: selectedBuses.length === 1 ? selectedBuses[0] : '', dir, sessionName: '' })
@@ -3232,7 +3232,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
           </div>
           {/* 정류장 이동 (초록) — 위치 조정 모드 */}
           <div className="group relative flex items-center">
-            <span className="absolute right-full mr-2 whitespace-nowrap rounded-lg bg-[#0B1220]/90 px-2.5 py-1 text-[11px] font-bold text-white opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-lg">정류장 이동</span>
+            <span className="absolute left-full ml-2 whitespace-nowrap rounded-lg bg-[#0B1220]/90 px-2.5 py-1 text-[11px] font-bold text-white opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-lg">정류장 이동</span>
             <button onClick={() => { setAdjustMode(v => !v); setPendingMove(null); pendingMarkerRef.current = null }} title="정류장 이동 — 정류장 핀을 끌어 좌표 변경"
               className="w-11 h-11 rounded-2xl shadow-lg flex items-center justify-center transition-all active:scale-95"
               style={adjustMode
