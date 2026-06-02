@@ -1,8 +1,9 @@
 {
-  "date": "2026-05-29",
-  "summary": "비밀번호 찾기 UX 개선(A안) — '이메일만' 입력이라 누구 건지 불명확했음. 로그인과 동일하게 소속 선택+이름(직원) / 이메일(본사·원장)로 계정 조회하도록 변경. 결과 화면에 '○○○님께 등록메일(ho***@도메인)로 보냈습니다' 표시. 이름로그인(@campus.internal) 계정은 '관리자 초기화 요청' 안내. 백엔드는 캠퍼스+이름 또는 이메일 분기 조회+동명이인 가드+마스킹, generateLink+Brevo 발송 유지. tsc·테스트 35/35",
-  "commands": ["비번 찾기 식별 불명확 개선안 제시(A/B/C)", "A안 구현(forgot-password API 분기+로그인 모달 캠퍼스/이름)", "재배포"],
+  "date": "2026-06-02",
+  "summary": "차량관리 후속: ①모바일(오늘)탭 '앞으로 변경' 저장버그 수정 — 유일하게 res.ok 미확인이라 silent 실패였음. class_id/res.ok 체크 추가. ②권한분기: 차량선생님(vehiclesRestricted)=변경신청만 접수(submit_change_request), 데스크직원=즉시 영구적용+오늘 override 정리(clear_override 신규 서버액션). 사유: 차량선생님 임의변경 방지(본래 신청→승인 워크플로우). ③중복 '변경 승인 요청' 폼+죽은코드(submitChangeRequest/req* 5상태) 제거. ④지도 리모컨 수동 최소화 버튼+선택요약 캡슐(localStorage 기억, 자동축소는 제외). tsc 0·build 0·dev 307(정상). 미배포(사용자 확인 대기).",
+  "commands": ["리모컨 최소화 버튼 구상+구현", "모바일 앞으로변경 저장버그 확인·수정", "앞으로변경 권한분기(신청/승인) 중복정리"],
   "files_created": [
-    "docs/정류장-지도추가-구현.md"
+    "docs/superpowers/specs/2026-06-02-vehicle-remote-minimize-and-perm-change-design.md",
+    "docs/superpowers/plans/2026-06-02-vehicle-remote-minimize-and-perm-change.md"
   ]
 }
