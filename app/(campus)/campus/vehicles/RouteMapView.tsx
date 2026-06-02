@@ -2229,7 +2229,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
     const fmtMin = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
     const oneBus = selectedBuses.length === 1 ? selectedBuses[0] : null
     const tmapSel = oneBus ? tmapSummaries[oneBus] : null
-    const accentDot = dir === 'arr' ? '#38BDF8' : '#FB7185'
+    const accentDot = dir === 'arr' ? '#1A73E8' : '#FB7185'
     // 정원 상태 (단일 호차=해당 호차 / 복수=초과·주의 대수 요약)
     const overN = displayBuses.filter(b => (busStudentCount[b.name] ?? 0) > busCapOf(b.name)).length
     const warnN = displayBuses.filter(b => { const c = busStudentCount[b.name] ?? 0; const cap = busCapOf(b.name); return c <= cap && c >= cap - 2 }).length
@@ -3294,8 +3294,8 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
       {/* 플로팅 리모컨 — 지도 위에 떠서 드래그 이동 */}
       <div ref={remoteWrapRef} className="absolute flex z-[1100]"
         style={{ ...(remotePos ? { left: remotePos.x, top: remotePos.y } : { right: 8, top: 8 }), maxHeight: 'calc(100% - 16px)' }}>
-      {/* ── 우측 리모컨 (다크 셸 — 모드 탭 + 본문 한 덩어리) */}
-      <div className="flex flex-col gap-2 shrink-0 overflow-hidden rounded-2xl shadow-xl" style={{ width: 320, height: sidebarPage === 1 ? undefined : 'min(560px, calc(100vh - 190px))', background: '#0B1220', padding: 6 }}>
+      {/* ── 우측 리모컨 (구글 라이트 셸 — 모드 탭 + 본문 한 덩어리) */}
+      <div className="flex flex-col gap-2 shrink-0 overflow-hidden rounded-2xl border border-[#DADCE0]" style={{ width: 320, height: (sidebarPage === 1 || sidebarPage === 3) ? undefined : 'min(560px, calc(100vh - 190px))', background: '#FFFFFF', padding: 6, boxShadow: '0 1px 3px rgba(60,64,67,.3), 0 4px 8px rgba(60,64,67,.15)' }}>
 
         {/* 드래그 그립 — 리모컨 이동 손잡이 */}
         <div onPointerDown={startRemoteDrag} className="flex items-center justify-center gap-1.5 py-0.5 cursor-grab active:cursor-grabbing select-none shrink-0" style={{ touchAction: 'none' }}>
@@ -3304,7 +3304,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
         </div>
 
         {/* 페이지 네비게이션 — 리모컨 모드 버튼 (다크) */}
-        <div className="flex gap-1 p-1 rounded-xl shrink-0" style={{ background: '#1E293B' }}>
+        <div className="flex gap-1 p-1 rounded-xl shrink-0" style={{ background: '#F1F3F4' }}>
           {([
             { n: 1 as const, label: '노선', icon: '🗺️' },
             { n: 2 as const, label: '오늘', icon: '📅' },
@@ -3313,7 +3313,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
             { n: 5 as const, label: '호차설정', icon: '🚌' },
           ]).map(t => (
             <button key={t.n} onClick={() => { setSidebarPage(t.n); if (t.n === 5) setBusSettingsOpen(true) }}
-              className={`relative flex-1 flex flex-col items-center justify-center gap-0.5 py-1.5 rounded-lg transition-all ${sidebarPage === t.n ? 'bg-[#2563EB] text-white shadow-sm' : 'text-[#94A3B8] hover:bg-white/10'}`}>
+              className={`relative flex-1 flex flex-col items-center justify-center gap-0.5 py-1.5 rounded-lg transition-all ${sidebarPage === t.n ? 'bg-[#1A73E8] text-white shadow-sm' : 'text-[#5F6368] hover:bg-black/5'}`}>
               <span className="text-[13px] leading-none">{t.icon}</span>
               <span className="text-[9px] font-black leading-tight text-center break-keep">{t.label}</span>
               {t.n === 4 && sidebarPage !== 4 && setStopsCount < allStops.length && allStops.length > 0 && (
@@ -3328,15 +3328,15 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
           <>
             <div className="space-y-2 shrink-0">
               {/* 상태 화면 */}
-              <div className="rounded-xl px-3 py-2 text-center" style={{ background: '#1E293B' }}>
+              <div className="rounded-xl px-3 py-2 text-center" style={{ background: '#F1F3F4' }}>
                 {selectedSession ? (
                   <>
-                    <p className="text-[12px] font-black text-white leading-tight">{selectedSession} · {dir === 'arr' ? '등원' : '하원'}</p>
-                    <p className="text-[10px] font-bold mt-0.5" style={{ color: '#38BDF8' }}>
+                    <p className="text-[12px] font-black text-[#202124] leading-tight">{selectedSession} · {dir === 'arr' ? '등원' : '하원'}</p>
+                    <p className="text-[10px] font-bold mt-0.5" style={{ color: '#1A73E8' }}>
                       {selectedBuses.length === 0 ? '호차 미선택' : (allSelected ? `전체 ${sessionBuses.length}호차` : selectedBuses.join(', '))}
                     </p>
                   </>
-                ) : <p className="text-[11px] font-bold text-[#94A3B8]">세션을 선택하세요</p>}
+                ) : <p className="text-[11px] font-bold text-[#5F6368]">세션을 선택하세요</p>}
               </div>
 
               {/* 등하원 토글 */}
@@ -3344,7 +3344,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
                 {(['arr', 'dep'] as const).map(d => (
                   <button key={d} onClick={() => setDir(d)}
                     className="py-2 rounded-xl text-[12px] font-black transition-colors"
-                    style={dir === d ? { background: d === 'arr' ? '#2563EB' : '#DC2626', color: '#fff' } : { background: '#1E293B', color: '#94A3B8' }}>
+                    style={dir === d ? { background: d === 'arr' ? '#1A73E8' : '#D93025', color: '#fff' } : { background: '#F1F3F4', color: '#5F6368' }}>
                     {d === 'arr' ? '🚌 등원' : '🏠 하원'}
                   </button>
                 ))}
@@ -3357,7 +3357,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
                   {sessionDirOptions.filter(opt => !opt.label.includes('결석') && (dir === 'arr' ? opt.arr : opt.dep)).map(opt => (
                     <button key={opt.label} onClick={() => { setSelectedSession(opt.label); setSelectedBuses([]) }}
                       className="py-1.5 rounded-lg text-[11px] font-bold transition-colors"
-                      style={selectedSession === opt.label ? { background: opt.color, color: '#fff' } : { background: '#1E293B', color: '#94A3B8' }}>
+                      style={selectedSession === opt.label ? { background: opt.color, color: '#fff' } : { background: '#F1F3F4', color: '#5F6368' }}>
                       {opt.label}
                     </button>
                   ))}
@@ -3370,10 +3370,10 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
                   <p className="text-[9px] font-bold text-[#64748B] uppercase tracking-wider px-0.5">호차</p>
                   <div className="flex items-center gap-1.5">
                     <button onClick={() => { setBothDir(b => { if (!b) setSelectedBuses(prev => prev.slice(0, 1)); return !b }) }}
-                      className="text-[9px] font-bold px-2 py-0.5 rounded-lg" style={bothDir ? { background: '#2563EB', color: '#fff' } : { background: '#1E293B', color: '#94A3B8' }}>등↕하</button>
+                      className="text-[9px] font-bold px-2 py-0.5 rounded-lg" style={bothDir ? { background: '#1A73E8', color: '#fff' } : { background: '#F1F3F4', color: '#5F6368' }}>등↕하</button>
                     {!bothDir && sessionBuses.length > 0 && (
                       <button onClick={() => setSelectedBuses(allSelected ? [] : sessionBuses.map(b => b.name))}
-                        className="text-[10px] font-black" style={{ color: '#38BDF8' }}>{allSelected ? '해제' : '전체'}</button>
+                        className="text-[10px] font-black" style={{ color: '#1A73E8' }}>{allSelected ? '해제' : '전체'}</button>
                     )}
                   </div>
                 </div>
@@ -3387,7 +3387,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
                       return (
                         <button key={bus.name} onClick={() => toggleBus(bus.name)}
                           className="flex flex-col items-center py-1.5 rounded-lg text-[11px] font-black transition-colors"
-                          style={active ? { background: color, color: '#fff' } : { background: '#1E293B', color: '#94A3B8' }}>
+                          style={active ? { background: color, color: '#fff' } : { background: '#F1F3F4', color: '#5F6368' }}>
                           <span>{bus.name}</span>
                           <span className="text-[9px] opacity-80">{cnt}명</span>
                         </button>
@@ -3402,8 +3402,8 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
             {bothDir
               ? renderScheduleTimelineList()
               : selectedBuses.length > 0 && (
-                  <p className="text-[10px] text-[#94A3B8] text-center py-2.5 px-3 rounded-2xl shrink-0" style={{ background: '#1E293B' }}>
-                    지도의 <b className="text-white">호차 카드</b>를 누르면 명단·요일·시간·배정
+                  <p className="text-[10px] text-[#5F6368] text-center py-2.5 px-3 rounded-2xl shrink-0" style={{ background: '#F1F3F4' }}>
+                    지도의 <b className="text-[#202124]">호차 카드</b>를 누르면 명단·요일·시간·배정
                   </p>
                 )}
           </>
@@ -3852,14 +3852,14 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
             }} className="text-[9px] text-[#004EA2] font-bold hover:underline shrink-0">↺</button>
           )
           return (
-            <div className="flex flex-col flex-1 min-h-0 gap-1.5">
+            <div className="flex flex-col gap-1.5">
               {/* 위: 변경 승인 */}
-              <div className="flex flex-col bg-white rounded-2xl border border-[#E2E8F0] p-2 gap-1" style={{ flex: '1 1 0', minHeight: 0, overflow: 'hidden' }}>
+              <div className="flex flex-col bg-white rounded-2xl border border-[#E2E8F0] p-2 gap-1">
                 <div className="flex items-center justify-between shrink-0">
                   <p className="text-[8px] font-bold text-[#94A3B8] uppercase tracking-wider">변경 승인</p>
                   {refreshBtn}
                 </div>
-                <div className="flex-1 min-h-0 overflow-y-auto space-y-1.5">
+                <div className="overflow-y-auto space-y-1.5" style={{ maxHeight: 170 }}>
                   {p3Loading ? (
                     <div className="flex items-center justify-center py-3">
                       <div className="w-3 h-3 border-2 border-[#004EA2] border-t-transparent rounded-full animate-spin" />
@@ -3907,9 +3907,9 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
                 </div>
               </div>
               {/* 아래: 변경 기록 */}
-              <div className="flex flex-col bg-white rounded-2xl border border-[#E2E8F0] p-2 gap-1" style={{ flex: '1 1 0', minHeight: 0, overflow: 'hidden' }}>
+              <div className="flex flex-col bg-white rounded-2xl border border-[#E2E8F0] p-2 gap-1">
                 <p className="text-[8px] font-bold text-[#94A3B8] uppercase tracking-wider shrink-0">변경 기록</p>
-                <div className="flex-1 min-h-0 overflow-y-auto space-y-1">
+                <div className="overflow-y-auto space-y-1" style={{ maxHeight: 140 }}>
                   {p3Loading ? (
                     <div className="flex items-center justify-center py-3">
                       <div className="w-3 h-3 border-2 border-[#004EA2] border-t-transparent rounded-full animate-spin" />
