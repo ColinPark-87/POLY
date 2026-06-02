@@ -3281,7 +3281,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
       </div>
 
       {/* ── 우측 패널 */}
-      <div className="flex flex-col gap-2 shrink-0 overflow-hidden" style={{ width: sidebarExpanded ? (sidebarPage === 4 ? 468 : sidebarPage === 5 ? 420 : sidebarPage === 1 ? 448 : 384) : 160, transition: 'width 250ms ease' }}>
+      <div className="flex flex-col gap-2 shrink-0 overflow-hidden" style={{ width: sidebarExpanded ? (sidebarPage === 4 ? 468 : sidebarPage === 5 ? 420 : sidebarPage === 1 ? 300 : 384) : 160, transition: 'width 250ms ease' }}>
 
         {/* 페이지 네비게이션 — 라벨 탭 */}
         <div className="flex gap-1 p-1 bg-white rounded-xl border border-[#E2E8F0] shrink-0">
@@ -3303,101 +3303,87 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
           ))}
         </div>
 
-        {/* ─ 확장 패널 (Page 1: 좌표 설정 포함) ─ */}
+        {/* ─ Page 1: 컴팩트 다크 리모컨 (노선 조작) ─ */}
         {sidebarExpanded && sidebarPage === 1 && (
           <>
-            {/* Hero ETA 카드 제거 — 좌측 지도 상단의 호차 노선 카드와 정보 중복 */}
+            <div className="rounded-2xl p-2.5 space-y-2 shrink-0 shadow-lg" style={{ background: '#0B1220' }}>
+              {/* 상태 화면 */}
+              <div className="rounded-xl px-3 py-2 text-center" style={{ background: '#1E293B' }}>
+                {selectedSession ? (
+                  <>
+                    <p className="text-[12px] font-black text-white leading-tight">{selectedSession} · {dir === 'arr' ? '등원' : '하원'}</p>
+                    <p className="text-[10px] font-bold mt-0.5" style={{ color: '#38BDF8' }}>
+                      {selectedBuses.length === 0 ? '호차 미선택' : (allSelected ? `전체 ${sessionBuses.length}호차` : selectedBuses.join(', '))}
+                    </p>
+                  </>
+                ) : <p className="text-[11px] font-bold text-[#94A3B8]">세션을 선택하세요</p>}
+              </div>
 
-            {/* 빠른 선택 (방향 + 수업유형) */}
-            <div className="bg-white rounded-2xl border border-[#E2E8F0] p-2 space-y-1.5 shrink-0">
-              <p className="text-[9px] font-bold text-[#94A3B8] uppercase tracking-wider px-1">빠른 선택 (전체호차)</p>
-              {sessionDirOptions.filter(opt => !opt.label.includes('결석')).map(opt => (
-                <div key={opt.label} className="flex items-center gap-1.5">
-                  <span className="text-[10px] font-bold w-14 text-right shrink-0" style={{ color: opt.color }}>{opt.label}</span>
-                  <div className="flex gap-1 flex-1">
-                    {opt.arr && (
-                      <button
-                        onClick={() => { setDir('arr'); setSelectedSession(opt.label); setSelectedBuses([]) }}
-                        className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold transition-colors border ${
-                          dir === 'arr' && selectedSession === opt.label
-                            ? 'text-white border-transparent'
-                            : 'bg-white border-[#E2E8F0] text-[#64748B] hover:border-[#2196F3] hover:text-[#2196F3]'
-                        }`}
-                        style={dir === 'arr' && selectedSession === opt.label ? { background: opt.color, borderColor: opt.color } : {}}>
-                        🚌 등원
-                      </button>
-                    )}
-                    {opt.dep && (
-                      <button
-                        onClick={() => { setDir('dep'); setSelectedSession(opt.label); setSelectedBuses([]) }}
-                        className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold transition-colors border ${
-                          dir === 'dep' && selectedSession === opt.label
-                            ? 'text-white border-transparent'
-                            : 'bg-white border-[#E2E8F0] text-[#64748B] hover:border-[#DC2626] hover:text-[#DC2626]'
-                        }`}
-                        style={dir === 'dep' && selectedSession === opt.label ? { background: opt.color, borderColor: opt.color } : {}}>
-                        🏠 하원
-                      </button>
+              {/* 등하원 토글 */}
+              <div className="grid grid-cols-2 gap-1.5">
+                {(['arr', 'dep'] as const).map(d => (
+                  <button key={d} onClick={() => setDir(d)}
+                    className="py-2 rounded-xl text-[12px] font-black transition-colors"
+                    style={dir === d ? { background: d === 'arr' ? '#2563EB' : '#DC2626', color: '#fff' } : { background: '#1E293B', color: '#94A3B8' }}>
+                    {d === 'arr' ? '🚌 등원' : '🏠 하원'}
+                  </button>
+                ))}
+              </div>
+
+              {/* 세션 (개설반 기준) */}
+              <div>
+                <p className="text-[9px] font-bold text-[#64748B] uppercase tracking-wider mb-1 px-0.5">세션</p>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {sessionDirOptions.filter(opt => !opt.label.includes('결석') && (dir === 'arr' ? opt.arr : opt.dep)).map(opt => (
+                    <button key={opt.label} onClick={() => { setSelectedSession(opt.label); setSelectedBuses([]) }}
+                      className="py-1.5 rounded-lg text-[11px] font-bold transition-colors"
+                      style={selectedSession === opt.label ? { background: opt.color, color: '#fff' } : { background: '#1E293B', color: '#94A3B8' }}>
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 호차 + 전체 + 등↕하 */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-[9px] font-bold text-[#64748B] uppercase tracking-wider px-0.5">호차</p>
+                  <div className="flex items-center gap-1.5">
+                    <button onClick={() => { setBothDir(b => { if (!b) setSelectedBuses(prev => prev.slice(0, 1)); return !b }) }}
+                      className="text-[9px] font-bold px-2 py-0.5 rounded-lg" style={bothDir ? { background: '#2563EB', color: '#fff' } : { background: '#1E293B', color: '#94A3B8' }}>등↕하</button>
+                    {!bothDir && sessionBuses.length > 0 && (
+                      <button onClick={() => setSelectedBuses(allSelected ? [] : sessionBuses.map(b => b.name))}
+                        className="text-[10px] font-black" style={{ color: '#38BDF8' }}>{allSelected ? '해제' : '전체'}</button>
                     )}
                   </div>
                 </div>
-              ))}
-            </div>
-
-            {/* ══ 호차 선택 — 항상 표시 ══ */}
-            <div className="shrink-0">
-              {sessionBuses.length > 0 ? (
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between flex-wrap gap-1">
-                    <span className="text-[10px] text-[#94A3B8] font-semibold">호차 선택</span>
-                    <div className="flex items-center gap-1.5">
-                      {/* 등하원 동시보기 토글 */}
-                      <button
-                        onClick={() => { setBothDir(b => { if (!b) setSelectedBuses(prev => prev.slice(0,1)); return !b }) }}
-                        className={`text-[9px] font-bold px-2 py-0.5 rounded-lg border transition-colors ${bothDir ? 'bg-[#004EA2] text-white border-[#004EA2]' : 'bg-white text-[#64748B] border-[#E2E8F0] hover:border-[#004EA2]'}`}>
-                        등↕하
-                      </button>
-                      {!bothDir && (
-                        <button
-                          onClick={() => setSelectedBuses(allSelected ? [] : sessionBuses.map(b => b.name))}
-                          className="text-[10px] font-bold text-[#004EA2] hover:underline">
-                          {allSelected ? '전체 해제' : '전체 선택'}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  {bothDir && <p className="text-[9px] text-[#F59E0B] font-semibold">등하원 동시보기: 1대만 선택 가능</p>}
-                  <div className="flex flex-wrap gap-1.5">
+                {bothDir && <p className="text-[9px] text-[#F59E0B] font-semibold mb-1">동시보기: 1대만</p>}
+                {sessionBuses.length > 0 ? (
+                  <div className="grid grid-cols-3 gap-1.5">
                     {sessionBuses.map(bus => {
                       const color = getBusColor(bus.name, buses.findIndex(b => b.id === bus.id))
                       const active = selectedBuses.includes(bus.name)
                       const cnt = busStudentCount[bus.name] ?? 0
                       return (
                         <button key={bus.name} onClick={() => toggleBus(bus.name)}
-                          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-colors"
-                          style={active
-                            ? { background: color + '20', borderColor: color, color }
-                            : { background: '#F8FAFC', borderColor: '#E2E8F0', color: '#94A3B8' }}>
-                          <span className="w-2 h-2 rounded-full shrink-0" style={{ background: active ? color : '#CBD5E1' }} />
-                          {bus.name}
-                          <span className="text-[10px] opacity-70">{cnt}명</span>
+                          className="flex flex-col items-center py-1.5 rounded-lg text-[11px] font-black transition-colors"
+                          style={active ? { background: color, color: '#fff' } : { background: '#1E293B', color: '#94A3B8' }}>
+                          <span>{bus.name}</span>
+                          <span className="text-[9px] opacity-80">{cnt}명</span>
                         </button>
                       )
                     })}
                   </div>
-                </div>
-              ) : (
-                <p className="text-xs text-[#94A3B8] text-center py-2">세션을 선택해주세요</p>
-              )}
+                ) : <p className="text-[11px] text-[#64748B] text-center py-2">세션을 선택하세요</p>}
+              </div>
             </div>
 
-            {/* 상세(명단·요일·시간·배정/삭제)는 좌측 지도의 호차 카드를 눌러 팝업으로 — 우측은 키만 슬림화.
-                단, 등하원 동시보기(bothDir)는 좌측 팝업 미연동이라 우측 리스트 유지 */}
+            {/* 등하원 동시보기는 좌측 팝업 미연동이라 우측 리스트 유지 / 그 외엔 지도 호차카드 안내 */}
             {bothDir
               ? renderScheduleTimelineList()
               : selectedBuses.length > 0 && (
-                  <p className="text-[11px] text-[#94A3B8] text-center py-3 px-3 bg-white rounded-2xl border border-dashed border-[#E2E8F0] shrink-0">
-                    좌측 지도의 <b className="text-[#475569]">호차 카드</b>를 누르면<br />명단 · 요일 · 시간 · 배정/삭제가 열립니다
+                  <p className="text-[10px] text-[#94A3B8] text-center py-2.5 px-3 rounded-2xl shrink-0" style={{ background: '#1E293B' }}>
+                    지도의 <b className="text-white">호차 카드</b>를 누르면 명단·요일·시간·배정
                   </p>
                 )}
           </>
