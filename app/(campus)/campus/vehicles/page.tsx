@@ -249,12 +249,6 @@ export default function VehiclesPage() {
   const [changeRequests, setChangeRequests] = useState<ChangeRequest[]>([])
   const [requestsLoading, setRequestsLoading] = useState(false)
   const [pendingCount, setPendingCount] = useState(0)
-  // 요청 제출 폼 (override 모달 내)
-  const [reqFormOpen, setReqFormOpen] = useState(false)
-  const [reqBus, setReqBus] = useState('')
-  const [reqDays, setReqDays] = useState<string[]>([])
-  const [reqNote, setReqNote] = useState('')
-  const [reqStudent, setReqStudent] = useState<StudentEntry | null>(null)
 
   // ── 일괄 시간 설정 ────────────────────────────────────────────
   const [bulkTimeModal, setBulkTimeModal] = useState<{bus: string; dir: 'arr'|'dep'}|null>(null)
@@ -405,7 +399,6 @@ export default function VehiclesPage() {
   function closeOverrideModal() {
     setOverrideModal(null)
     setOverrideBus(''); setOverrideLoc(''); setOverrideLocNew(''); setOverrideLocMode('select'); setOverrideTime('')
-    setReqFormOpen(false); setReqBus(''); setReqDays([]); setReqNote('')
   }
 
   function openOverrideModal(student: StudentEntry, bus: string) {
@@ -417,8 +410,6 @@ export default function VehiclesPage() {
     setOverrideTime(student.pickup_time ?? '')
     setPermMode(false)
     setPermDays([...student.days])
-    setReqFormOpen(false); setReqBus(''); setReqDays([...student.days]); setReqNote('')
-    setReqStudent(student)
   }
 
   async function doOverride(studentId: string, busName: string|null, isAbsent: boolean, location?: string, pickupTime?: string) {
@@ -519,10 +510,41 @@ export default function VehiclesPage() {
 
   async function handlePermChange() {
     if (!overrideModal || !overrideBus || permDays.length === 0) return
-    setSaving(true)
     const finalLoc = overrideLocMode === 'new' ? overrideLocNew : overrideLoc
-    await fetch('/api/campus/vehicles', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
+    setSaving(true)
+
+    // 차량선생님: 직접 변경 금지 → 변경 신청만 접수 (데스크 승인 후 반영)
+    if (vehiclesRestricted) {
+      const res = await fetch('/api/campus/vehicles', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'submit_change_request',
+          student_id: overrideModal.student.student_id,
+          student_name: overrideModal.student.name,
+          class_id: overrideModal.student.class_id,
+          direction: todayDir,
+          from_bus: overrideModal.bus || null,
+          to_bus: overrideBus,
+          days: permDays,
+          location: finalLoc || undefined,
+          pickup_time: overrideTime || undefined,
+        }),
+      })
+      const d = await res.json().catch(() => ({}))
+      setSaving(false)
+      if (!res.ok || d.error) { alert(`신청 실패: ${d.error ?? res.status}`); return }
+      closeOverrideModal()
+      setPendingCount(c => c + 1)
+      alert('변경 신청이 접수되었습니다. 데스크 승인 후 반영됩니다.')
+      return
+    }
+
+    // 데스크 직원: 즉시 영구 적용
+    if (!overrideModal.student.class_id) {
+      setSaving(false); alert('class_id 누락 — 새로고침 후 다시 시도해주세요.'); return
+    }
+    const res = await fetch('/api/campus/vehicles', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         action: 'update_enrollment_schedule',
         student_id: overrideModal.student.student_id,
@@ -530,11 +552,26 @@ export default function VehiclesPage() {
         direction: todayDir,
         days: permDays,
         bus_name: overrideBus,
-        old_bus_name: overrideModal.bus || undefined,  // 원래 호차 — 이동+요일제거 시 옛 호차 정리
+        old_bus_name: overrideModal.bus || undefined,
         location: finalLoc,
         pickup_time: overrideTime,
       }),
     })
+    const d = await res.json().catch(() => ({}))
+    if (!res.ok || d.error) { setSaving(false); alert(`저장 실패: ${d.error ?? res.status}`); return }
+
+    // 오늘 override가 있으면 제거 → 영구변경이 오늘 화면에 즉시 반영 (중복 그림자 제거)
+    if (overrideModal.student.override) {
+      await fetch('/api/campus/vehicles', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'clear_override',
+          student_id: overrideModal.student.student_id,
+          date: selectedDate,
+          direction: todayDir,
+        }),
+      })
+    }
     setSaving(false)
     closeOverrideModal()
     loadToday()
@@ -627,29 +664,6 @@ export default function VehiclesPage() {
       setAddRiderModal(null); resetRiderForm()
       if (tab === 'today') loadToday(); else loadMaster()
     }
-  }
-
-  async function submitChangeRequest() {
-    if (!reqStudent || !reqBus || reqDays.length === 0) return
-    setSaving(true)
-    await fetch('/api/campus/vehicles', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'submit_change_request',
-        student_id: reqStudent.student_id,
-        student_name: reqStudent.name,
-        class_id: reqStudent.class_id,
-        direction: todayDir,
-        from_bus: overrideModal?.bus || null,
-        to_bus: reqBus,
-        days: reqDays,
-        note: reqNote || undefined,
-      }),
-    })
-    setSaving(false)
-    setReqFormOpen(false); setReqBus(''); setReqDays([]); setReqNote('')
-    setPendingCount(c => c + 1)
-    alert('변경 요청이 제출되었습니다.')
   }
 
   async function approveRequest(id: string) {
@@ -1457,7 +1471,7 @@ export default function VehiclesPage() {
               {/* 앞으로 변경 — 요일 선택 */}
               {permMode && (
                 <div className="mb-2 bg-[#F0FDF4] border border-[#BBF7D0] rounded-xl p-3 space-y-2">
-                  <p className="text-[10px] font-bold text-[#15803D]">적용 요일 선택 후 영구 변경</p>
+                  <p className="text-[10px] font-bold text-[#15803D]">{vehiclesRestricted ? '적용 요일 선택 후 변경 신청' : '적용 요일 선택 후 영구 변경'}</p>
                   <div className="flex gap-1.5">
                     {DAYS.map((d, di) => {
                       const active = permDays.includes(d)
@@ -1472,7 +1486,7 @@ export default function VehiclesPage() {
                   </div>
                   <button onClick={handlePermChange} disabled={saving || permDays.length===0 || !overrideBus}
                     className="w-full bg-[#10B981] text-white py-2 rounded-xl text-xs font-bold disabled:opacity-40">
-                    {saving ? '저장 중...' : '영구 변경 저장'}
+                    {saving ? '처리 중...' : (vehiclesRestricted ? '변경 신청 (데스크 승인)' : '영구 변경 저장')}
                   </button>
                 </div>
               )}
@@ -1488,76 +1502,6 @@ export default function VehiclesPage() {
                     className="flex-1 px-3 py-2 rounded-xl text-xs font-semibold border border-[#E2E8F0] text-[#64748B]">
                     ↩ 원래대로
                   </button>
-                )}
-              </div>
-
-              {/* 변경 승인 요청 섹션 */}
-              <div className="border-t border-[#E2E8F0] pt-3 mt-1">
-                <button
-                  onClick={() => setReqFormOpen(o => !o)}
-                  className="w-full text-left text-xs font-semibold text-[#004EA2] flex items-center gap-1.5 py-1">
-                  📋 변경 승인 요청 {reqFormOpen ? '▲' : '▼'}
-                </button>
-                {reqFormOpen && (
-                  <div className="mt-2 bg-[#F0F7FF] rounded-xl p-3 space-y-2.5">
-                    <p className="text-[10px] text-[#64748B]">학부모 요청 사항을 기록한 뒤 승인 탭에서 처리하세요.</p>
-
-                    {/* 변경할 호차 */}
-                    <div>
-                      <p className="text-[10px] font-bold text-[#94A3B8] mb-1">변경할 호차</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {allBusNames.filter(n => n !== overrideBus).map(name => {
-                          const color = getBusColor(name, globalBusIndex[name] ?? 0)
-                          return (
-                            <button key={name}
-                              onClick={() => setReqBus(name)}
-                              className="px-2.5 py-1 rounded-lg text-xs font-bold border transition-colors"
-                              style={reqBus === name
-                                ? { background: color, color: getTextColor(color), borderColor: color }
-                                : { background: '#fff', color: '#475569', borderColor: '#E2E8F0' }}>
-                              {name}
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </div>
-
-                    {/* 적용 요일 */}
-                    <div>
-                      <p className="text-[10px] font-bold text-[#94A3B8] mb-1">적용 요일</p>
-                      <div className="flex gap-1">
-                        {DAYS.map((d, di) => {
-                          const active = reqDays.includes(d)
-                          return (
-                            <button key={d}
-                              onClick={() => setReqDays(prev => active ? prev.filter(x => x !== d) : [...prev, d])}
-                              className="flex-1 py-1.5 rounded-lg text-xs font-bold transition-colors"
-                              style={active
-                                ? { background: DAY_DOT_COLOR[di], color: '#fff' }
-                                : { background: '#fff', color: '#94A3B8', border: '1px solid #E2E8F0' }}>
-                              {d}
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </div>
-
-                    {/* 메모 */}
-                    <input
-                      value={reqNote}
-                      onChange={e => setReqNote(e.target.value)}
-                      placeholder="학부모 요청 메모 (선택)"
-                      className="w-full border border-[#E2E8F0] rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#004EA2]"
-                    />
-
-                    {/* 제출 */}
-                    <button
-                      onClick={submitChangeRequest}
-                      disabled={saving || !reqBus || reqDays.length === 0}
-                      className="w-full bg-[#004EA2] text-white py-2 rounded-xl text-xs font-bold disabled:opacity-40">
-                      {saving ? '제출 중...' : '변경 요청 제출 → 승인 대기'}
-                    </button>
-                  </div>
                 )}
               </div>
             </div>
