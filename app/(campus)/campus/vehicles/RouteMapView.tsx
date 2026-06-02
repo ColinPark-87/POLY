@@ -3370,7 +3370,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
                   <p className="text-[9px] font-bold text-[#64748B] uppercase tracking-wider px-0.5">호차</p>
                   <div className="flex items-center gap-1.5">
                     <button onClick={() => { setBothDir(b => { if (!b) setSelectedBuses(prev => prev.slice(0, 1)); return !b }) }}
-                      className="text-[9px] font-bold px-2 py-0.5 rounded-lg" style={bothDir ? { background: '#1A73E8', color: '#fff' } : { background: '#F1F3F4', color: '#5F6368' }}>등↕하</button>
+                      className="text-[9px] font-bold px-2 py-0.5 rounded-lg" style={bothDir ? { background: '#1A73E8', color: '#fff' } : { background: '#F1F3F4', color: '#5F6368' }}>등하원 같이보기</button>
                     {!bothDir && sessionBuses.length > 0 && (
                       <button onClick={() => setSelectedBuses(allSelected ? [] : sessionBuses.map(b => b.name))}
                         className="text-[10px] font-black" style={{ color: '#1A73E8' }}>{allSelected ? '해제' : '전체'}</button>
