@@ -3280,11 +3280,11 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
         </div>
       </div>
 
-      {/* ── 우측 패널 */}
-      <div className="flex flex-col gap-2 shrink-0 overflow-hidden" style={{ width: sidebarExpanded ? (sidebarPage === 4 ? 468 : sidebarPage === 5 ? 420 : sidebarPage === 1 ? 300 : 384) : 160, transition: 'width 250ms ease' }}>
+      {/* ── 우측 리모컨 (다크 셸 — 모드 탭 + 본문 한 덩어리) */}
+      <div className="flex flex-col gap-2 shrink-0 overflow-hidden rounded-2xl shadow-xl" style={{ width: sidebarExpanded ? (sidebarPage === 4 ? 468 : sidebarPage === 5 ? 420 : sidebarPage === 1 ? 300 : 384) : 160, transition: 'width 250ms ease', background: '#0B1220', padding: 6 }}>
 
-        {/* 페이지 네비게이션 — 라벨 탭 */}
-        <div className="flex gap-1 p-1 bg-white rounded-xl border border-[#E2E8F0] shrink-0">
+        {/* 페이지 네비게이션 — 리모컨 모드 버튼 (다크) */}
+        <div className="flex gap-1 p-1 rounded-xl shrink-0" style={{ background: '#1E293B' }}>
           {([
             { n: 1 as const, label: '노선', icon: '🗺️' },
             { n: 2 as const, label: '오늘', icon: '📅' },
@@ -3293,7 +3293,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
             { n: 5 as const, label: '호차설정', icon: '🚌' },
           ]).map(t => (
             <button key={t.n} onClick={() => { setSidebarPage(t.n); if (t.n === 4 || t.n === 5) setSidebarExpanded(true); if (t.n === 5) setBusSettingsOpen(true) }}
-              className={`relative flex-1 flex flex-col items-center justify-center gap-0.5 py-1.5 rounded-lg transition-all ${sidebarPage === t.n ? 'bg-[#004EA2] text-white shadow-sm' : 'text-[#94A3B8] hover:bg-[#F1F5F9]'}`}>
+              className={`relative flex-1 flex flex-col items-center justify-center gap-0.5 py-1.5 rounded-lg transition-all ${sidebarPage === t.n ? 'bg-[#2563EB] text-white shadow-sm' : 'text-[#94A3B8] hover:bg-white/10'}`}>
               <span className="text-[13px] leading-none">{t.icon}</span>
               <span className="text-[9px] font-black leading-tight text-center break-keep">{t.label}</span>
               {t.n === 4 && sidebarPage !== 4 && setStopsCount < allStops.length && allStops.length > 0 && (
@@ -3306,7 +3306,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
         {/* ─ Page 1: 컴팩트 다크 리모컨 (노선 조작) ─ */}
         {sidebarExpanded && sidebarPage === 1 && (
           <>
-            <div className="rounded-2xl p-2.5 space-y-2 shrink-0 shadow-lg" style={{ background: '#0B1220' }}>
+            <div className="space-y-2 shrink-0">
               {/* 상태 화면 */}
               <div className="rounded-xl px-3 py-2 text-center" style={{ background: '#1E293B' }}>
                 {selectedSession ? (
