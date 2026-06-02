@@ -775,6 +775,9 @@ export default function VehiclesPage() {
                 <span className="text-[9px] text-[#ccc]">{i+1}</span>
                 <div className="text-center">
                   {(() => {
+                    const dt = stu.dayTimes ?? {}
+                    const distinctT = new Set(stu.days.map(d => dt[d] ?? (stu.pickup_time ?? '')))
+                    if (distinctT.size > 1) return <span className="text-[8px] font-bold text-[#004EA2]">요일별</span>
                     const t = normalizeTime(stu.pickup_time || defaultTime || '')
                     return t
                       ? <span className={`text-[9px] font-bold ${stu.pickup_time ? 'text-[#1E293B]' : 'text-[#94A3B8]'}`}>{t}</span>
