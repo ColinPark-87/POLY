@@ -3295,7 +3295,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
       <div ref={remoteWrapRef} className="absolute flex z-[1100]"
         style={{ ...(remotePos ? { left: remotePos.x, top: remotePos.y } : { right: 8, top: 8 }), maxHeight: 'calc(100% - 16px)' }}>
       {/* ── 우측 리모컨 (다크 셸 — 모드 탭 + 본문 한 덩어리) */}
-      <div className="flex flex-col gap-2 shrink-0 overflow-hidden rounded-2xl shadow-xl" style={{ width: sidebarPage === 4 ? 468 : sidebarPage === 5 ? 420 : sidebarPage === 1 ? 300 : 384, transition: 'width 250ms ease', background: '#0B1220', padding: 6 }}>
+      <div className="flex flex-col gap-2 shrink-0 overflow-hidden rounded-2xl shadow-xl" style={{ width: 320, height: sidebarPage === 1 ? undefined : 'min(560px, calc(100vh - 190px))', background: '#0B1220', padding: 6 }}>
 
         {/* 드래그 그립 — 리모컨 이동 손잡이 */}
         <div onPointerDown={startRemoteDrag} className="flex items-center justify-center gap-1.5 py-0.5 cursor-grab active:cursor-grabbing select-none shrink-0" style={{ touchAction: 'none' }}>
@@ -3420,11 +3420,11 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
                   <div className={`rounded-2xl border overflow-hidden bg-white ${expandedStop === effectiveSchoolName ? 'border-[#004EA2] shadow-md' : 'border-[#E2E8F0]'}`}>
                     <button
                       onClick={() => openStop(effectiveSchoolName)}
-                      className="w-full flex items-center gap-2.5 px-3.5 py-3.5 hover:bg-[#F7F8FA] transition-colors"
+                      className="w-full flex items-center gap-2 px-2.5 py-2 hover:bg-[#F7F8FA] transition-colors"
                     >
-                      <div className="w-7 h-7 rounded-lg flex items-center justify-center text-[12px] font-black text-white shrink-0 bg-[#004EA2]">P</div>
+                      <div className="w-6 h-6 rounded-lg flex items-center justify-center text-[11px] font-black text-white shrink-0 bg-[#004EA2]">P</div>
                       <div className="flex-1 text-left min-w-0">
-                        <span className="text-[14px] font-black text-[#004EA2]">캠퍼스(학원) 좌표</span>
+                        <span className="text-[12px] font-black text-[#004EA2]">캠퍼스(학원) 좌표</span>
                         <p className="text-[11px] text-[#64748B] mt-0.5 truncate">{effectiveSchoolName} · 등원 도착지 · 하원 출발지</p>
                       </div>
                       {coords[effectiveSchoolName]
