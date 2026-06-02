@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { randomBytes } from 'crypto'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 
 export async function GET() {
@@ -33,7 +34,8 @@ export async function POST(request: NextRequest) {
 
   let tempPassword: string | null = null
   if (principal_email && principal_name) {
-    tempPassword = 'poly7659**'
+    // CSPRNG 임시 비밀번호 (HQ UI 가 응답값을 표시함)
+    tempPassword = randomBytes(9).toString('base64url')
     const { data: authData, error: authErr } = await service.auth.admin.createUser({
       email: principal_email,
       password: tempPassword,

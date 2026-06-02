@@ -1,6 +1,6 @@
 ﻿import { redirect } from 'next/navigation'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { resolveRedirectPath } from '@/lib/auth/routing'
+import { resolveRedirectPath, isCampusStaffOnly } from '@/lib/auth/routing'
 import { resolvePermissions } from '@/lib/permissions'
 import CampusSidebar from '@/components/CampusSidebar'
 import CampusBottomNav from '@/components/CampusBottomNav'
@@ -18,14 +18,14 @@ export default async function CampusLayout({ children }: { children: React.React
   // id로 먼저 조회, 없으면 email로 조회 (OR 쿼리 대신 개별 쿼리로 안정성 향상)
   const { data: byId } = await serviceClient
     .from('users')
-    .select('name, campus_id, role, position, perm_class_roster, perm_vehicles, perm_vehicles_restricted')
+    .select('name, campus_id, role, position, perm_class_roster, perm_vehicles, perm_vehicles_restricted, perm_analytics')
     .eq('id', user.id)
     .maybeSingle()
 
   const { data: byEmail } = (!byId && user.email)
     ? await serviceClient
         .from('users')
-        .select('name, campus_id, role, position, perm_class_roster, perm_vehicles, perm_vehicles_restricted')
+        .select('name, campus_id, role, position, perm_class_roster, perm_vehicles, perm_vehicles_restricted, perm_analytics')
         .eq('email', user.email)
         .maybeSingle()
     : { data: null }
@@ -37,7 +37,7 @@ export default async function CampusLayout({ children }: { children: React.React
   const isCampusStaff =
     role === 'hq_admin' ||
     resolveRedirectPath(role, position) === '/campus/dashboard'
-  if (!isCampusStaff) redirect(`/dashboard?cl_id=${user.id.slice(0,8)}&cl_email=${encodeURIComponent(user.email?.slice(0,10) ?? 'null')}&cl_role=${role}&cl_pos=${encodeURIComponent(position)}&cl_rows=${profile ? '1' : '0'}`)
+  if (!isCampusStaff) redirect('/dashboard')
 
   const { data: campus } = await serviceClient
     .from('campuses')
@@ -45,7 +45,7 @@ export default async function CampusLayout({ children }: { children: React.React
     .eq('id', profile?.campus_id ?? '')
     .single()
 
-  const userName = profile?.name ?? '원장'
+  const userName = profile?.name ?? '직원'
   const campusName = campus?.name ?? '캠퍼스'
 
   const permissions = resolvePermissions({
@@ -54,6 +54,7 @@ export default async function CampusLayout({ children }: { children: React.React
     perm_class_roster: profile?.perm_class_roster ?? null,
     perm_vehicles: profile?.perm_vehicles ?? null,
     perm_vehicles_restricted: profile?.perm_vehicles_restricted ?? null,
+    perm_analytics: profile?.perm_analytics ?? null,
   })
 
   return (
@@ -65,6 +66,8 @@ export default async function CampusLayout({ children }: { children: React.React
         position={profile?.position ?? ''}
         permClassRoster={permissions.classRoster}
         permVehicles={permissions.vehicles}
+        permAnalytics={permissions.analytics}
+        staffOnly={isCampusStaffOnly(role, position)}
       />
       <div className="flex-1 flex flex-col min-w-0">
         <CampusMobileHeader userName={userName} campusName={campusName} />
@@ -72,7 +75,7 @@ export default async function CampusLayout({ children }: { children: React.React
           {children}
         </main>
       </div>
-      <CampusBottomNav />
+      <CampusBottomNav staffOnly={isCampusStaffOnly(role, position)} />
     </div>
   )
 }

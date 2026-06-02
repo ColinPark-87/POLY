@@ -56,7 +56,7 @@ export default function HqVehiclesPage() {
           {selected && (
             <p className="text-xs text-[#94A3B8] mb-3 font-medium">{selected.name} 차량 운행 현황</p>
           )}
-          <RouteMapView campusId={selectedId} />
+          <RouteMapView campusId={selectedId} campusName={selected?.name} />
         </div>
       ) : (
         <div className="flex justify-center py-20">

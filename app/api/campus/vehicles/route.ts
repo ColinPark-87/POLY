@@ -5,11 +5,32 @@ import { resolvePermissions } from '@/lib/permissions'
 const DAYS = ['월', '화', '수', '목', '금'] as const
 type Day = typeof DAYS[number]
 
+// 시간 표준화: 공통 _time을 설정/삭제할 때 요일별 {요일}_time override를 제거해
+// 개설반 현황(StudentDetailModal: {요일}_time 우선)과 차량관리(_time)가 항상 같은 시간을 보게 함
+function clearPerDayTimes(sched: Record<string, string>) {
+  for (const d of DAYS) delete sched[d + '_time']
+}
+
+// 차량관리 대상 월 선택: 다음 달 개설반이 미리 생성돼 있으면 다음 달 우선,
+// 없으면 현재 달, 그것도 없으면 가장 최신 달.
+// (예: 현재 5월이라도 6월 개설반이 있으면 6월을 사용해 미리 노선 준비)
+function pickTargetMonth(availableMonths: string[]): string {
+  // 한국시간(KST, UTC+9) 기준 — 서버 UTC와 월 경계 오차 방지
+  const kst = new Date(Date.now() + 9 * 60 * 60 * 1000)
+  const y = kst.getUTCFullYear()
+  const m = kst.getUTCMonth() + 1 // 1~12
+  const cur = `${y}년 ${m}월`
+  const next = `${m === 12 ? y + 1 : y}년 ${m === 12 ? 1 : m + 1}월`
+  if (availableMonths.includes(next)) return next
+  if (availableMonths.includes(cur)) return cur
+  return availableMonths[0] ?? ''
+}
+
 // 세션 이름에서 수업 가능 요일 반환 (빈 배열 = 필터 없음)
 function getClassDays(sessionName: string | null): Day[] {
   if (!sessionName) return []
-  if (/화목|2일반/.test(sessionName)) return ['화', '목']
-  if (/월수금|3일반/.test(sessionName)) return ['월', '수', '금']
+  if (/화목|2일/.test(sessionName)) return ['화', '목']
+  if (/월수금|3일/.test(sessionName)) return ['월', '수', '금']
   return []
 }
 
@@ -23,9 +44,9 @@ function getSessionLabel(name: string | null, dir: 'arr' | 'dep' = 'arr'): strin
     return dir === 'dep' ? '매일반' : '방과후'
   }
   if (name.includes('유치부')) return '유치부'
-  if (name.includes('매일반')) return '매일반'
-  if (name.includes('월수금') || name.includes('3일반')) return '3일반'
-  if (name.includes('화목') || name.includes('2일반')) return '2일반'
+  if (name.includes('매일반') || name.includes('5일')) return '매일반'
+  if (name.includes('월수금') || name.includes('3일')) return '3일반'
+  if (name.includes('화목') || name.includes('2일')) return '2일반'
   return name
 }
 
@@ -40,12 +61,13 @@ function parseTimeMinNorm(t: string | null): number {
 }
 
 // 세션별 최소 하원 시간(분) — 이보다 이른 _time은 등원 시간이 잘못 기록된 것으로 판단
+// ⚠️ 유치부를 방과후보다 먼저 체크: "유치부 방과후" 세션이 방과후(16:30)로 잘못 분류되는 버그 방지
 function getMinDepTime(sessionName: string | null): number {
   if (!sessionName) return 0
   if (sessionName.includes('2일반') || sessionName.includes('화목')) return 18 * 60 + 50  // 18:50
   if (sessionName.includes('3일반') || sessionName.includes('월수금')) return 18 * 60 + 5   // 18:05
+  if (sessionName.includes('유치부')) return 13 * 60 + 30  // 13:30 (유치부 방과후 포함)
   if (sessionName.includes('매일반') || sessionName.includes('방과후')) return 16 * 60 + 30  // 16:30
-  if (sessionName.includes('유치부')) return 14 * 60 + 30  // 14:30
   return 0
 }
 
@@ -108,10 +130,10 @@ export async function GET(request: NextRequest) {
 
   const { data: allMonthRows } = await service.from('class_sessions').select('month').eq('campus_id', campusId)
   const availableMonths = [...new Set((allMonthRows ?? []).map(s => s.month))].sort((a, b) => {
-    const parse = (m: string) => { const parts = m.match(/\d+/g)!; return Number(parts[0]) * 100 + Number(parts[1]) }
+    const parse = (m: string) => { const parts = m.match(/\d+/g); if (!parts || parts.length < 2) return 0; return Number(parts[0]) * 100 + Number(parts[1]) }
     return parse(b) - parse(a)
   })
-  const targetMonth = (month && availableMonths.includes(month)) ? month : (availableMonths[0] ?? '')
+  const targetMonth = (month && availableMonths.includes(month)) ? month : pickTargetMonth(availableMonths)
 
   const { data: sessions } = await service.from('class_sessions')
     .select('id, name, time_range').eq('campus_id', campusId).eq('month', targetMonth).order('sort_order')
@@ -137,6 +159,11 @@ export async function GET(request: NextRequest) {
       enrollments = (data ?? []) as unknown as typeof enrollments
     }
   }
+
+  // 빈 정류장 마스터 (학생 0명 정류장) — 현재 방향만
+  const { data: registeredStopRows } = await service.from('campus_registered_stops')
+    .select('stop_name, bus_name, direction, default_time').eq('campus_id', campusId).eq('direction', direction)
+  const registeredStops = registeredStopRows ?? []
 
   const { data: overrides } = await service.from('pickup_overrides')
     .select('*').eq('campus_id', campusId).eq('date', dateStr).eq('direction', direction)
@@ -308,6 +335,28 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // 같은 학생이 여러 enrollment(유치부 + 유치부 방과후 등)로 같은 버스에 중복 등록된 경우 합산
+  function dedupStudents(arr: StudentEntry[]): StudentEntry[] {
+    const map = new Map<string, StudentEntry>()
+    for (const s of arr) {
+      if (map.has(s.student_id)) {
+        const ex = map.get(s.student_id)!
+        ex.days = [...new Set([...ex.days, ...s.days])]
+      } else {
+        map.set(s.student_id, { ...s })
+      }
+    }
+    return [...map.values()]
+  }
+  for (const busName of Object.keys(busMap)) {
+    busMap[busName] = dedupStudents(busMap[busName])
+  }
+  for (const tg of Object.values(timeGroupRaw)) {
+    for (const busName of Object.keys(tg.busMap)) {
+      tg.busMap[busName] = dedupStudents(tg.busMap[busName])
+    }
+  }
+
   // 오늘 결석 처리된 학생 목록
   const absentStudentIds = (overrides ?? [])
     .filter(ov => ov.is_absent)
@@ -357,6 +406,23 @@ export async function GET(request: NextRequest) {
     return parseInt(m[1]) * 60 + parseInt(m[2])
   }
 
+  // 빈 정류장 마스터 합집합: 학생 0명이어도 해당 호차의 location 후보로 노출.
+  // 세션 정보가 없으므로 해당 호차가 등장하는 모든 timeGroup에 합치고, 글로벌 맵에도 추가.
+  // (count=0이라 busMap엔 넣지 않음 — busLocations/busLocationMap 후보로만 노출)
+  const registeredStopTimes: Record<string, string> = {}  // `${bus_name}|${stop_name}` → default_time
+  for (const rs of registeredStops) {
+    const bus = rs.bus_name
+    const loc = rs.stop_name
+    if (rs.default_time) registeredStopTimes[`${bus}|${loc}`] = rs.default_time
+    if (!busLocationSets[bus]) busLocationSets[bus] = new Set()
+    busLocationSets[bus].add(loc)
+    for (const tg of Object.values(timeGroupRaw)) {
+      if (!(bus in tg.busMap)) continue
+      if (!tg.busLocationSets[bus]) tg.busLocationSets[bus] = new Set()
+      tg.busLocationSets[bus].add(loc)
+    }
+  }
+
   // Convert to serializable format, sort by (세션우선순위, 시작시간)
   const timeGroups = Object.values(timeGroupRaw)
     .sort((a, b) => {
@@ -381,6 +447,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     busMap, buses: buses ?? [], dayKey, date: dateStr, month: targetMonth, availableMonths,
     timeGroups, busLocationMap, absentStudents,
+    registeredStops, registeredStopTimes,
   })
 }
 
@@ -390,12 +457,35 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
 
   const service = createServiceClient()
-  const { data: profile } = await service.from('users').select('campus_id, position, role').eq('id', user.id).single()
+  const { data: profile } = await service
+    .from('users')
+    .select('campus_id, position, role, perm_class_roster, perm_vehicles, perm_vehicles_restricted')
+    .eq('id', user.id)
+    .single()
   const campusId = profile?.campus_id
   if (!campusId) return NextResponse.json({ error: '캠퍼스 없음' }, { status: 400 })
 
-  const isEditor = profile?.role === 'campus_admin' || /상담|차량|안전/.test(profile?.position ?? '')
-  if (!isEditor) return NextResponse.json({ error: '권한 없음' }, { status: 403 })
+  // 차량 편집 권한 — GET 과 동일한 resolvePermissions 사용 + restricted(POLY안전) 는 읽기 전용
+  const permissions = resolvePermissions({
+    role: profile?.role ?? 'employee',
+    position: profile?.position ?? null,
+    perm_class_roster: profile?.perm_class_roster ?? null,
+    perm_vehicles: profile?.perm_vehicles ?? null,
+    perm_vehicles_restricted: profile?.perm_vehicles_restricted ?? null,
+  })
+  if (!permissions.vehicles || permissions.vehiclesRestricted) {
+    return NextResponse.json({ error: '권한 없음' }, { status: 403 })
+  }
+
+  // class_id 가 자기 캠퍼스 소속인지 검증 (cross-campus 변조 차단)
+  async function assertClassInCampus(classId: string): Promise<NextResponse | null> {
+    if (!classId) return NextResponse.json({ error: 'class_id 누락' }, { status: 400 })
+    const { data: cls } = await service.from('classes').select('session_id').eq('id', classId).maybeSingle()
+    if (!cls) return NextResponse.json({ error: '반 없음' }, { status: 404 })
+    const { data: sess } = await service.from('class_sessions').select('campus_id').eq('id', cls.session_id).maybeSingle()
+    if (sess?.campus_id !== campusId) return NextResponse.json({ error: '다른 캠퍼스의 반은 수정할 수 없습니다.' }, { status: 403 })
+    return null
+  }
 
   const body = await request.json()
   const { action } = body
@@ -446,10 +536,15 @@ export async function POST(request: NextRequest) {
   if (action === 'add_rider') {
     // 차량에 탑승자 추가: class_enrollment 스케줄 영구 업데이트 + 오늘 override
     const { student_id, date, direction: dir, bus_name, pickup_time, pickup_location, days, session_name } = body
-    // class_enrollments에 campus_id 컬럼이 없으므로 sessions→classes 경유 필터링
-    // session_name을 이용해 올바른 세션의 enrollment 선택
+    // GET과 동일하게 최신 달 세션만 검색 (다른 달 enrollment 오업데이트 방지)
+    const { data: allMonthRows } = await service.from('class_sessions').select('month').eq('campus_id', campusId)
+    const availableMonths = [...new Set((allMonthRows ?? []).map((s: any) => s.month as string))].sort((a, b) => {
+      const parse = (m: string) => { const parts = m.match(/\d+/g); if (!parts || parts.length < 2) return 0; return Number(parts[0]) * 100 + Number(parts[1]) }
+      return parse(b) - parse(a)
+    })
+    const targetMonth = pickTargetMonth(availableMonths)
     const { data: campusSessions } = await service.from('class_sessions')
-      .select('id, name').eq('campus_id', campusId)
+      .select('id, name').eq('campus_id', campusId).eq('month', targetMonth)
     const allSessRows = (campusSessions ?? []) as { id: string; name: string }[]
 
     // session_name이 있으면 해당 세션 유형으로 필터링
@@ -487,7 +582,7 @@ export async function POST(request: NextRequest) {
       currentSched[d] = bus_name
       if (pickup_location) currentSched[d + '_loc'] = pickup_location
     }
-    if (pickup_time) currentSched['_time'] = pickup_time
+    if (pickup_time) { currentSched['_time'] = pickup_time; clearPerDayTimes(currentSched) }
     const { error: updateError } = await service.from('class_enrollments')
       .update({ [schedKey]: currentSched })
       .eq('student_id', student_id)
@@ -505,10 +600,12 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === 'add_bus') {
-    const { name } = body
+    const { name, capacity } = body
     const { data: existing } = await service.from('campus_buses').select('id').eq('campus_id', campusId).eq('name', name).maybeSingle()
     if (existing) return NextResponse.json({ error: '이미 존재하는 차량' }, { status: 409 })
-    const { data, error } = await service.from('campus_buses').insert({ campus_id: campusId, name }).select().single()
+    const insertData: Record<string, unknown> = { campus_id: campusId, name }
+    if (capacity) insertData.capacity = Number(capacity)
+    const { data, error } = await service.from('campus_buses').insert(insertData).select().single()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ bus: data })
   }
@@ -521,7 +618,9 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === 'update_enrollment_schedule') {
-    const { student_id, class_id, direction: dir, days, bus_name, location, pickup_time } = body
+    const { student_id, class_id, direction: dir, days, bus_name, old_bus_name, location, pickup_time } = body
+    const campusErr = await assertClassInCampus(class_id)
+    if (campusErr) return campusErr
     const { data: enr } = await service.from('class_enrollments')
       .select('arr_schedule, dep_schedule, class_id')
       .eq('student_id', student_id).eq('class_id', class_id).single()
@@ -550,14 +649,28 @@ export async function POST(request: NextRequest) {
     const schedKey = dir === 'arr' ? 'arr_schedule' : 'dep_schedule'
     const sched = { ...(enr[schedKey as keyof typeof enr] as Record<string,string> ?? {}) }
     const dayList: string[] = Array.isArray(days) ? days : []
+    const allDays = ['월', '화', '수', '목', '금']
+
+    // old_bus_name이 있으면 해당 버스로 배정된 요일 중 새 dayList에 없는 것 제거
+    if (old_bus_name) {
+      for (const d of allDays) {
+        if (sched[d] === old_bus_name && !dayList.includes(d)) {
+          delete sched[d]
+          delete sched[d + '_loc']
+        }
+      }
+    }
+
     for (const d of dayList) {
       if (bus_name) sched[d] = bus_name
+      else delete sched[d]  // 미배정: 선택 요일의 버스 배정 제거
       if (location !== undefined && location !== null) sched[d + '_loc'] = location
       if (location === '') delete sched[d + '_loc']
     }
     if (pickup_time !== undefined) {
       if (pickup_time) sched['_time'] = pickup_time
       else delete sched['_time']
+      clearPerDayTimes(sched)
     }
     const { error } = await service.from('class_enrollments')
       .update({ [schedKey]: sched })
@@ -570,6 +683,8 @@ export async function POST(request: NextRequest) {
     const { student_id, student_name, class_id, direction: dir, from_bus, to_bus, days, location, pickup_time, note } = body
     if (!to_bus || !Array.isArray(days) || days.length === 0)
       return NextResponse.json({ error: '호차/요일 필수' }, { status: 400 })
+    const campusErr = await assertClassInCampus(class_id)
+    if (campusErr) return campusErr
     const { data, error } = await service.from('bus_change_requests').insert({
       campus_id: campusId, student_id, student_name, class_id, direction: dir,
       from_bus: from_bus || null, to_bus, days,
@@ -645,6 +760,7 @@ export async function POST(request: NextRequest) {
       const onBusAtLoc = allDays.some(d => sched[d] === bus_name && (!location || sched[d + '_loc'] === location))
       if (!onBusAtLoc) continue
       sched['_time'] = new_time
+      clearPerDayTimes(sched)
       toUpdate.push({ student_id: enr.student_id, class_id: enr.class_id, sched })
     }
     for (const u of toUpdate) {
@@ -676,6 +792,7 @@ export async function POST(request: NextRequest) {
       const hasBus = days.some(d => sched[d] === bus_name)
       if (hasBus) {
         sched['_time'] = time
+        clearPerDayTimes(sched)
         toUpdate.push({ student_id: enr.student_id, class_id: enr.class_id, sched })
       }
     }
@@ -688,7 +805,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === 'update_bus') {
-    const { bus_id, name, driver, driver_phone, safety, safety_phone, kt_name, kt_phone } = body
+    const { bus_id, name, driver, driver_phone, safety, safety_phone, kt_name, kt_phone, capacity } = body
 
     // 기존 차량 이름 조회 (이름 변경 여부 판단용)
     const { data: oldBus } = await service.from('campus_buses').select('name').eq('id', bus_id).eq('campus_id', campusId).single()
@@ -698,6 +815,10 @@ export async function POST(request: NextRequest) {
       driver: driver||null, driver_phone: driver_phone||null,
       safety: safety||null, safety_phone: safety_phone||null,
       kt_name: kt_name||null, kt_phone: kt_phone||null,
+    }
+    if (capacity !== undefined && capacity !== null && capacity !== '') {
+      const n = Number(capacity)
+      if (Number.isFinite(n) && n > 0) updateData.capacity = Math.round(n)
     }
     if (name && name.trim() && name !== oldName) updateData.name = name.trim()
 
@@ -739,6 +860,8 @@ export async function POST(request: NextRequest) {
 
   if (action === 'remove_rider') {
     const { student_id, class_id, direction: dir } = body
+    const campusErr = await assertClassInCampus(class_id)
+    if (campusErr) return campusErr
     const { data: enr } = await service.from('class_enrollments')
       .select('arr_schedule, dep_schedule')
       .eq('student_id', student_id).eq('class_id', class_id).single()

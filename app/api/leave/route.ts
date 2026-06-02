@@ -47,13 +47,18 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
 
   const service = createServiceClient()
-  const { data: userProfile } = await service.from('users').select('campus_id').eq('id', user.id).single()
+  const { data: userProfile } = await service.from('users').select('campus_id, name').eq('id', user.id).single()
 
   const body = await request.json()
   const { type, start_date, end_date, reason, signature_data_url } = body
 
   if (!signature_data_url) {
     return NextResponse.json({ error: '서명이 필요합니다.' }, { status: 400 })
+  }
+
+  // 반차/반반차는 단일 일자만 허용 (다일 구간 신청 시 0.5/0.25로 과소집계되는 문제 방지)
+  if ((type === 'half_am' || type === 'half_pm' || type === 'quarter') && start_date !== end_date) {
+    return NextResponse.json({ error: '반차/반반차는 하루만 신청할 수 있습니다.' }, { status: 400 })
   }
 
   const { data: holidays } = await supabase
@@ -98,21 +103,14 @@ export async function POST(request: NextRequest) {
     // grant가 없으면 원장 승인 시 처리 — 신청은 허용
   }
 
-  // userProfile already fetched via service client above — reuse it
-  const { data: fullProfile } = await service
-    .from('users')
-    .select('campus_id, name')
-    .eq('id', user.id)
-    .single()
-
-  if (!fullProfile?.campus_id) {
+  if (!userProfile?.campus_id) {
     return NextResponse.json({ error: '캠퍼스 정보가 없습니다. 관리자에게 문의하세요.' }, { status: 400 })
   }
 
   const { data, error } = await service
     .from('leave_requests')
     .insert({
-      campus_id: fullProfile.campus_id,
+      campus_id: userProfile.campus_id,
       user_id: user.id,
       type,
       start_date,
@@ -131,7 +129,7 @@ export async function POST(request: NextRequest) {
   const { data: campusAdmin } = await service
     .from('users')
     .select('email, name')
-    .eq('campus_id', fullProfile.campus_id)
+    .eq('campus_id', userProfile.campus_id)
     .eq('role', 'campus_admin')
     .eq('is_active', true)
     .single()
@@ -142,9 +140,9 @@ export async function POST(request: NextRequest) {
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
     await sendEmail({
       to: [{ email: campusAdmin.email, name: campusAdmin.name }],
-      subject: `[연차 신청] ${fullProfile.name}님의 연차 신청`,
+      subject: `[연차 신청] ${userProfile.name}님의 연차 신청`,
       htmlContent: leaveRequestEmailHtml({
-        employeeName: fullProfile.name ?? '',
+        employeeName: userProfile.name ?? '',
         leaveType: LEAVE_TYPE_LABELS[type as LeaveType],
         startDate: start_date,
         endDate: end_date,

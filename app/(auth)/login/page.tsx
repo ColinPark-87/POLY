@@ -21,16 +21,20 @@ export default function LoginPage() {
 
   // 계정 설정 모달
   const [setupModal, setSetupModal] = useState(false)
-  const [setupForm, setSetupForm] = useState({ email: '', password: '', confirm: '' })
+  const [setupCodeRequired, setSetupCodeRequired] = useState(false)
+  const [setupForm, setSetupForm] = useState({ email: '', password: '', confirm: '', code: '' })
   const [setupLoading, setSetupLoading] = useState(false)
   const [setupError, setSetupError] = useState('')
 
   // 비밀번호 찾기 모달
   const [forgotModal, setForgotModal] = useState(false)
+  const [forgotCampus, setForgotCampus] = useState('hq')
+  const [forgotName, setForgotName] = useState('')
   const [forgotEmail, setForgotEmail] = useState('')
   const [forgotLoading, setForgotLoading] = useState(false)
   const [forgotError, setForgotError] = useState('')
   const [forgotSent, setForgotSent] = useState(false)
+  const [forgotResult, setForgotResult] = useState<{ name?: string; maskedEmail?: string } | null>(null)
 
   useEffect(() => {
     fetch('/api/public/campuses')
@@ -56,17 +60,6 @@ export default function LoginPage() {
     setMode(val === 'hq' ? 'email' : 'name')
     setForm({ name: '', email: '', password: '' })
     setError('')
-  }
-
-  function resolveDestination(role: string, position: string): string {
-    if (role === 'hq_admin') return '/hq/dashboard'
-    const isCampus =
-      role === 'campus_admin' ||
-      position.includes('상담') ||
-      position.includes('KT') ||
-      position.includes('관리자') ||
-      position.includes('POLY안전')
-    return isCampus ? '/campus/dashboard' : '/dashboard'
   }
 
   function saveOrClearId() {
@@ -97,13 +90,14 @@ export default function LoginPage() {
         return
       }
       const emailData = await res.json()
-      const { role, position } = emailData
+      const { role } = emailData
       if (selected === 'hq' && role !== 'hq_admin') {
         setError('HQ 관리자 계정이 아닙니다.')
         setLoading(false)
         return
       }
-      window.location.href = resolveDestination(role ?? '', position ?? '')
+      // 역할별 홈은 미들웨어가 결정 (단일 소스) — 루트로 보내면 알맞은 화면으로 라우팅됨
+      window.location.href = '/'
       return
     }
 
@@ -122,6 +116,7 @@ export default function LoginPage() {
     }
 
     if (data.needs_setup) {
+      setSetupCodeRequired(!!data.setup_code_required)
       setSetupModal(true)
       return
     }
@@ -132,7 +127,8 @@ export default function LoginPage() {
       await supabase.auth.signInWithPassword({ email: data.email, password: form.password })
     }
 
-    window.location.href = '/redirecting'
+    // 미들웨어가 역할별 홈으로 라우팅
+    window.location.href = '/'
   }
 
   async function handleSetup(e: React.FormEvent) {
@@ -151,6 +147,7 @@ export default function LoginPage() {
         name: form.name,
         email: setupForm.email,
         password: setupForm.password,
+        setup_code: setupForm.code,
       }),
     })
     const data = await res.json()
@@ -159,21 +156,25 @@ export default function LoginPage() {
       setSetupError(data.error)
       return
     }
-    window.location.href = resolveDestination(data.role ?? '', data.position ?? '')
+    window.location.href = '/'
   }
 
   async function handleForgotPassword(e: React.FormEvent) {
     e.preventDefault()
     setForgotLoading(true)
     setForgotError('')
+    const payload = forgotCampus === 'hq'
+      ? { email: forgotEmail }
+      : { campus_id: forgotCampus, name: forgotName }
     const res = await fetch('/api/auth/forgot-password', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: forgotEmail }),
+      body: JSON.stringify(payload),
     })
     const data = await res.json()
     setForgotLoading(false)
     if (!res.ok) { setForgotError(data.error); return }
+    setForgotResult({ name: data.name, maskedEmail: data.maskedEmail })
     setForgotSent(true)
   }
 
@@ -316,7 +317,7 @@ export default function LoginPage() {
           <div className="mt-4 text-center">
             <button
               type="button"
-              onClick={() => { setForgotModal(true); setForgotEmail(''); setForgotError(''); setForgotSent(false) }}
+              onClick={() => { setForgotModal(true); setForgotCampus(selected); setForgotName(mode === 'name' ? form.name : ''); setForgotEmail(mode === 'email' ? form.email : ''); setForgotError(''); setForgotSent(false); setForgotResult(null) }}
               className="text-xs text-[#64748B] hover:text-[#004EA2] underline"
             >
               비밀번호를 잊으셨나요?
@@ -338,8 +339,13 @@ export default function LoginPage() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                     </svg>
                   </div>
-                  <p className="text-[#1E293B] font-medium mb-1">이메일을 전송했습니다</p>
-                  <p className="text-[#64748B] text-sm">{forgotEmail}로 비밀번호 재설정 링크를 보냈습니다. 메일함을 확인해주세요.</p>
+                  <p className="text-[#1E293B] font-medium mb-1">
+                    {forgotResult?.name ? <><span className="font-bold">{forgotResult.name}</span>님께 메일을 보냈습니다</> : '이메일을 전송했습니다'}
+                  </p>
+                  <p className="text-[#64748B] text-sm">
+                    등록된 이메일 <span className="font-semibold text-[#1E293B]">{forgotResult?.maskedEmail ?? forgotEmail}</span> 로
+                    비밀번호 재설정 링크를 보냈습니다. 메일함(스팸함 포함)을 확인해주세요.
+                  </p>
                 </div>
                 <button
                   onClick={() => setForgotModal(false)}
@@ -348,19 +354,45 @@ export default function LoginPage() {
               </>
             ) : (
               <>
-                <p className="text-sm text-[#64748B] mb-4">가입 시 등록한 이메일 주소를 입력하시면 비밀번호 재설정 링크를 보내드립니다.</p>
+                <p className="text-sm text-[#64748B] mb-4">로그인할 때와 같은 방식으로 본인 계정을 찾아 재설정 링크를 보내드립니다.</p>
                 <form onSubmit={handleForgotPassword} className="space-y-3">
                   <div>
-                    <label className="block text-sm font-medium text-[#1E293B] mb-1">이메일</label>
-                    <input
-                      type="email"
-                      required
-                      value={forgotEmail}
-                      onChange={e => setForgotEmail(e.target.value)}
-                      className="w-full border border-[#E2E8F0] rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]"
-                      placeholder="name@example.com"
-                    />
+                    <label className="block text-sm font-medium text-[#1E293B] mb-1">소속</label>
+                    <select
+                      value={forgotCampus}
+                      onChange={e => { setForgotCampus(e.target.value); setForgotError('') }}
+                      className="w-full border border-[#E2E8F0] rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#004EA2]"
+                    >
+                      <option value="hq">본사 / 원장 (이메일 로그인)</option>
+                      {campuses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
                   </div>
+                  {forgotCampus === 'hq' ? (
+                    <div>
+                      <label className="block text-sm font-medium text-[#1E293B] mb-1">이메일</label>
+                      <input
+                        type="email"
+                        required
+                        value={forgotEmail}
+                        onChange={e => setForgotEmail(e.target.value)}
+                        className="w-full border border-[#E2E8F0] rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]"
+                        placeholder="name@example.com"
+                      />
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="block text-sm font-medium text-[#1E293B] mb-1">이름</label>
+                      <input
+                        type="text"
+                        required
+                        value={forgotName}
+                        onChange={e => setForgotName(e.target.value)}
+                        className="w-full border border-[#E2E8F0] rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]"
+                        placeholder="이름 (로그인 시 사용하는 이름)"
+                      />
+                      <p className="text-[11px] text-[#94A3B8] mt-1">등록된 이메일로 발송됩니다. 이메일이 없는 계정은 원장/관리자에게 초기화를 요청하세요.</p>
+                    </div>
+                  )}
                   {forgotError && <p className="text-red-500 text-xs">{forgotError}</p>}
                   <div className="flex gap-3 pt-1">
                     <button
@@ -424,6 +456,19 @@ export default function LoginPage() {
                   placeholder="비밀번호 재입력"
                 />
               </div>
+              {setupCodeRequired && (
+                <div>
+                  <label className="block text-sm font-medium text-[#1E293B] mb-1">설정 코드</label>
+                  <input
+                    type="text"
+                    required
+                    value={setupForm.code}
+                    onChange={e => setSetupForm(f => ({ ...f, code: e.target.value }))}
+                    className="w-full border border-[#E2E8F0] rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]"
+                    placeholder="관리자에게 받은 코드"
+                  />
+                </div>
+              )}
               {setupError && <p className="text-[#EF4444] text-sm">{setupError}</p>}
               <div className="flex gap-3 pt-1">
                 <button

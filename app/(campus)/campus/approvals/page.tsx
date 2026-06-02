@@ -29,6 +29,7 @@ export default function ApprovalsPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [noteMap, setNoteMap] = useState<Record<string, string>>({})
   const [selectedSig, setSelectedSig] = useState<string | null>(null)
+  const [search, setSearch] = useState('')
 
   async function load() {
     setLoading(true)
@@ -61,7 +62,9 @@ export default function ApprovalsPage() {
     }
   }
 
-  const pendingCount = tab === 'pending' ? requests.length : 0
+  const filtered = search.trim()
+    ? requests.filter(r => r.users?.name?.includes(search.trim()))
+    : requests
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -69,40 +72,70 @@ export default function ApprovalsPage() {
         연차 신청 관리
       </h1>
 
-      {/* 탭 */}
-      <div className="flex gap-2 mb-5">
-        <button
-          onClick={() => setTab('pending')}
-          className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
-            tab === 'pending'
-              ? 'bg-[#004EA2] text-white'
-              : 'bg-white border border-[#E2E8F0] text-[#64748B] hover:bg-[#F7F8FA]'
-          }`}
-        >
-          대기중 {tab === 'pending' && requests.length > 0 ? `(${requests.length})` : ''}
-        </button>
-        <button
-          onClick={() => setTab('approved')}
-          className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
-            tab === 'approved'
-              ? 'bg-[#059669] text-white'
-              : 'bg-white border border-[#E2E8F0] text-[#64748B] hover:bg-[#F7F8FA]'
-          }`}
-        >
-          승인완료 {tab === 'approved' && requests.length > 0 ? `(${requests.length})` : ''}
-        </button>
+      {/* 탭 + 검색 */}
+      <div className="flex flex-col gap-3 mb-5">
+        <div className="flex gap-2">
+          <button
+            onClick={() => { setTab('pending'); setSearch('') }}
+            className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
+              tab === 'pending'
+                ? 'bg-[#004EA2] text-white'
+                : 'bg-white border border-[#E2E8F0] text-[#64748B] hover:bg-[#F7F8FA]'
+            }`}
+          >
+            대기중 {requests.length > 0 && tab === 'pending' ? `(${requests.length})` : ''}
+          </button>
+          <button
+            onClick={() => { setTab('approved'); setSearch('') }}
+            className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
+              tab === 'approved'
+                ? 'bg-[#059669] text-white'
+                : 'bg-white border border-[#E2E8F0] text-[#64748B] hover:bg-[#F7F8FA]'
+            }`}
+          >
+            승인완료 {requests.length > 0 && tab === 'approved' ? `(${requests.length})` : ''}
+          </button>
+        </div>
+
+        {/* 검색창 */}
+        {!loading && requests.length > 0 && (
+          <div className="relative">
+            <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94A3B8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+            </svg>
+            <input
+              type="text"
+              placeholder="신청자 이름 검색..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="w-full pl-10 pr-10 py-2.5 border border-[#E2E8F0] rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2] bg-white"
+            />
+            {search && (
+              <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#94A3B8] hover:text-[#475569] text-lg leading-none">×</button>
+            )}
+          </div>
+        )}
+
+        {/* 검색 결과 카운트 */}
+        {search.trim() && (
+          <p className="text-xs text-[#64748B]">
+            검색 결과: <span className="font-bold text-[#1E293B]">{filtered.length}</span>건 / 전체 {requests.length}건
+          </p>
+        )}
       </div>
 
-      {loading ? <Spinner /> : requests.length === 0 ? (
+      {loading ? <Spinner /> : filtered.length === 0 ? (
         <div className="bg-white rounded-2xl p-12 text-center border border-[#E2E8F0]">
-          <p className="text-3xl mb-3">{tab === 'pending' ? '✅' : '📋'}</p>
+          <p className="text-3xl mb-3">{search.trim() ? '🔍' : tab === 'pending' ? '✅' : '📋'}</p>
           <p className="text-[#64748B]">
-            {tab === 'pending' ? '대기 중인 신청이 없습니다.' : '승인된 신청이 없습니다.'}
+            {search.trim()
+              ? `"${search.trim()}" 검색 결과가 없습니다.`
+              : tab === 'pending' ? '대기 중인 신청이 없습니다.' : '승인된 신청이 없습니다.'}
           </p>
         </div>
       ) : (
         <div className="space-y-4">
-          {requests.map(r => (
+          {filtered.map(r => (
             <div key={r.id} className="bg-white rounded-2xl border border-[#E2E8F0] shadow-sm overflow-hidden">
               {/* 헤더 */}
               <div className="flex justify-between items-start p-4 md:p-5 border-b border-[#F1F5F9]">

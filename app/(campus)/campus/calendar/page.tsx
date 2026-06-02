@@ -10,10 +10,12 @@ import { LEAVE_TYPE_LABELS, type LeaveType } from '@/lib/types'
 interface Holiday { id: string; date: string; name: string; campus_id: string | null }
 const DAY_NAMES = ['일', '월', '화', '수', '목', '금', '토']
 
+interface SummaryEntry { name: string; annual: number; half: number; quarter: number; sick: number; total: number }
 interface CalData {
-  campusLeaves: { type: LeaveType; start_date: string; end_date: string; users: { name: string } }[]
+  campusLeaves: { type: LeaveType; start_date: string; end_date: string; status: string; is_mine: boolean; users: { name: string } }[]
   myLeaves: { type: LeaveType; start_date: string; end_date: string; status: string }[]
   holidays: { date: string; name: string }[]
+  summary: SummaryEntry[]
 }
 
 function leaveColor(type: LeaveType) {
@@ -28,7 +30,12 @@ function leaveColor(type: LeaveType) {
 export default function CampusCalendarPage() {
   const [events, setEvents] = useState<object[]>([])
   const [view, setView] = useState<'dayGridMonth' | 'listMonth'>('dayGridMonth')
-  const [calTab, setCalTab] = useState<'calendar' | 'holidays'>('calendar')
+  const [calTab, setCalTab] = useState<'calendar' | 'mine' | 'holidays'>('calendar')
+  const [balance, setBalance] = useState<{ totalDays: number; usedDays: number; remainingDays: number } | null>(null)
+  const [myEvents, setMyEvents] = useState<object[]>([])
+  const [myHolidays, setMyHolidays] = useState<object[]>([])
+  const [summary, setSummary] = useState<SummaryEntry[]>([])
+  const [summaryMonth, setSummaryMonth] = useState('')  // "2026년 5월"
 
   // 공휴일 설정 state
   const [holidays, setHolidays] = useState<Holiday[]>([])
@@ -49,6 +56,35 @@ export default function CampusCalendarPage() {
   }
 
   useEffect(() => { if (calTab === 'holidays') loadHolidays() }, [calTab])
+
+  useEffect(() => {
+    fetch('/api/leave/summary')
+      .then(r => r.json())
+      .then(d => setBalance({ totalDays: d.totalDays, usedDays: d.usedDays, remainingDays: d.remainingDays }))
+  }, [])
+
+  async function loadMyEvents(year: string, month: string) {
+    const res = await fetch(`/api/calendar?year=${year}&month=${month}`)
+    const data: CalData = await res.json()
+    const ev: object[] = []
+    ;(data.campusLeaves ?? []).filter(r => r.is_mine).forEach(r => {
+      const approved = r.status === 'approved'
+      ev.push({
+        title: `${LEAVE_TYPE_LABELS[r.type]}${approved ? '' : ' (대기)'}`,
+        start: r.start_date,
+        end: r.end_date,
+        backgroundColor: approved ? '#002F65' : '#F59E0B',
+        borderColor: approved ? '#002F65' : '#F59E0B',
+        textColor: '#fff',
+      })
+    })
+    const hols: object[] = []
+    ;(data.holidays ?? []).forEach(h => {
+      hols.push({ title: h.name, start: h.date, backgroundColor: '#FEE2E2', borderColor: '#FCA5A5', textColor: '#DC2626', display: 'background' })
+    })
+    setMyEvents(ev)
+    setMyHolidays(hols)
+  }
 
   async function handleHolAdd(e: React.FormEvent) {
     e.preventDefault()
@@ -99,29 +135,21 @@ export default function CampusCalendarPage() {
 
     const ev: object[] = []
 
-    // 캠퍼스 일정 (동료 연차) — 타입별 색상
+    // 전 직원 연차 — 타입별 색상, 대기는 반투명
     ;(data.campusLeaves ?? []).forEach(r => {
       const c = leaveColor(r.type)
+      const isPending = r.status === 'pending'
+      const label = r.is_mine
+        ? `${r.users?.name ?? ''}(나) ${LEAVE_TYPE_LABELS[r.type]}${isPending ? ' ·대기' : ''}`
+        : `${r.users?.name ?? ''} ${LEAVE_TYPE_LABELS[r.type]}${isPending ? ' ·대기' : ''}`
       ev.push({
-        title: `${r.users?.name ?? ''} ${LEAVE_TYPE_LABELS[r.type]}`,
+        title: label,
         start: r.start_date,
         end: r.end_date,
-        backgroundColor: c.bg,
-        borderColor: c.border,
+        backgroundColor: isPending ? c.bg + 'AA' : c.bg,
+        borderColor: isPending ? c.border + '88' : c.border,
         textColor: c.text,
-      })
-    })
-
-    // 내 일정 (원장 본인 연차)
-    ;(data.myLeaves ?? []).forEach(r => {
-      const isApproved = r.status === 'approved'
-      ev.push({
-        title: `[나] ${LEAVE_TYPE_LABELS[r.type]}`,
-        start: r.start_date,
-        end: r.end_date,
-        backgroundColor: isApproved ? '#10B981' : '#F59E0B',
-        borderColor: isApproved ? '#059669' : '#D97706',
-        textColor: '#fff',
+        borderWidth: isPending ? 2 : 1,
       })
     })
 
@@ -137,6 +165,8 @@ export default function CampusCalendarPage() {
       })
     })
 
+    setSummary(data.summary ?? [])
+    setSummaryMonth(`${year}년 ${parseInt(month)}월`)
     setEvents(ev)
   }
 
@@ -152,6 +182,10 @@ export default function CampusCalendarPage() {
           className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${calTab === 'calendar' ? 'border-[#004EA2] text-[#004EA2]' : 'border-transparent text-[#64748B] hover:text-[#1E293B]'}`}>
           캘린더
         </button>
+        <button onClick={() => setCalTab('mine')}
+          className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${calTab === 'mine' ? 'border-[#004EA2] text-[#004EA2]' : 'border-transparent text-[#64748B] hover:text-[#1E293B]'}`}>
+          내 캘린더
+        </button>
         <button onClick={() => setCalTab('holidays')}
           className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${calTab === 'holidays' ? 'border-[#004EA2] text-[#004EA2]' : 'border-transparent text-[#64748B] hover:text-[#1E293B]'}`}>
           공휴일 설정
@@ -164,11 +198,9 @@ export default function CampusCalendarPage() {
           <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
             <div className="flex flex-wrap gap-4">
               {[
-                { color: '#CFE0F4', border: '#93C5FD', label: '연차' },
-                { color: '#FFF7ED', border: '#FDBA74', label: '반차' },
-                { color: '#EAF2FB', border: '#9BBFE8', label: '반반차' },
-                { color: '#10B981', border: '#059669', label: '내 일정 (승인)' },
-                { color: '#F59E0B', border: '#D97706', label: '내 일정 (대기)' },
+                { color: '#DBEAFE', border: '#3B82F6', label: '연차' },
+                { color: '#FEF3C7', border: '#F59E0B', label: '반차' },
+                { color: '#EDE9FE', border: '#8B5CF6', label: '반반차' },
                 { color: '#FEE2E2', border: '#FCA5A5', label: '공휴일' },
               ].map(l => (
                 <div key={l.label} className="flex items-center gap-2">
@@ -176,6 +208,10 @@ export default function CampusCalendarPage() {
                   <span className="text-xs text-[#64748B]">{l.label}</span>
                 </div>
               ))}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-[#94A3B8] border border-dashed border-[#94A3B8] px-1.5 py-0.5 rounded">·대기</span>
+                <span className="text-xs text-[#64748B]">승인 대기</span>
+              </div>
             </div>
             <div className="flex border border-[#E2E8F0] rounded-xl overflow-hidden">
               <button onClick={() => setView('dayGridMonth')}
@@ -183,6 +219,109 @@ export default function CampusCalendarPage() {
               <button onClick={() => setView('listMonth')}
                 className={`px-4 py-2 text-sm font-medium transition-colors ${view === 'listMonth' ? 'bg-[#1E293B] text-white' : 'text-[#64748B] hover:bg-[#F7F8FA]'}`}>목록</button>
             </div>
+          </div>
+
+          <div className="flex gap-4 items-start">
+            {/* 캘린더 */}
+            <div className="flex-1 min-w-0 bg-white rounded-2xl shadow-sm border border-[#E2E8F0] p-4">
+              <style>{`
+                .fc-col-header-cell-cushion { font-size: 0.8rem; font-weight: 600; }
+                .fc-day-sun .fc-daygrid-day-number { color: #DC2626; font-weight: 600; }
+                .fc-day-sat .fc-daygrid-day-number { color: #004EA2; font-weight: 600; }
+                .fc-col-header-cell.fc-day-sun .fc-col-header-cell-cushion { color: #DC2626; }
+                .fc-col-header-cell.fc-day-sat .fc-col-header-cell-cushion { color: #004EA2; }
+              `}</style>
+              <FullCalendar
+                plugins={[dayGridPlugin, listPlugin]}
+                initialView={view}
+                key={view}
+                locale={koLocale}
+                events={events}
+                datesSet={info => {
+                  const d = (info as { view: { currentStart: Date } }).view.currentStart
+                  loadEvents(String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, '0'))
+                }}
+                headerToolbar={{ left: 'prev,next today', center: 'title', right: '' }}
+                height="auto"
+                dayMaxEvents={4}
+                weekends={true}
+              />
+            </div>
+
+            {/* 월간 연차 소진 요약 */}
+            <div className="w-56 shrink-0 bg-white rounded-2xl shadow-sm border border-[#E2E8F0] overflow-hidden">
+              <div className="bg-[#004EA2] px-4 py-3">
+                <p className="text-xs font-bold text-white/70 mb-0.5">월간 연차 현황</p>
+                <p className="text-sm font-bold text-white">{summaryMonth || '—'}</p>
+              </div>
+              {summary.length === 0 ? (
+                <div className="px-4 py-6 text-center text-xs text-[#94A3B8]">이번 달 연차 없음</div>
+              ) : (
+                <div className="divide-y divide-[#F1F5F9]">
+                  {summary.map(s => (
+                    <div key={s.name} className="px-4 py-3">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-sm font-semibold text-[#1E293B]">{s.name}</span>
+                        <span className="text-sm font-bold text-[#004EA2]">{s.total}일</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {s.annual > 0 && (
+                          <span className="text-[10px] bg-[#DBEAFE] text-[#1D4ED8] px-1.5 py-0.5 rounded font-medium">
+                            연차 {s.annual}
+                          </span>
+                        )}
+                        {s.half > 0 && (
+                          <span className="text-[10px] bg-[#FEF3C7] text-[#92400E] px-1.5 py-0.5 rounded font-medium">
+                            반차 {s.half}
+                          </span>
+                        )}
+                        {s.quarter > 0 && (
+                          <span className="text-[10px] bg-[#EDE9FE] text-[#5B21B6] px-1.5 py-0.5 rounded font-medium">
+                            반반차 {s.quarter}
+                          </span>
+                        )}
+                        {s.sick > 0 && (
+                          <span className="text-[10px] bg-[#FEE2E2] text-[#991B1B] px-1.5 py-0.5 rounded font-medium">
+                            병가 {s.sick}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  <div className="px-4 py-2.5 bg-[#F7F8FA] flex items-center justify-between">
+                    <span className="text-xs text-[#64748B] font-medium">총 소진</span>
+                    <span className="text-sm font-bold text-[#1E293B]">{summary.reduce((a, s) => a + s.total, 0)}일</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* 내 캘린더 탭 */}
+      {calTab === 'mine' && (
+        <>
+          {balance && (
+            <div className="bg-white border border-[#E2E8F0] rounded-2xl px-5 py-4 mb-4 flex items-center gap-6 flex-wrap shadow-sm">
+              <span className="text-sm font-semibold text-[#1E293B]">내 연차 현황</span>
+              <div className="flex items-center gap-5 text-sm">
+                <span className="text-[#64748B]">총 <span className="font-bold text-[#1E293B]">{balance.totalDays}일</span></span>
+                <span className="text-[#64748B]">사용 <span className="font-bold text-[#EF4444]">{balance.usedDays}일</span></span>
+                <span className="text-[#64748B]">잔여 <span className={`font-bold ${balance.remainingDays < 0 ? 'text-[#EF4444]' : 'text-[#10B981]'}`}>{balance.remainingDays}일</span></span>
+              </div>
+              <div className="flex-1 min-w-32">
+                <div className="h-2 bg-[#F1F5F9] rounded-full overflow-hidden">
+                  <div className="h-full bg-[#004EA2] rounded-full transition-all"
+                    style={{ width: `${balance.totalDays > 0 ? Math.min(100, (balance.usedDays / balance.totalDays) * 100) : 0}%` }} />
+                </div>
+              </div>
+            </div>
+          )}
+          <div className="flex flex-wrap gap-3 text-xs mb-4">
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-[#002F65] inline-block" />승인됨</span>
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-[#F59E0B] inline-block" />승인 대기</span>
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-[#FEE2E2] inline-block" />공휴일</span>
           </div>
           <div className="bg-white rounded-2xl shadow-sm border border-[#E2E8F0] p-4">
             <style>{`
@@ -194,17 +333,17 @@ export default function CampusCalendarPage() {
             `}</style>
             <FullCalendar
               plugins={[dayGridPlugin, listPlugin]}
-              initialView={view}
-              key={view}
+              initialView="dayGridMonth"
+              key="mine"
               locale={koLocale}
-              events={events}
+              events={[...myEvents, ...myHolidays]}
               datesSet={info => {
                 const d = (info as { view: { currentStart: Date } }).view.currentStart
-                loadEvents(String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, '0'))
+                loadMyEvents(String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, '0'))
               }}
               headerToolbar={{ left: 'prev,next today', center: 'title', right: '' }}
               height="auto"
-              dayMaxEvents={4}
+              dayMaxEvents={3}
               weekends={true}
             />
           </div>

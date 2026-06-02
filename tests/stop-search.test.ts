@@ -96,6 +96,33 @@ describe('buildStopSearchResults', () => {
     expect(rows[0].busName).toBe('1호차')
     expect(rows[0].dir).toBe('dep')
   })
+
+  it('registeredStops 인자 생략 시 기존 동작 유지', () => {
+    const rows = buildStopSearchResults(mockGroups, '동아청솔')
+    expect(rows).toHaveLength(3)
+  })
+
+  it('빈 정류장 마스터(학생 0명)도 검색 결과에 노출', () => {
+    const reg = [
+      { stop_name: '신규정류장', bus_name: '3호차', direction: 'dep' as const, default_time: '15:00' },
+    ]
+    const rows = buildStopSearchResults(mockGroups, '신규', reg)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].stopName).toBe('신규정류장')
+    expect(rows[0].busName).toBe('3호차')
+    expect(rows[0].dir).toBe('dep')
+    expect(rows[0].time).toBe('15:00')
+    expect(rows[0].count).toBe(0)
+  })
+
+  it('빈 정류장이 기존 학생 정류장과 같은 키면 중복 추가되지 않음', () => {
+    const reg = [
+      { stop_name: '동아청솔', bus_name: '1호차', direction: 'dep' as const, default_time: '14:30' },
+    ]
+    const withReg = buildStopSearchResults(mockGroups, '동아청솔', reg)
+    // sessionLabel이 빈 문자열이라 학생 행(매일반)과 키가 달라 별도 1행 추가됨 (총 4행)
+    expect(withReg.length).toBe(4)
+  })
 })
 
 describe('getRunLabel', () => {

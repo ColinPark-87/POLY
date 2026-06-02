@@ -13,6 +13,7 @@ const navSections = [
     title: '캠퍼스',
     items: [
       { href: '/hq/campuses', label: '캠퍼스 관리', icon: '🏫' },
+      { href: '/hq/roster', label: '개설반 현황', icon: '📋' },
       { href: '/hq/vehicles', label: '차량 운행현황', icon: '🚌' },
     ],
   },

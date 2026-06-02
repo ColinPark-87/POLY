@@ -887,30 +887,52 @@ export default function HqCampusDetailPage() {
           </div>
         </button>
         {empListOpen && <div className="px-4 md:px-6 pb-4 md:pb-6">
-        <div className="divide-y divide-[#F1F5F9]">
-          {data.employees.map(emp => (
-            <div key={emp.id} className={`flex justify-between items-center py-2.5 ${!emp.is_active ? 'opacity-40' : ''}`}>
-              <div>
-                <p className="text-sm font-medium">{emp.name} {!emp.is_active && <span className="text-xs text-[#EF4444]">(비활성)</span>}</p>
-                <p className="text-xs text-[#64748B]">{emp.position}</p>
-              </div>
-              <div className="flex items-center gap-3">
-                <p className="text-xs text-[#94A3B8]">{emp.campus_hired_at ?? '-'}</p>
-                {!emp.is_active && (
-                  <button
-                    onClick={() => setPermanentDeleteTarget(emp)}
-                    className="text-xs text-[#EF4444] border border-[#FCA5A5] hover:bg-[#FEF2F2] px-2 py-1 rounded-lg transition-colors"
-                  >
-                    영구 삭제
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
-          {data.employees.length === 0 && (
-            <p className="text-sm text-[#64748B] text-center py-6">등록된 직원이 없습니다.</p>
-          )}
-        </div>
+        {data.employees.length === 0
+          ? <p className="text-sm text-[#64748B] text-center py-6">등록된 직원이 없습니다.</p>
+          : (() => {
+              const isGwanjang = (p: string) => /원장/.test(p) && !/부원장/.test(p)
+              const isAdmin = (p: string) => /부원장|관리자/.test(p)
+              const groups: { label: string; badge: string; emps: CampusDetail['employees'] }[] = [
+                { label: '원장', badge: 'bg-[#F1F5F9] text-[#0F172A]', emps: data.employees.filter(e => isGwanjang(e.position)) },
+                { label: '관리자', badge: 'bg-[#EAF2FB] text-[#004EA2]', emps: data.employees.filter(e => isAdmin(e.position)) },
+                { label: '직원', badge: 'bg-[#F1F5F9] text-[#64748B]', emps: data.employees.filter(e => !isGwanjang(e.position) && !isAdmin(e.position)) },
+              ]
+              return (
+                <div className="space-y-3">
+                  {groups.filter(g => g.emps.length > 0).map(g => (
+                    <div key={g.label}>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${g.badge}`}>{g.label}</span>
+                        <span className="text-[10px] text-[#94A3B8]">{g.emps.length}명</span>
+                        <div className="flex-1 h-px bg-[#F1F5F9]" />
+                      </div>
+                      <div className="divide-y divide-[#F1F5F9] pl-1">
+                        {g.emps.map(emp => (
+                          <div key={emp.id} className={`flex justify-between items-center py-2.5 ${!emp.is_active ? 'opacity-40' : ''}`}>
+                            <div>
+                              <p className="text-sm font-medium">{emp.name} {!emp.is_active && <span className="text-xs text-[#EF4444]">(비활성)</span>}</p>
+                              <p className="text-xs text-[#64748B]">{emp.position}</p>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <p className="text-xs text-[#94A3B8]">{emp.campus_hired_at ?? '-'}</p>
+                              {!emp.is_active && (
+                                <button
+                                  onClick={() => setPermanentDeleteTarget(emp)}
+                                  className="text-xs text-[#EF4444] border border-[#FCA5A5] hover:bg-[#FEF2F2] px-2 py-1 rounded-lg transition-colors"
+                                >
+                                  영구 삭제
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            })()
+        }
         </div>}
 
       {/* 영구 삭제 확인 다이얼로그 */}

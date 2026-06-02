@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { isCampusAdminLike } from '@/lib/auth/routing'
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient()
@@ -7,7 +8,10 @@ export async function GET(request: NextRequest) {
   if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
 
   const service = createServiceClient()
-  const { data: me } = await service.from('users').select('campus_id').eq('id', user.id).single()
+  const { data: me } = await service.from('users').select('campus_id, role, position').eq('id', user.id).single()
+  if (!me || !isCampusAdminLike(me.role ?? '', me.position ?? '')) {
+    return NextResponse.json({ error: '권한 없음' }, { status: 403 })
+  }
   const { searchParams } = new URL(request.url)
   const year = parseInt(searchParams.get('year') ?? String(new Date().getFullYear()))
 

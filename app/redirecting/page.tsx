@@ -1,29 +1,11 @@
 'use client'
 import { useEffect } from 'react'
 
+// 역할별 홈 라우팅은 미들웨어(proxy.ts)의 resolveHomePath가 단일 소스로 처리.
+// 루트로 보내면 미들웨어가 알맞은 화면으로 리다이렉트한다.
 export default function RedirectingPage() {
   useEffect(() => {
-    fetch('/api/debug/me')
-      .then(r => r.json())
-      .then(data => {
-        const role =
-          data.byId?.data?.role ??
-          data.byEmail?.data?.role ??
-          data.orQuery?.data?.[0]?.role ??
-          ''
-        if (role === 'hq_admin') {
-          window.location.href = '/hq/dashboard'
-          return
-        }
-        if (role === 'campus_admin') {
-          window.location.href = '/campus/dashboard'
-          return
-        }
-        window.location.href = '/dashboard'
-      })
-      .catch(() => {
-        window.location.href = '/dashboard'
-      })
+    window.location.href = '/'
   }, [])
 
   return (

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { isCampusAdminLike } from '@/lib/auth/routing'
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
@@ -7,8 +8,8 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
 
   const service = createServiceClient()
-  const { data: me } = await service.from('users').select('campus_id, role').eq('id', user.id).single()
-  if (!me || !['campus_admin', 'hq_admin'].includes(me.role)) {
+  const { data: me } = await service.from('users').select('campus_id, role, position').eq('id', user.id).single()
+  if (!me || !isCampusAdminLike(me.role ?? '', me.position ?? '')) {
     return NextResponse.json({ error: '권한 없음' }, { status: 403 })
   }
 
@@ -17,6 +18,12 @@ export async function POST(request: NextRequest) {
 
   if (!user_id || !year) {
     return NextResponse.json({ error: '필수 값 누락' }, { status: 400 })
+  }
+
+  // 대상 사용자의 캠퍼스 검증 (cross-campus 오염 방지)
+  const { data: target } = await service.from('users').select('campus_id').eq('id', user_id).maybeSingle()
+  if (!target || target.campus_id !== me.campus_id) {
+    return NextResponse.json({ error: '대상 직원이 자기 캠퍼스에 속해있지 않습니다.' }, { status: 403 })
   }
 
   const { error } = await service.from('leave_grants').upsert({

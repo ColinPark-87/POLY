@@ -11,13 +11,27 @@ export interface LeaveFormData {
   signature_data_url: string | null
 }
 
+// HTML 이스케이프 — 사용자 입력(이름·직위·사유 등)이 마크업으로 해석되는 것 방지(XSS).
+// 일반 한글/ASCII 텍스트는 동일하게 렌더되어 정상 사용자에겐 변화 없음.
+function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 export function downloadLeaveForm(data: LeaveFormData) {
   const period =
     data.start_date === data.end_date
       ? data.start_date
       : `${data.start_date} ~ ${data.end_date}`
 
-  const sigHtml = data.signature_data_url
+  // 서명 data URL 은 정상적인 base64 이미지 형식만 임베드 (속성 인젝션 차단)
+  const sigOk = data.signature_data_url
+    && /^data:image\/(png|jpeg|jpg);base64,[A-Za-z0-9+/=\s]+$/.test(data.signature_data_url)
+  const sigHtml = sigOk
     ? `<img src="${data.signature_data_url}" alt="서명" style="max-height:60px;max-width:180px;" />`
     : '<span style="color:#999;">(서명 없음)</span>'
 
@@ -25,7 +39,7 @@ export function downloadLeaveForm(data: LeaveFormData) {
 <html lang="ko">
 <head>
 <meta charset="UTF-8" />
-<title>연차휴가신청서 - ${data.name}</title>
+<title>연차휴가신청서 - ${escapeHtml(data.name)}</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -99,14 +113,14 @@ export function downloadLeaveForm(data: LeaveFormData) {
 <table>
   <tr>
     <td class="lbl">성명</td>
-    <td>${data.name}</td>
+    <td>${escapeHtml(data.name)}</td>
     <td class="lbl">직위</td>
-    <td>${data.position}</td>
+    <td>${escapeHtml(data.position)}</td>
   </tr>
-  ${data.email ? `<tr><td class="lbl">이메일</td><td colspan="3">${data.email}</td></tr>` : ''}
+  ${data.email ? `<tr><td class="lbl">이메일</td><td colspan="3">${escapeHtml(data.email)}</td></tr>` : ''}
   <tr>
     <td class="lbl">휴가 종류</td>
-    <td colspan="3">${data.typeLabel}</td>
+    <td colspan="3">${escapeHtml(data.typeLabel)}</td>
   </tr>
   <tr>
     <td class="lbl">휴가 기간</td>
@@ -114,7 +128,7 @@ export function downloadLeaveForm(data: LeaveFormData) {
   </tr>
   <tr>
     <td class="lbl">신청 사유</td>
-    <td colspan="3" class="reason-cell">${data.reason ?? '-'}</td>
+    <td colspan="3" class="reason-cell">${data.reason ? escapeHtml(data.reason) : '-'}</td>
   </tr>
   <tr>
     <td class="lbl">신청일</td>
@@ -126,7 +140,7 @@ export function downloadLeaveForm(data: LeaveFormData) {
   <div class="sig-box">
     <p class="label">신청인 서명</p>
     ${sigHtml}
-    <p class="nm">${data.name}</p>
+    <p class="nm">${escapeHtml(data.name)}</p>
   </div>
 </div>
 

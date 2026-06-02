@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
@@ -9,6 +9,15 @@ import SignatureCanvas, { type SignatureCanvasHandle } from '@/components/Signat
 import { LEAVE_TYPE_LABELS, type LeaveType } from '@/lib/types'
 
 const leaveTypes: LeaveType[] = ['annual','half_am','half_pm','quarter','sick','event','other']
+
+function leaveColor(type: LeaveType) {
+  if (type === 'annual')   return { bg: '#DBEAFE', border: '#3B82F6', text: '#1D4ED8' }
+  if (type === 'half_am')  return { bg: '#FEF3C7', border: '#F59E0B', text: '#92400E' }
+  if (type === 'half_pm')  return { bg: '#FFE4E6', border: '#F43F5E', text: '#9F1239' }
+  if (type === 'quarter')  return { bg: '#EDE9FE', border: '#8B5CF6', text: '#5B21B6' }
+  if (type === 'sick')     return { bg: '#FEE2E2', border: '#EF4444', text: '#991B1B' }
+  return { bg: '#F1F5F9', border: '#94A3B8', text: '#475569' }
+}
 
 export default function ApplyPage() {
   const router = useRouter()
@@ -23,29 +32,29 @@ export default function ApplyPage() {
   const [loading, setLoading] = useState(false)
   const [calEvents, setCalEvents] = useState<object[]>([])
 
-  async function loadCalendar(start: string) {
-    const year = start.slice(0, 4)
-    const month = String(parseInt(start.slice(5, 7))).padStart(2, '0')
+  async function loadCalendar(d: Date) {
+    const year = String(d.getFullYear())
+    const month = String(d.getMonth() + 1).padStart(2, '0')
     const res = await fetch(`/api/calendar?year=${year}&month=${month}`)
     const data = await res.json()
     const ev: object[] = []
-    ;(data.myLeaves ?? []).forEach((r: { type: LeaveType; start_date: string; end_date: string; status: string }) => {
+    ;(data.campusLeaves ?? []).forEach((r: { type: LeaveType; start_date: string; end_date: string; status: string; is_mine: boolean; users: { name: string } }) => {
+      const c = leaveColor(r.type)
+      const isPending = r.status === 'pending'
+      const label = r.is_mine
+        ? `${r.users?.name ?? ''}(나) ${LEAVE_TYPE_LABELS[r.type]}${isPending ? ' ·대기' : ''}`
+        : `${r.users?.name ?? ''} ${LEAVE_TYPE_LABELS[r.type]}${isPending ? ' ·대기' : ''}`
       ev.push({
-        title: `나 · ${LEAVE_TYPE_LABELS[r.type]}`,
+        title: label,
         start: r.start_date, end: r.end_date,
-        color: r.status === 'approved' ? '#004EA2' : '#F59E0B',
-        textColor: '#fff',
-      })
-    })
-    ;(data.campusLeaves ?? []).forEach((r: { type: LeaveType; start_date: string; end_date: string; users: { name: string } }) => {
-      ev.push({
-        title: `${r.users?.name} · ${LEAVE_TYPE_LABELS[r.type]}`,
-        start: r.start_date, end: r.end_date,
-        color: '#EAF2FB', textColor: '#004EA2',
+        backgroundColor: isPending ? c.bg + 'AA' : c.bg,
+        borderColor: isPending ? c.border + '88' : c.border,
+        textColor: c.text,
+        borderWidth: isPending ? 2 : 1,
       })
     })
     ;(data.holidays ?? []).forEach((h: { date: string; name: string }) => {
-      ev.push({ title: `🎌 ${h.name}`, start: h.date, color: '#FEF2F2', textColor: '#DC2626', display: 'block' })
+      ev.push({ title: h.name, start: h.date, backgroundColor: '#FEE2E2', borderColor: '#FCA5A5', textColor: '#DC2626', display: 'background' })
     })
     setCalEvents(ev)
   }
@@ -83,36 +92,46 @@ export default function ApplyPage() {
       <div className="flex flex-col lg:flex-row gap-4 lg:gap-6 items-start">
         {/* ── 캠퍼스 캘린더 ── */}
         <div className="w-full bg-white rounded-2xl shadow-sm border border-[#E2E8F0] overflow-hidden">
-          <div className="px-5 py-4 border-b border-[#E2E8F0] bg-[#F7F8FA] flex items-center gap-3">
+          <div className="px-5 py-4 border-b border-[#E2E8F0] bg-[#F7F8FA] flex items-center gap-3 flex-wrap">
             <span className="font-semibold text-[#1E293B] text-sm">캠퍼스 연차 현황</span>
-            <div className="flex gap-3 text-xs text-[#64748B]">
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-[#004EA2] inline-block" />내 연차(승인)</span>
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-[#F59E0B] inline-block" />내 연차(대기)</span>
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-[#EAF2FB] border border-[#004EA2] inline-block" />동료</span>
+            <div className="flex flex-wrap gap-3 text-xs text-[#64748B]">
+              {[
+                { color: '#DBEAFE', border: '#3B82F6', label: '연차' },
+                { color: '#FEF3C7', border: '#F59E0B', label: '반차' },
+                { color: '#EDE9FE', border: '#8B5CF6', label: '반반차' },
+                { color: '#FEE2E2', border: '#FCA5A5', label: '공휴일' },
+              ].map(l => (
+                <span key={l.label} className="flex items-center gap-1">
+                  <span className="w-3 h-3 rounded-sm border flex-shrink-0" style={{ backgroundColor: l.color, borderColor: l.border }} />
+                  {l.label}
+                </span>
+              ))}
+              <span className="flex items-center gap-1">
+                <span className="text-[#94A3B8] border border-dashed border-[#94A3B8] px-1 py-0 rounded text-[10px]">·대기</span>
+                승인 대기
+              </span>
             </div>
           </div>
           <div className="p-3 md:p-5">
+            <style>{`
+              .fc-col-header-cell-cushion { font-size: 0.8rem; font-weight: 600; }
+              .fc-day-sun .fc-daygrid-day-number { color: #DC2626; font-weight: 600; }
+              .fc-day-sat .fc-daygrid-day-number { color: #004EA2; font-weight: 600; }
+              .fc-col-header-cell.fc-day-sun .fc-col-header-cell-cushion { color: #DC2626; }
+              .fc-col-header-cell.fc-day-sat .fc-col-header-cell-cushion { color: #004EA2; }
+            `}</style>
             <FullCalendar
               plugins={[dayGridPlugin]}
               initialView="dayGridMonth"
               locale={koLocale}
               events={calEvents}
-              datesSet={info => loadCalendar(info.startStr)}
+              datesSet={info => loadCalendar((info as { view: { currentStart: Date } }).view.currentStart)}
               headerToolbar={{ left: 'prev,next today', center: 'title', right: '' }}
               height="auto"
-              dayMaxEvents={3}
-              dayCellClassNames={(arg) => {
-                const d = arg.date.getDay()
-                if (d === 0) return ['fc-sunday']
-                if (d === 6) return ['fc-saturday']
-                return []
-              }}
+              dayMaxEvents={4}
+              weekends={true}
             />
           </div>
-          <style>{`
-            .fc-sunday .fc-daygrid-day-number { color: #DC2626; font-weight: 600; }
-            .fc-saturday .fc-daygrid-day-number { color: #004EA2; font-weight: 600; }
-          `}</style>
         </div>
 
         {/* ── 신청 폼 ── */}

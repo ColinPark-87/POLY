@@ -6,6 +6,29 @@ interface Campus { id: string; name: string }
 interface ImportResult { ok: boolean; year: number; success: number; skipped: number; errors: string[] }
 interface RosterResult { ok: boolean; sessions_created: number; classes_created: number; students_created: number; enrollments: number; buses: number; errors: string[]; stopCoords?: Record<string, { lat: number; lng: number }> }
 
+type UploadPhase = '' | 'uploading' | 'processing'
+
+// 업로드 단계(업로드중→작성중)와 진행률을 추적하는 XHR 업로더 (fetch는 업로드 진행률 미지원)
+function uploadWithProgress(
+  url: string,
+  formData: FormData,
+  opts: { onProgress?: (pct: number) => void; onUploaded?: () => void }
+): Promise<{ ok: boolean; status: number; data: Record<string, unknown> }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', url)
+    xhr.upload.onprogress = e => { if (e.lengthComputable) opts.onProgress?.(Math.round((e.loaded / e.total) * 100)) }
+    xhr.upload.onload = () => opts.onUploaded?.()  // 파일 전송 완료 → 서버 작성(처리) 단계 진입
+    xhr.onload = () => {
+      let data: Record<string, unknown> = {}
+      try { data = JSON.parse(xhr.responseText) } catch {}
+      resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, data })
+    }
+    xhr.onerror = () => reject(new Error('네트워크 오류'))
+    xhr.send(formData)
+  })
+}
+
 export default function HqImportPage() {
   const [tab, setTab] = useState<'leave' | 'roster' | 'export'>('leave')
   const [campuses, setCampuses] = useState<Campus[]>([])
@@ -14,7 +37,8 @@ export default function HqImportPage() {
   const fileRef = useRef<HTMLInputElement>(null)
   const [campusId, setCampusId] = useState('')
   const [file, setFile] = useState<File | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [leavePhase, setLeavePhase] = useState<UploadPhase>('')
+  const [leaveProgress, setLeaveProgress] = useState(0)
   const [result, setResult] = useState<ImportResult | null>(null)
   const [error, setError] = useState('')
 
@@ -25,7 +49,8 @@ export default function HqImportPage() {
   const [rosterMonth, setRosterMonth] = useState(() => {
     const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
   })
-  const [rosterLoading, setRosterLoading] = useState(false)
+  const [rosterPhase, setRosterPhase] = useState<UploadPhase>('')
+  const [rosterProgress, setRosterProgress] = useState(0)
   const [rosterResult, setRosterResult] = useState<RosterResult | null>(null)
   const [rosterError, setRosterError] = useState('')
   const [leaveDragging, setLeaveDragging] = useState(false)
@@ -41,11 +66,9 @@ export default function HqImportPage() {
     fetch('/api/hq/campuses').then(r => r.json()).then(d => {
       const list: Campus[] = d.campuses ?? []
       setCampuses(list)
-      if (list.length) {
-        setCampusId(list[0].id)
-        setRosterCampusId(list[0].id)
-        setExportCampusId(list[0].id)
-      }
+      // 캠퍼스 자동 선택 안 함 — 실수로 다른 캠퍼스(첫 캠퍼스)에 업로드되는 사고 방지.
+      // 내보내기는 비파괴라 편의상 첫 캠퍼스 기본 선택 유지.
+      if (list.length) setExportCampusId(list[0].id)
     })
   }, [])
 
@@ -54,15 +77,21 @@ export default function HqImportPage() {
     if (!file) { setError('파일을 선택해주세요.'); return }
     if (!campusId) { setError('캠퍼스를 선택해주세요.'); return }
     if (!file.name.match(/\.xlsx?$/i)) { setError('Excel 파일(.xlsx, .xls)만 가능합니다.'); return }
-    setLoading(true); setError(''); setResult(null)
+    const cName = campuses.find(c => c.id === campusId)?.name ?? campusId
+    if (!confirm(`연차 업로드 대상 캠퍼스: 「${cName}」\n맞는지 확인 후 진행하세요. 계속할까요?`)) return
+    setLeavePhase('uploading'); setLeaveProgress(0); setError(''); setResult(null)
     const formData = new FormData()
     formData.append('file', file)
     formData.append('campus_id', campusId)
-    const res = await fetch('/api/campus/import', { method: 'POST', body: formData })
-    const d = await res.json()
-    setLoading(false)
-    if (!res.ok) { setError(d.error ?? '업로드 실패'); return }
-    setResult(d)
+    try {
+      const { ok, data } = await uploadWithProgress('/api/campus/import', formData, {
+        onProgress: setLeaveProgress,
+        onUploaded: () => setLeavePhase('processing'),
+      })
+      if (!ok) setError((data.error as string) ?? '업로드 실패')
+      else setResult(data as unknown as ImportResult)
+    } catch { setError('업로드 중 오류가 발생했습니다.') }
+    finally { setLeavePhase('') }
   }
 
   async function handleRosterSubmit(e: React.FormEvent) {
@@ -70,14 +99,20 @@ export default function HqImportPage() {
     if (!rosterFile) { setRosterError('파일을 선택해주세요.'); return }
     if (!rosterCampusId) { setRosterError('캠퍼스를 선택해주세요.'); return }
     if (!rosterFile.name.match(/\.xlsx?$/i)) { setRosterError('Excel 파일(.xlsx, .xls)만 가능합니다.'); return }
-    setRosterLoading(true); setRosterError(''); setRosterResult(null)
+    const cName = campuses.find(c => c.id === rosterCampusId)?.name ?? rosterCampusId
+    if (!confirm(`반편성 업로드 대상 캠퍼스: 「${cName}」\n해당 캠퍼스 데이터에 반영됩니다(덮어쓰기 포함). 캠퍼스가 맞는지 확인하세요. 계속할까요?`)) return
+    setRosterPhase('uploading'); setRosterProgress(0); setRosterError(''); setRosterResult(null)
     const formData = new FormData()
     formData.append('file', rosterFile)
-    const res = await fetch(`/api/campus/class-roster/import?campus_id=${rosterCampusId}&month=${rosterMonth}`, { method: 'POST', body: formData })
-    const d = await res.json()
-    setRosterLoading(false)
-    if (!res.ok) { setRosterError(d.error ?? '업로드 실패'); return }
-    setRosterResult(d)
+    try {
+      const { ok, data } = await uploadWithProgress(`/api/campus/class-roster/import?campus_id=${rosterCampusId}&month=${rosterMonth}`, formData, {
+        onProgress: setRosterProgress,
+        onUploaded: () => setRosterPhase('processing'),
+      })
+      if (!ok) setRosterError((data.error as string) ?? '업로드 실패')
+      else setRosterResult(data as unknown as RosterResult)
+    } catch { setRosterError('업로드 중 오류가 발생했습니다.') }
+    finally { setRosterPhase('') }
   }
 
   async function handleExport() {
@@ -139,6 +174,7 @@ export default function HqImportPage() {
                 <p className="text-3xl mb-2">📊</p>
                 <p className="text-sm font-medium text-[#1E293B]">{file ? file.name : '파일을 클릭하거나 드래그하여 선택'}</p>
                 <p className="text-xs text-[#94A3B8] mt-1">연차관리대장_XXXX.xlsx</p>
+                {file && <p className="text-xs text-[#059669] font-bold mt-1">✓ 파일 선택됨 — 업로드 준비 완료</p>}
                 <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={e => setFile(e.target.files?.[0] ?? null)} />
               </div>
             </div>
@@ -151,9 +187,11 @@ export default function HqImportPage() {
               <p>• 기존 직원은 정보 갱신, 신규 직원은 계정 자동 생성</p>
             </div>
             {error && <p className="text-[#EF4444] text-sm">{error}</p>}
-            <button type="submit" disabled={loading || !file || !campusId}
+            <button type="submit" disabled={leavePhase !== '' || !file || !campusId}
               className="w-full bg-[#004EA2] hover:bg-[#003E83] text-white font-semibold py-3 rounded-xl transition-colors disabled:opacity-50">
-              {loading ? '처리 중...' : '업로드 및 Import'}
+              {leavePhase === 'uploading' ? `업로드 중... ${leaveProgress}%`
+                : leavePhase === 'processing' ? '✓ 업로드 완료 · 작성(처리) 중...'
+                : '업로드 및 Import'}
             </button>
           </form>
         </div>
@@ -229,6 +267,7 @@ export default function HqImportPage() {
                 <p className="text-3xl mb-2">📋</p>
                 <p className="text-sm font-medium text-[#1E293B]">{rosterFile ? rosterFile.name : '파일을 클릭하거나 드래그하여 선택'}</p>
                 <p className="text-xs text-[#94A3B8] mt-1">반편성현황_XXXX.xlsx</p>
+                {rosterFile && <p className="text-xs text-[#059669] font-bold mt-1">✓ 파일 선택됨 — 업로드 준비 완료</p>}
                 <input ref={rosterFileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={e => setRosterFile(e.target.files?.[0] ?? null)} />
               </div>
             </div>
@@ -252,9 +291,11 @@ export default function HqImportPage() {
                 )}
               </div>
             )}
-            <button type="submit" disabled={rosterLoading || !rosterFile || !rosterCampusId}
+            <button type="submit" disabled={rosterPhase !== '' || !rosterFile || !rosterCampusId}
               className="w-full bg-[#004EA2] hover:bg-[#003E83] text-white font-semibold py-3 rounded-xl transition-colors disabled:opacity-50">
-              {rosterLoading ? '처리 중...' : '업로드 및 Import'}
+              {rosterPhase === 'uploading' ? `업로드 중... ${rosterProgress}%`
+                : rosterPhase === 'processing' ? '✓ 업로드 완료 · 작성(처리) 중...'
+                : '업로드 및 Import'}
             </button>
           </form>
         </div>

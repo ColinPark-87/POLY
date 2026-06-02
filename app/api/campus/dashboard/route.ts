@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { isCampusAdminLike } from '@/lib/auth/routing'
 
 const DAYS = ['월', '화', '수', '목', '금'] as const
 type Day = typeof DAYS[number]
@@ -7,9 +8,9 @@ type Day = typeof DAYS[number]
 // 세션 이름 → 수업 그룹 분류
 function getSessionGroup(name: string): string {
   if (name.includes('유치부')) return '유치부'
-  if (name.includes('월수금')) return '3일반'
-  if (name.includes('화목')) return '2일반'
-  return '매일반'
+  if (name.includes('월수금') || name.includes('3일')) return '3일반'
+  if (name.includes('화목') || name.includes('2일')) return '2일반'
+  return '매일반' // 매일반/5일/그 외
 }
 
 export async function GET(request: NextRequest) {
@@ -18,8 +19,11 @@ export async function GET(request: NextRequest) {
   if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
 
   const service = createServiceClient()
-  const { data: profile } = await service.from('users').select('campus_id').eq('id', user.id).single()
-  const campusId = profile?.campus_id
+  const { data: profile } = await service.from('users').select('campus_id, role, position').eq('id', user.id).single()
+  if (!profile || !isCampusAdminLike(profile.role ?? '', profile.position ?? '')) {
+    return NextResponse.json({ error: '권한 없음' }, { status: 403 })
+  }
+  const campusId = profile.campus_id
   if (!campusId) return NextResponse.json({ error: '캠퍼스 없음' }, { status: 400 })
 
   const { searchParams } = new URL(request.url)
@@ -28,7 +32,7 @@ export async function GET(request: NextRequest) {
   // 최근 월 자동 선택
   const { data: allMonthRows } = await service.from('class_sessions').select('month').eq('campus_id', campusId)
   const availableMonths = [...new Set((allMonthRows ?? []).map(s => s.month))].sort((a, b) => {
-    const parse = (m: string) => { const p = m.match(/\d+/g)!; return Number(p[0]) * 100 + Number(p[1]) }
+    const parse = (m: string) => { const p = m.match(/\d+/g); if (!p || p.length < 2) return 0; return Number(p[0]) * 100 + Number(p[1]) }
     return parse(b) - parse(a)
   })
   const targetMonth = availableMonths[0] ?? ''
@@ -48,11 +52,16 @@ export async function GET(request: NextRequest) {
   const classGroup: Record<string, string> = {}
   for (const c of classes ?? []) classGroup[c.id] = getSessionGroup(sessMap[c.session_id] ?? '')
 
-  // 수강생 (스케줄 포함)
-  const { data: enrFull } = classIds.length
+  // 활성 학생 ID 목록 (퇴소 학생 제외)
+  const { data: activeStudentRows } = await service.from('campus_students')
+    .select('id').eq('campus_id', campusId).eq('is_active', true)
+  const activeStudentIds = (activeStudentRows ?? []).map(s => s.id)
+
+  // 수강생 (스케줄 포함) — 활성 학생만
+  const { data: enrFull } = classIds.length && activeStudentIds.length
     ? await service.from('class_enrollments')
         .select('class_id,student_id,arr_schedule,dep_schedule,is_waitlist')
-        .in('class_id', classIds).eq('is_waitlist', false)
+        .in('class_id', classIds).eq('is_waitlist', false).in('student_id', activeStudentIds)
     : { data: [] as { class_id: string; student_id: string; arr_schedule: Record<string,string>; dep_schedule: Record<string,string>; is_waitlist: boolean }[] }
 
   // Q1 통계

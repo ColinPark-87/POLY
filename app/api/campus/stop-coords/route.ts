@@ -1,5 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { resolvePermissions } from '@/lib/permissions'
+
+// 차량 관리 권한 보유자(vehicles)만 접근 — 일반 직원의 좌표 열람/변조 차단.
+// 제한권한(vehiclesRestricted, 안전선생님)도 현행대로 접근 가능하도록 vehicles 만 요구.
+const PERM_SELECT = 'campus_id, role, position, perm_class_roster, perm_vehicles, perm_vehicles_restricted'
+function canVehicles(profile: { role?: string | null; position?: string | null; perm_class_roster?: boolean | null; perm_vehicles?: boolean | null; perm_vehicles_restricted?: boolean | null } | null) {
+  return resolvePermissions({
+    role: profile?.role ?? 'employee',
+    position: profile?.position ?? null,
+    perm_class_roster: profile?.perm_class_roster ?? null,
+    perm_vehicles: profile?.perm_vehicles ?? null,
+    perm_vehicles_restricted: profile?.perm_vehicles_restricted ?? null,
+  }).vehicles
+}
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient()
@@ -7,7 +21,8 @@ export async function GET(request: NextRequest) {
   if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
 
   const service = createServiceClient()
-  const { data: profile } = await service.from('users').select('campus_id, role').eq('id', user.id).single()
+  const { data: profile } = await service.from('users').select(PERM_SELECT).eq('id', user.id).single()
+  if (!canVehicles(profile)) return NextResponse.json({ error: '권한 없음' }, { status: 403 })
   const { searchParams } = new URL(request.url)
   let campusId: string | null | undefined = profile?.campus_id
   if (!campusId && profile?.role === 'hq_admin') campusId = searchParams.get('campus_id')
@@ -34,7 +49,8 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
 
   const service = createServiceClient()
-  const { data: profile } = await service.from('users').select('campus_id, role').eq('id', user.id).single()
+  const { data: profile } = await service.from('users').select(PERM_SELECT).eq('id', user.id).single()
+  if (!canVehicles(profile)) return NextResponse.json({ error: '권한 없음' }, { status: 403 })
   const { searchParams } = new URL(request.url)
   let campusId: string | null | undefined = profile?.campus_id
   if (!campusId && profile?.role === 'hq_admin') campusId = searchParams.get('campus_id')
@@ -77,7 +93,8 @@ export async function PATCH(request: NextRequest) {
   if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
 
   const service = createServiceClient()
-  const { data: profile } = await service.from('users').select('campus_id, role').eq('id', user.id).single()
+  const { data: profile } = await service.from('users').select(PERM_SELECT).eq('id', user.id).single()
+  if (!canVehicles(profile)) return NextResponse.json({ error: '권한 없음' }, { status: 403 })
   const { searchParams } = new URL(request.url)
   let campusId: string | null | undefined = profile?.campus_id
   if (!campusId && profile?.role === 'hq_admin') campusId = searchParams.get('campus_id')
@@ -136,7 +153,8 @@ export async function DELETE(request: NextRequest) {
   if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
 
   const service = createServiceClient()
-  const { data: profile } = await service.from('users').select('campus_id').eq('id', user.id).single()
+  const { data: profile } = await service.from('users').select(PERM_SELECT).eq('id', user.id).single()
+  if (!canVehicles(profile)) return NextResponse.json({ error: '권한 없음' }, { status: 403 })
   const campusId = profile?.campus_id
   if (!campusId) return NextResponse.json({ error: '캠퍼스 없음' }, { status: 400 })
 

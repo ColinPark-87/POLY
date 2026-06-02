@@ -21,7 +21,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   // 사용 가능한 월 목록
   const { data: allMonthRows } = await service.from('class_sessions').select('month').eq('campus_id', campusId)
   const availableMonths = [...new Set((allMonthRows ?? []).map(s => s.month))].sort((a, b) => {
-    const parse = (m: string) => { const p = m.match(/\d+/g)!; return Number(p[0]) * 100 + Number(p[1]) }
+    const parse = (m: string) => { const p = m.match(/\d+/g); if (!p || p.length < 2) return 0; return Number(p[0]) * 100 + Number(p[1]) }
     return parse(b) - parse(a)
   })
   const targetMonth = month || availableMonths[0] || ''
@@ -42,7 +42,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   if (classIds.length) {
     const { data } = await service.from('class_enrollments')
       .select('id, class_id, student_id, is_waitlist, campus_students(id, name, english_name, grade)')
-      .in('class_id', classIds).eq('is_waitlist', false).order('sort_order')
+      .in('class_id', classIds).order('sort_order')
     enrollments = data ?? []
   }
 

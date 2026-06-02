@@ -11,15 +11,25 @@ const navItems = [
   { href: '/campus/settings', label: '설정', icon: '⚙️' },
 ]
 
-export default function CampusBottomNav() {
+// 캠퍼스 제한 직원(상담/KT/관리자/POLY안전) — 개인 연차(직원 자가서비스) + 허용된 캠퍼스 도구
+const staffNavItems = [
+  { href: '/dashboard', label: '내연차', icon: '🌴' },
+  { href: '/apply', label: '신청', icon: '✏️' },
+  { href: '/history', label: '내역', icon: '🕐' },
+  { href: '/campus/class-roster', label: '반편성', icon: '🏫' },
+  { href: '/campus/vehicles', label: '등하원', icon: '🚌' },
+]
+
+export default function CampusBottomNav({ staffOnly = false }: { staffOnly?: boolean }) {
   const pathname = usePathname()
+  const items = staffOnly ? staffNavItems : navItems
 
   return (
     <nav
       className="fixed bottom-0 left-0 right-0 bg-white border-t border-[#E2E8F0] flex md:hidden z-50"
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
-      {navItems.map(item => {
+      {items.map(item => {
         const active = pathname.startsWith(item.href)
         return (
           <Link

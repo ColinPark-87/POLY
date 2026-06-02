@@ -39,6 +39,33 @@ export async function sendEmail({ to, subject, htmlContent }: SendEmailParams) {
 
 // ── 템플릿 함수들 ──
 
+export function passwordResetEmailHtml(params: { resetUrl: string; userName?: string }) {
+  return `
+<!DOCTYPE html>
+<html lang="ko">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#F8FAFC;font-family:'Apple SD Gothic Neo','Noto Sans KR',sans-serif;">
+  <div style="max-width:560px;margin:40px auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+    <div style="background:#004EA2;padding:32px 40px;">
+      <h1 style="color:#fff;margin:0;font-size:20px;">비밀번호 재설정</h1>
+      <p style="color:rgba(255,255,255,0.8);margin:8px 0 0;font-size:14px;">아래 버튼을 눌러 새 비밀번호를 설정하세요</p>
+    </div>
+    <div style="padding:32px 40px;">
+      <p style="font-size:15px;color:#1E293B;margin:0 0 20px;">${params.userName ? `${params.userName}님, ` : ''}비밀번호 재설정 요청이 접수되었습니다.</p>
+      <div>
+        <a href="${params.resetUrl}" style="display:inline-block;background:#004EA2;color:#fff;text-decoration:none;padding:13px 30px;border-radius:10px;font-weight:600;font-size:14px;">새 비밀번호 설정하기</a>
+      </div>
+      <p style="font-size:12px;color:#94A3B8;margin:24px 0 0;line-height:1.6;">버튼이 동작하지 않으면 아래 링크를 복사해 브라우저에 붙여넣으세요:<br><span style="color:#64748B;word-break:break-all;">${params.resetUrl}</span></p>
+      <p style="font-size:12px;color:#94A3B8;margin:16px 0 0;">본인이 요청하지 않았다면 이 메일을 무시하셔도 됩니다.</p>
+    </div>
+    <div style="padding:20px 40px;background:#F8FAFC;border-top:1px solid #E2E8F0;">
+      <p style="margin:0;font-size:12px;color:#94A3B8;">연차 관리 시스템 자동 발송 메일입니다.</p>
+    </div>
+  </div>
+</body>
+</html>`
+}
+
 export function leaveRequestEmailHtml(params: {
   employeeName: string
   leaveType: string

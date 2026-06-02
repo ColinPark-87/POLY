@@ -31,24 +31,16 @@ export async function GET(request: NextRequest) {
 
   const campusId = profile?.campus_id ?? ''
 
-  const [myLeavesResult, campusLeavesResult, holidaysResult] = await Promise.all([
-    service
-      .from('leave_requests')
-      .select('type, start_date, end_date, status')
-      .eq('user_id', user.id)
-      .in('status', ['approved', 'pending'])
-      .gte('start_date', start)
-      .lte('start_date', end),
+  const [campusLeavesResult, holidaysResult] = await Promise.all([
     campusId
       ? service
           .from('leave_requests')
-          .select('type, start_date, end_date, user_id')
+          .select('type, start_date, end_date, user_id, status')
           .eq('campus_id', campusId)
-          .eq('status', 'approved')
+          .in('status', ['approved', 'pending'])
           .gte('start_date', start)
           .lte('start_date', end)
-          .neq('user_id', user.id)
-      : Promise.resolve({ data: [] as { type: string; start_date: string; end_date: string; user_id: string }[] }),
+      : Promise.resolve({ data: [] as { type: string; start_date: string; end_date: string; user_id: string; status: string }[] }),
     service
       .from('holidays')
       .select('date, name')
@@ -57,7 +49,7 @@ export async function GET(request: NextRequest) {
       .lte('date', end),
   ])
 
-  // Lookup names for campus leaves
+  // Lookup names for all campus users in this leave list
   const campusLeavesRaw = campusLeavesResult.data ?? []
   const userIds = [...new Set(campusLeavesRaw.map(l => l.user_id))]
   const { data: usersData } = userIds.length > 0
@@ -71,12 +63,27 @@ export async function GET(request: NextRequest) {
     type: l.type,
     start_date: l.start_date,
     end_date: l.end_date,
+    status: l.status,
+    is_mine: l.user_id === user.id,
     users: { name: userMap[l.user_id] ?? '' },
   }))
 
+  // 월간 직원별 연차 소진 요약 (승인된 것만)
+  const LEAVE_DAYS: Record<string, number> = { annual: 1, half_am: 0.5, half_pm: 0.5, quarter: 0.25, sick: 1 }
+  const summaryMap: Record<string, { name: string; annual: number; half: number; quarter: number; sick: number; total: number }> = {}
+  for (const l of campusLeavesRaw.filter(l => l.status === 'approved')) {
+    const name = userMap[l.user_id] ?? '알 수 없음'
+    if (!summaryMap[name]) summaryMap[name] = { name, annual: 0, half: 0, quarter: 0, sick: 0, total: 0 }
+    if (l.type === 'annual') { summaryMap[name].annual++; summaryMap[name].total += 1 }
+    else if (l.type === 'half_am' || l.type === 'half_pm') { summaryMap[name].half++; summaryMap[name].total += 0.5 }
+    else if (l.type === 'quarter') { summaryMap[name].quarter++; summaryMap[name].total += 0.25 }
+    else if (l.type === 'sick') { summaryMap[name].sick++; summaryMap[name].total += 1 }
+  }
+  const summary = Object.values(summaryMap).sort((a, b) => b.total - a.total || a.name.localeCompare(b.name))
+
   return NextResponse.json({
-    myLeaves: myLeavesResult.data ?? [],
     campusLeaves,
     holidays: holidaysResult.data ?? [],
+    summary,
   })
 }

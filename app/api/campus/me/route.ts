@@ -30,5 +30,5 @@ export async function GET() {
     campusName = campus?.name ?? null
   }
 
-  return NextResponse.json({ permissions, campusName })
+  return NextResponse.json({ permissions, campusName, campusId: profile?.campus_id ?? null })
 }

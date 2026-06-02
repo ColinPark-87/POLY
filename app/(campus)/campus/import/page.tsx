@@ -5,20 +5,45 @@ import { useRef, useState } from 'react'
 interface ImportResult { ok: boolean; year: number; success: number; skipped: number; errors: string[] }
 interface RosterResult { ok: boolean; sessions_created: number; classes_created: number; students_created: number; enrollments: number; buses: number; errors: string[]; stopCoords?: Record<string, { lat: number; lng: number }> }
 
+type UploadPhase = '' | 'uploading' | 'processing'
+
+// 업로드 단계(업로드중→작성중)와 진행률 추적 XHR 업로더 (fetch는 업로드 진행률 미지원)
+function uploadWithProgress(
+  url: string,
+  formData: FormData,
+  opts: { onProgress?: (pct: number) => void; onUploaded?: () => void }
+): Promise<{ ok: boolean; status: number; data: Record<string, unknown> }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', url)
+    xhr.upload.onprogress = e => { if (e.lengthComputable) opts.onProgress?.(Math.round((e.loaded / e.total) * 100)) }
+    xhr.upload.onload = () => opts.onUploaded?.()
+    xhr.onload = () => {
+      let data: Record<string, unknown> = {}
+      try { data = JSON.parse(xhr.responseText) } catch {}
+      resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, data })
+    }
+    xhr.onerror = () => reject(new Error('네트워크 오류'))
+    xhr.send(formData)
+  })
+}
+
 export default function ImportPage() {
   const [tab, setTab] = useState<'leave' | 'roster'>('leave')
 
   // 연차 업로드
   const fileRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [leavePhase, setLeavePhase] = useState<UploadPhase>('')
+  const [leaveProgress, setLeaveProgress] = useState(0)
   const [result, setResult] = useState<ImportResult | null>(null)
   const [error, setError] = useState('')
 
   // 반편성 업로드
   const rosterFileRef = useRef<HTMLInputElement>(null)
   const [rosterFile, setRosterFile] = useState<File | null>(null)
-  const [rosterLoading, setRosterLoading] = useState(false)
+  const [rosterPhase, setRosterPhase] = useState<UploadPhase>('')
+  const [rosterProgress, setRosterProgress] = useState(0)
   const [rosterResult, setRosterResult] = useState<RosterResult | null>(null)
   const [rosterError, setRosterError] = useState('')
   const [rosterMonth, setRosterMonth] = useState(() => {
@@ -30,32 +55,41 @@ export default function ImportPage() {
     e.preventDefault()
     if (!file) { setError('파일을 선택해주세요.'); return }
     if (!file.name.match(/\.xlsx?$/i)) { setError('Excel 파일(.xlsx, .xls)만 가능합니다.'); return }
-    setLoading(true); setError(''); setResult(null)
+    setLeavePhase('uploading'); setLeaveProgress(0); setError(''); setResult(null)
     const formData = new FormData()
     formData.append('file', file)
-    const res = await fetch('/api/campus/import', { method: 'POST', body: formData })
-    const d = await res.json()
-    setLoading(false)
-    if (!res.ok) { setError(d.error ?? '업로드 실패'); return }
-    setResult(d)
+    try {
+      const { ok, data } = await uploadWithProgress('/api/campus/import', formData, {
+        onProgress: setLeaveProgress,
+        onUploaded: () => setLeavePhase('processing'),
+      })
+      if (!ok) setError((data.error as string) ?? '업로드 실패')
+      else setResult(data as unknown as ImportResult)
+    } catch { setError('업로드 중 오류가 발생했습니다.') }
+    finally { setLeavePhase('') }
   }
 
   async function handleRosterSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!rosterFile) { setRosterError('파일을 선택해주세요.'); return }
     if (!rosterFile.name.match(/\.xlsx?$/i)) { setRosterError('Excel 파일(.xlsx, .xls)만 가능합니다.'); return }
-    setRosterLoading(true); setRosterError(''); setRosterResult(null)
+    setRosterPhase('uploading'); setRosterProgress(0); setRosterError(''); setRosterResult(null)
     const formData = new FormData()
     formData.append('file', rosterFile)
-    const res = await fetch(`/api/campus/class-roster/import?month=${encodeURIComponent(rosterMonth)}`, { method: 'POST', body: formData })
-    const d = await res.json()
-    setRosterLoading(false)
-    if (!res.ok) { setRosterError(d.error ?? '업로드 실패'); return }
-    if (d.stopCoords && Object.keys(d.stopCoords).length > 0) {
-      const existing = JSON.parse(localStorage.getItem('shuttle-stop-coords') ?? '{}')
-      localStorage.setItem('shuttle-stop-coords', JSON.stringify({ ...existing, ...d.stopCoords }))
-    }
-    setRosterResult(d)
+    try {
+      const { ok, data } = await uploadWithProgress(`/api/campus/class-roster/import?month=${encodeURIComponent(rosterMonth)}`, formData, {
+        onProgress: setRosterProgress,
+        onUploaded: () => setRosterPhase('processing'),
+      })
+      if (!ok) { setRosterError((data.error as string) ?? '업로드 실패'); return }
+      const sc = data.stopCoords as Record<string, { lat: number; lng: number }> | undefined
+      if (sc && Object.keys(sc).length > 0) {
+        const existing = JSON.parse(localStorage.getItem('shuttle-stop-coords') ?? '{}')
+        localStorage.setItem('shuttle-stop-coords', JSON.stringify({ ...existing, ...sc }))
+      }
+      setRosterResult(data as unknown as RosterResult)
+    } catch { setRosterError('업로드 중 오류가 발생했습니다.') }
+    finally { setRosterPhase('') }
   }
 
   return (
@@ -88,6 +122,7 @@ export default function ImportPage() {
                 <p className="text-3xl mb-2">📊</p>
                 <p className="text-sm font-medium text-[#1E293B]">{file ? file.name : '파일을 클릭하여 선택'}</p>
                 <p className="text-xs text-[#94A3B8] mt-1">연차관리대장_XXXX.xlsx</p>
+                {file && <p className="text-xs text-[#059669] font-bold mt-1">✓ 파일 선택됨 — 업로드 준비 완료</p>}
                 <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={e => setFile(e.target.files?.[0] ?? null)} />
               </div>
             </div>
@@ -99,9 +134,11 @@ export default function ImportPage() {
               <p>• 기존 직원은 정보 갱신, 신규 직원은 계정 자동 생성</p>
             </div>
             {error && <p className="text-[#EF4444] text-sm">{error}</p>}
-            <button type="submit" disabled={loading || !file}
+            <button type="submit" disabled={leavePhase !== '' || !file}
               className="w-full bg-[#004EA2] hover:bg-[#003E83] text-white font-semibold py-3 rounded-xl transition-colors disabled:opacity-50">
-              {loading ? '처리 중...' : '업로드 및 Import'}
+              {leavePhase === 'uploading' ? `업로드 중... ${leaveProgress}%`
+                : leavePhase === 'processing' ? '✓ 업로드 완료 · 작성(처리) 중...'
+                : '업로드 및 Import'}
             </button>
           </form>
         </div>
@@ -173,6 +210,7 @@ export default function ImportPage() {
                 <p className="text-3xl mb-2">📋</p>
                 <p className="text-sm font-medium text-[#1E293B]">{rosterFile ? rosterFile.name : '파일을 클릭하여 선택'}</p>
                 <p className="text-xs text-[#94A3B8] mt-1">반편성현황_XXXX.xlsx</p>
+                {rosterFile && <p className="text-xs text-[#059669] font-bold mt-1">✓ 파일 선택됨 — 업로드 준비 완료</p>}
                 <input ref={rosterFileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={e => setRosterFile(e.target.files?.[0] ?? null)} />
               </div>
             </div>
@@ -197,9 +235,11 @@ export default function ImportPage() {
                 )}
               </div>
             )}
-            <button type="submit" disabled={rosterLoading || !rosterFile}
+            <button type="submit" disabled={rosterPhase !== '' || !rosterFile}
               className="w-full bg-[#004EA2] hover:bg-[#003E83] text-white font-semibold py-3 rounded-xl transition-colors disabled:opacity-50">
-              {rosterLoading ? '처리 중...' : '업로드 및 Import'}
+              {rosterPhase === 'uploading' ? `업로드 중... ${rosterProgress}%`
+                : rosterPhase === 'processing' ? '✓ 업로드 완료 · 작성(처리) 중...'
+                : '업로드 및 Import'}
             </button>
           </form>
         </div>

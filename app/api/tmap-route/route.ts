@@ -1,10 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+
+// TMAP은 한국 IP만 허용 → 이 함수를 Vercel 서울 리전에서 실행 (서버간 호출이라 CORS도 없음)
+export const runtime = 'nodejs'
+export const preferredRegion = 'icn1'
 
 // POST /api/tmap-route
 // body: { stops: [{ name, lat, lng }] }
-// returns: { coordinates: [lat, lng][], debug? } — 실제 도로 경로 좌표
+// returns: { coordinates: [lat, lng][], time, distance } — 실제 도로 경로 좌표 + ETA
 export async function POST(req: NextRequest) {
-  const appKey = process.env.TMAP_APP_KEY
+  // 익명 호출 차단 (TMAP 쿼터 보호)
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
+
+  // 서버 전용 키가 없으면 공개 키로 폴백 (현재 운영엔 NEXT_PUBLIC_TMAP_APP_KEY만 설정됨)
+  const appKey = process.env.TMAP_APP_KEY ?? process.env.NEXT_PUBLIC_TMAP_APP_KEY
   if (!appKey) return NextResponse.json({ error: 'no tmap key' }, { status: 500 })
 
   const { stops } = await req.json() as { stops: { name: string; lat: number; lng: number }[] }
@@ -57,46 +68,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'invalid json', detail: text.slice(0, 300) }, { status: 502 })
     }
 
-    // GeoJSON features에서 LineString 좌표 추출
+    // GeoJSON features에서 LineString 좌표 + ETA(첫 Point의 totalTime/Distance) 추출
     const coordinates: [number, number][] = []
+    let time: number | null = null
+    let distance: number | null = null
     for (const feature of data.features ?? []) {
+      if (feature.geometry?.type === 'Point' && feature.properties?.totalTime != null && time == null) {
+        time = feature.properties.totalTime
+        distance = feature.properties.totalDistance ?? 0
+      }
       if (feature.geometry?.type === 'LineString') {
         for (const coord of feature.geometry.coordinates ?? []) {
-          // TMAP: [lng, lat] → Leaflet: [lat, lng]
+          // TMAP: [lng, lat] → Kakao: [lat, lng]
           coordinates.push([coord[1], coord[0]])
         }
       }
     }
 
-    return NextResponse.json({ coordinates, count: coordinates.length })
+    return NextResponse.json({ coordinates, count: coordinates.length, time, distance })
   } catch (e) {
     return NextResponse.json({ error: 'fetch failed', detail: String(e) }, { status: 500 })
   }
-}
-
-// GET /api/tmap-route/test — 브라우저에서 직접 API 동작 확인용
-export async function GET() {
-  const appKey = process.env.TMAP_APP_KEY
-  if (!appKey) return NextResponse.json({ status: 'NO_KEY' })
-
-  // 서울 → 강남 간단 테스트
-  const body = new URLSearchParams({
-    startX: '126.9779692',
-    startY: '37.5662952',
-    endX: '127.0276368',
-    endY: '37.4979502',
-    startName: '서울시청',
-    endName: '강남역',
-    reqCoordType: 'WGS84GEO',
-    resCoordType: 'WGS84GEO',
-    searchOption: '0',
-  })
-
-  const res = await fetch('https://apis.openapi.sk.com/tmap/routes?version=1&format=json', {
-    method: 'POST',
-    headers: { appKey, 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: body.toString(),
-  })
-  const text = await res.text()
-  return NextResponse.json({ status: res.status, ok: res.ok, preview: text.slice(0, 500) })
 }

@@ -12,14 +12,14 @@ function getAvatarColor(name: string) {
 }
 
 // 고정 직급 — 삭제·이름 변경 불가 (FIXED: 핵심 직급, DEFAULT_CUSTOM: 기본 내장 직급)
-const FIXED_POSITIONS = ['원장', '관리자', '상담부', 'FT', 'KT', 'POLY안전선생님']
+const FIXED_POSITIONS = ['원장', '부원장', '관리자', '상담부', 'FT', 'KT', 'POLY안전선생님']
 const DEFAULT_CUSTOM = ['사서', '미화', '기타']
 // 기본 내장 직급 전체 — 이 목록에 없는 것만 삭제·이름 변경 가능
 const PRESET_POSITIONS = new Set([...FIXED_POSITIONS, ...DEFAULT_CUSTOM])
 const CUSTOM_KEY = 'staff-custom-positions'
 
 const DEPT_COLORS: Record<string, string> = {
-  '원장': '#0F172A', '관리자': '#004EA2', '상담부': '#16A34A',
+  '원장': '#0F172A', '부원장': '#1E3A5F', '관리자': '#004EA2', '상담부': '#16A34A',
   'FT': '#EA580C', 'KT': '#7C3AED', 'POLY안전선생님': '#0891B2',
   '사서': '#BE185D', '미화': '#065F46', '기타': '#64748B',
 }
@@ -34,7 +34,7 @@ interface Employee {
   id: string; name: string; email: string; position: string; role: string
   is_active: boolean; campus_hired_at: string | null; company_hired_at: string | null
   terminated_at: string | null
-  perm_class_roster: boolean | null; perm_vehicles: boolean | null; perm_vehicles_restricted: boolean | null
+  perm_class_roster: boolean | null; perm_vehicles: boolean | null; perm_vehicles_restricted: boolean | null; perm_analytics: boolean | null; perm_enroll_edit: boolean | null
 }
 
 function Spinner() {
@@ -740,7 +740,7 @@ export default function StaffPage() {
 
 function PermissionsTab({ emp, onSave, saving, allPositions }: {
   emp: Employee
-  onSave: (perms: { role: string; position: string; perm_class_roster: boolean | null; perm_vehicles: boolean | null; perm_vehicles_restricted: boolean | null }) => Promise<void>
+  onSave: (perms: { role: string; position: string; perm_class_roster: boolean | null; perm_vehicles: boolean | null; perm_vehicles_restricted: boolean | null; perm_analytics: boolean | null; perm_enroll_edit: boolean | null }) => Promise<void>
   saving: boolean
   allPositions: string[]
 }) {
@@ -750,15 +750,21 @@ function PermissionsTab({ emp, onSave, saving, allPositions }: {
   const [classRoster, setClassRoster] = useState<boolean | null>(emp.perm_class_roster)
   const [vehicles, setVehicles] = useState<boolean | null>(emp.perm_vehicles)
   const [vehiclesRestricted, setVehiclesRestricted] = useState<boolean | null>(emp.perm_vehicles_restricted)
+  const [analytics, setAnalytics] = useState<boolean | null>(emp.perm_analytics)
+  const [enrollEdit, setEnrollEdit] = useState<boolean | null>(emp.perm_enroll_edit)
 
   const effectiveClassRoster = classRoster ?? defaults.classRoster
   const effectiveVehicles = vehicles ?? defaults.vehicles
   const effectiveVehiclesRestricted = vehiclesRestricted ?? defaults.vehiclesRestricted
+  const effectiveAnalytics = analytics ?? defaults.analytics
+  const effectiveEnrollEdit = enrollEdit ?? defaults.enrollEdit
 
   function reset() {
     setClassRoster(null)
     setVehicles(null)
     setVehiclesRestricted(null)
+    setAnalytics(null)
+    setEnrollEdit(null)
   }
 
   return (
@@ -836,6 +842,46 @@ function PermissionsTab({ emp, onSave, saving, allPositions }: {
         </button>
       </div>
 
+      {/* 대시보드 */}
+      <div className="flex items-center justify-between p-3 bg-[#F8FAFC] rounded-xl">
+        <div>
+          <p className="text-sm font-medium text-[#1E293B]">캠퍼스 대시보드</p>
+          <p className="text-[10px] text-[#94A3B8]">
+            직급 기본값: {defaults.analytics ? 'ON' : 'OFF'}
+            {analytics !== null && <span className="ml-1 text-[#004EA2] font-semibold">(개별 설정됨)</span>}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setAnalytics(prev => {
+            const current = prev ?? defaults.analytics
+            return current === defaults.analytics ? !current : null
+          })}
+          className={`relative w-12 h-6 rounded-full transition-colors ${effectiveAnalytics ? 'bg-[#004EA2]' : 'bg-[#E2E8F0]'}`}>
+          <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${effectiveAnalytics ? 'translate-x-7' : 'translate-x-1'}`} />
+        </button>
+      </div>
+
+      {/* 입퇴소 관리 */}
+      <div className="flex items-center justify-between p-3 bg-[#F8FAFC] rounded-xl">
+        <div>
+          <p className="text-sm font-medium text-[#1E293B]">입퇴소 관리</p>
+          <p className="text-[10px] text-[#94A3B8]">
+            직급 기본값: {defaults.enrollEdit ? 'ON' : 'OFF'}
+            {enrollEdit !== null && <span className="ml-1 text-[#004EA2] font-semibold">(개별 설정됨)</span>}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setEnrollEdit(prev => {
+            const current = prev ?? defaults.enrollEdit
+            return current === defaults.enrollEdit ? !current : null
+          })}
+          className={`relative w-12 h-6 rounded-full transition-colors ${effectiveEnrollEdit ? 'bg-[#004EA2]' : 'bg-[#E2E8F0]'}`}>
+          <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${effectiveEnrollEdit ? 'translate-x-7' : 'translate-x-1'}`} />
+        </button>
+      </div>
+
       {/* 차량 제한 뷰 (차량 ON일 때만) */}
       {effectiveVehicles && (
         <div className="flex items-center justify-between p-3 bg-[#F8FAFC] rounded-xl ml-4 border-l-2 border-[#E2E8F0]">
@@ -865,7 +911,7 @@ function PermissionsTab({ emp, onSave, saving, allPositions }: {
           기본값으로 초기화
         </button>
         <button type="button" disabled={saving}
-          onClick={() => onSave({ role, position, perm_class_roster: classRoster, perm_vehicles: vehicles, perm_vehicles_restricted: vehiclesRestricted })}
+          onClick={() => onSave({ role, position, perm_class_roster: classRoster, perm_vehicles: vehicles, perm_vehicles_restricted: vehiclesRestricted, perm_analytics: analytics, perm_enroll_edit: enrollEdit })}
           className="flex-1 bg-[#004EA2] text-white font-semibold py-2.5 rounded-xl text-sm disabled:opacity-50">
           {saving ? '저장 중...' : '저장'}
         </button>

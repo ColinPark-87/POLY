@@ -24,13 +24,13 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
 
   const service = createServiceClient()
-  const { data: profile } = await service.from('users').select('campus_id, role').eq('id', user.id).single()
+  const { data: profile } = await service.from('users').select('campus_id, role, position').eq('id', user.id).single()
   const { searchParams } = new URL(request.url)
   let campusId: string | null | undefined = profile?.campus_id
   if (!campusId && profile?.role === 'hq_admin') campusId = searchParams.get('campus_id')
   if (!campusId) return NextResponse.json({ error: '캠퍼스 없음' }, { status: 400 })
-  if (!['campus_admin', 'hq_admin'].includes(profile?.role ?? ''))
-    return NextResponse.json({ error: '권한 없음' }, { status: 403 })
+  const isAdmin = profile?.role === 'campus_admin' || profile?.role === 'hq_admin' || (profile?.position ?? '').includes('부원장')
+  if (!isAdmin) return NextResponse.json({ error: '권한 없음' }, { status: 403 })
 
   const formData = await request.formData()
   const file = formData.get('file') as File | null
@@ -99,7 +99,8 @@ export async function POST(request: NextRequest) {
       const ftTeacher   = str(row[5]) || null
       const studentName = str(row[6])
       const englishName = str(row[7]) || null
-      const busName     = str(row[8])   // 차량탑승 — 전 요일 공통
+      const busNameRaw  = str(row[8])   // 차량탑승 — 전 요일 공통
+      const busName     = busNameRaw === '미이용' ? '' : busNameRaw  // '미이용'=셔틀 미사용 → 호차로 만들지 않음
 
       if (!sessName || !level || !studentName) continue
 
@@ -124,11 +125,12 @@ export async function POST(request: NextRequest) {
       }
       const sessId = sessCache[sessKey]
 
-      // 반 upsert
-      const classKey = `${sessId}|${level}`
+      // 반 upsert — 같은 레벨이라도 교실(room)이 다르면 다른 반으로 분리
+      const classKey = `${sessId}|${level}|${room ?? ''}`
       if (!classCache[classKey]) {
-        const { data: ex } = await service.from('classes')
-          .select('id').eq('session_id', sessId).eq('level', level).maybeSingle()
+        let q = service.from('classes').select('id').eq('session_id', sessId).eq('level', level)
+        q = room ? q.eq('room', room) : q.is('room', null)
+        const { data: ex } = await q.maybeSingle()
         if (ex) {
           await service.from('classes').update({ room, teacher: ftTeacher, kt_teacher: ktTeacher }).eq('id', ex.id)
           classCache[classKey] = ex.id
@@ -155,6 +157,16 @@ export async function POST(request: NextRequest) {
         studentMap[studentName] = studentId
         studentMap[nameNorm] = studentId
         stats.students_created++
+      }
+
+      // 학교(col 31) / 아파트(col 32) — 값이 있으면 학생 정보 갱신 (유치부는 학교 비움 → 미갱신)
+      const school = str(row[31])
+      const apartment = str(row[32])
+      if (school || apartment) {
+        const upd: Record<string, unknown> = {}
+        if (school) upd.school = school
+        if (apartment) upd.apartment = apartment
+        await service.from('campus_students').update(upd).eq('id', studentId)
       }
 
       // 기존 데이터 사용 안 함 — 완전 덮어쓰기
@@ -200,7 +212,7 @@ export async function POST(request: NextRequest) {
     if (wb.Sheets['차량정보']) {
       const busInfoRows = (XLSX.utils.sheet_to_json(wb.Sheets['차량정보'], { header: 1 }) as unknown[][]).slice(1)
       for (const row of busInfoRows) {
-        const name = str(row[0]); if (!name) continue
+        const name = str(row[0]); if (!name || name === '미이용') continue
         const busData = {
           campus_id: campusId, name,
           driver: str(row[1]) || null, driver_phone: str(row[2]) || null,

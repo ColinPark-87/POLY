@@ -1,4 +1,4 @@
-import { LeaveType, LEAVE_DAYS } from '@/lib/types'
+import { LeaveType } from '@/lib/types'
 
 export function calcBusinessDays(
   startDate: string,
@@ -11,7 +11,9 @@ export function calcBusinessDays(
   let count = 0
   const cur = new Date(start)
   while (cur <= end) {
-    const day = cur.getDay()
+    // 요일과 날짜키를 동일한(UTC) 달력 기준으로 계산 — 음수 오프셋 호스트에서 어긋나던 버그 수정.
+    // UTC/UTC+ 호스트(현재 Vercel·개발환경)에서는 결과 동일(동작 보존).
+    const day = cur.getUTCDay()
     const iso = cur.toISOString().slice(0, 10)
     if (day !== 0 && day !== 6 && !holidaySet.has(iso)) {
       count++

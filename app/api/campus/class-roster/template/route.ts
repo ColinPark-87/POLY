@@ -26,6 +26,7 @@ export async function GET(request: NextRequest) {
     '월', '', '화', '', '수', '', '목', '', '금', '',
     '하원',
     '월', '', '화', '', '수', '', '목', '', '금', '',
+    '학교', '아파트',
   ]
 
   const sampleRow: unknown[] = [
@@ -42,6 +43,7 @@ export async function GET(request: NextRequest) {
     '폴리앞', timeToExcel('14:40'),
     '폴리앞', timeToExcel('14:40'),
     '폴리앞', timeToExcel('14:40'),
+    '', '래미안아파트',
   ]
 
   const banData = [banHeader, sampleRow]

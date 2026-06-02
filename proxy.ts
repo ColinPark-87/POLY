@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse, type NextRequest } from 'next/server'
+import { resolveHomePath, isCampusStaffOnly, isViceAdmin } from '@/lib/auth/routing'
 
 export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
@@ -30,7 +31,17 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  if (user && !isAuthPage) {
+  // 역할 정보가 실제로 필요한 경로에서만 users 조회 (매 요청 DB 쿼리 제거 — 성능)
+  //  - 캠퍼스/HQ 가드, 또는 로그인된 채 루트/로그인 진입 시 역할별 홈 결정
+  const needsRole =
+    !!user && (
+      path.startsWith('/campus') ||
+      path.startsWith('/hq') ||
+      path === '/login' ||
+      path === '/'
+    )
+
+  if (needsRole) {
     const adminClient = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -39,33 +50,33 @@ export async function proxy(request: NextRequest) {
     const { data: profile } = await adminClient
       .from('users')
       .select('role, position')
-      .eq('id', user.id)
+      .eq('id', user!.id)
       .maybeSingle()
 
     const role = profile?.role ?? ''
     const position = profile?.position ?? ''
+    const home = resolveHomePath(role, position)
 
-    const isCampusAdmin = role === 'campus_admin' || role === 'hq_admin'
-    const isCampusStaffOnly =
-      !isCampusAdmin && (
-        position.includes('상담') ||
-        position.includes('KT') ||
-        position.includes('관리자') ||
-        position.includes('POLY안전')
-      )
+    // 로그인된 채로 로그인/루트 진입 → 역할별 올바른 홈으로 (직원 대시보드로 잘못 떨어지는 버그 수정)
+    if (path === '/login' || path === '/') {
+      return NextResponse.redirect(new URL(home, request.url))
+    }
+
+    const isCampusAdmin = role === 'campus_admin' || role === 'hq_admin' || isViceAdmin(position)
+    const staffOnly = isCampusStaffOnly(role, position)
 
     if (path.startsWith('/campus')) {
-      if (!isCampusAdmin && !isCampusStaffOnly) {
+      if (!isCampusAdmin && !staffOnly) {
         // 일반 직원 — 캠퍼스 접근 불가
         return NextResponse.redirect(new URL('/dashboard', request.url))
       }
-      if (isCampusStaffOnly) {
-        // 상담부/관리자 등 — 개설반 현황, 차량 관리만 허용
+      if (staffOnly) {
+        // 상담부/관리자 등 — 개설반 현황, 차량 관리만 허용 → 그 외 캠퍼스 경로는 홈(개설반)으로
         const allowed =
           path.startsWith('/campus/class-roster') ||
           path.startsWith('/campus/vehicles')
         if (!allowed) {
-          return NextResponse.redirect(new URL('/dashboard', request.url))
+          return NextResponse.redirect(new URL(home, request.url))
         }
       }
     }
@@ -75,13 +86,10 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  if (user && path === '/login') {
-    return NextResponse.redirect(new URL('/dashboard', request.url))
-  }
-
   return supabaseResponse
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|api/).*)'],
+  // 정적 이미지(public/*.png 등)는 인증 미들웨어 우회 — 캠퍼스 엠블럼 등 항상 로드
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|api/|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico)).*)'],
 }

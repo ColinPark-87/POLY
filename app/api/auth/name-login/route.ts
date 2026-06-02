@@ -8,20 +8,25 @@ export async function POST(request: NextRequest) {
   }
 
   const service = createServiceClient()
-  const { data: record } = await service
+  const { data: records } = await service
     .from('users')
     .select('id, email, role, position')
     .eq('campus_id', campus_id)
     .eq('name', name)
-    .single()
+    .limit(2)
 
-  if (!record) {
+  if (!records || records.length === 0) {
     return NextResponse.json({ error: '해당 캠퍼스에 등록된 이름이 없습니다.' }, { status: 404 })
   }
+  if (records.length > 1) {
+    return NextResponse.json({ error: '동명이인이 있어 이메일 로그인을 사용해야 합니다.' }, { status: 409 })
+  }
+  const record = records[0]
 
   // 계정 미설정 상태: 임시 이메일(@campus.internal)
   if (record.email.endsWith('@campus.internal')) {
-    return NextResponse.json({ needs_setup: true })
+    // SETUP_PIN 설정 시에만 초기설정에 설정코드 입력 요구 (미설정 시 false → 기존 동작)
+    return NextResponse.json({ needs_setup: true, setup_code_required: !!process.env.SETUP_PIN })
   }
 
   // 이름으로 이메일 조회 후 Supabase 로그인

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { isCampusAdminLike } from '@/lib/auth/routing'
 
 export async function GET() {
   const supabase = await createClient()
@@ -24,7 +25,11 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
 
-  const { data: me } = await service.from('users').select('campus_id').eq('id', user.id).single()
+  const { data: me } = await service.from('users').select('campus_id, role, position').eq('id', user.id).single()
+  if (!me || !isCampusAdminLike(me.role ?? '', me.position ?? '')) {
+    return NextResponse.json({ error: '관리자 권한이 필요합니다.' }, { status: 403 })
+  }
+
   const body = await request.json()
 
   // Support both single date and date range
@@ -45,7 +50,7 @@ export async function POST(request: NextRequest) {
 
   if (dates.length === 0) return NextResponse.json({ error: '유효한 날짜 범위가 아닙니다.' }, { status: 400 })
 
-  const rows = dates.map(date => ({ campus_id: me?.campus_id, date, name }))
+  const rows = dates.map(date => ({ campus_id: me.campus_id, date, name }))
   const { error } = await service.from('holidays').insert(rows)
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
   return NextResponse.json({ ok: true, inserted: dates.length })
@@ -57,8 +62,18 @@ export async function DELETE(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
 
+  const { data: me } = await service.from('users').select('campus_id, role, position').eq('id', user.id).single()
+  if (!me || !isCampusAdminLike(me.role ?? '', me.position ?? '')) {
+    return NextResponse.json({ error: '관리자 권한이 필요합니다.' }, { status: 403 })
+  }
+
   const { id } = await request.json()
-  const { error } = await service.from('holidays').delete().eq('id', id)
+  // 자기 캠퍼스 공휴일만 삭제 가능
+  const { error } = await service
+    .from('holidays')
+    .delete()
+    .eq('id', id)
+    .eq('campus_id', me.campus_id ?? '')
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
   return NextResponse.json({ ok: true })
 }

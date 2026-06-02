@@ -1,0 +1,76 @@
+# 백업 & 복구 가이드
+
+## 백업 정보
+
+| 항목 | 내용 |
+|---|---|
+| 백업 일시 | 2026-05-11 |
+| 백업 커밋 | `0f1af78` |
+| 백업 브랜치 | `backup/pre-design-update-20260511` |
+| 배포 URL | https://leave-system-eta-ten.vercel.app |
+| 백업 이유 | Poly 디자인 시스템 적용 전 현재 상태 보존 |
+
+---
+
+## 복구 방법
+
+### 방법 1 — 브랜치로 되돌리기 (작업 중인 경우)
+
+현재 작업을 버리지 않고 백업 시점 코드를 확인:
+
+```bash
+git checkout backup/pre-design-update-20260511
+```
+
+원래 master로 돌아오기:
+
+```bash
+git checkout master
+```
+
+### 방법 2 — master를 백업 시점으로 완전 복구
+
+**주의: 백업 이후 작업이 모두 사라짐**
+
+```bash
+git reset --hard 0f1af78
+```
+
+### 방법 3 — 특정 파일만 복구
+
+특정 파일 하나만 백업 시점으로 되돌리기:
+
+```bash
+git checkout 0f1af78 -- app/(campus)/campus/dashboard/page.tsx
+```
+
+---
+
+## Vercel 재배포 (복구 후)
+
+로컬 코드를 복구한 뒤 Vercel에 반영하려면:
+
+```bash
+cd "C:\Users\user\Desktop\Colin 작업폴더\leave-system"
+vercel --prod
+```
+
+---
+
+## 백업 당시 포함된 주요 파일
+
+- 권한부여 시스템 (`lib/permissions.ts`, `lib/auth/routing.ts`)
+- 유치부 버스 분류 버그 수정 (유치부 방과후 → 유치부 하원)
+- 리다이렉팅 페이지 (`app/redirecting/`)
+- 차량 시스템 (`app/(hq)/hq/campuses/[id]/vehicles/`)
+- Supabase 마이그레이션 (`supabase/migrations/008_add_kt_teacher.sql`)
+
+---
+
+## 다음 작업: Poly 디자인 적용
+
+백업 완료 후 Poly 디자인 시스템 설치 순서:
+
+1. `0511/claude-code-skill/` 폴더 내용을 `leave-system/` 루트에 복사
+2. `claude` 명령으로 Claude Code 실행
+3. 프롬프트: `"poly-design 스킬을 사용해서 dashboard 페이지를 Poly 디자인으로 리팩토링해줘. 기능은 그대로."`

@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
+import type { RegisteredStop } from '@/lib/utils/stop-search'
 
 const DAYS = ['월', '화', '수', '목', '금'] as const
 type Day = typeof DAYS[number]
@@ -50,7 +51,7 @@ function getBusStyle(name: string) {
 
 const BUS_COLORS = ['#F9A825','#E53935','#1565C0','#2E7D32','#6A1B9A','#D84315','#00838F','#37474F']
 
-interface Student { id: string; name: string; english_name: string | null; grade: string | null; is_active: boolean }
+interface Student { id: string; name: string; english_name: string | null; grade: string | null; school: string | null; apartment: string | null; is_active: boolean }
 interface Enrollment {
   id: string; class_id: string; student_id: string; sort_order: number
   arr_schedule: Record<string, string>; dep_schedule: Record<string, string>
@@ -60,12 +61,30 @@ interface Enrollment {
 interface ClassItem {
   id: string; session_id: string; level: string; room: string | null
   teacher: string | null; kt_teacher: string | null; color: string; sort_order: number
+  hours_per_week: number | null
 }
 interface Session { id: string; name: string; time_range: string | null; month: string; sort_order: number }
 interface Bus { id: string; name: string; sort_order: number }
 interface StudentOnBus { student_id: string; name: string; english_name: string | null; override?: boolean }
 interface KTTeacher { name: string; color: string; classIds: string[] }
 interface EnrollHistoryEntry { type: string; class_name: string; class_id?: string | null; created_at: string }
+
+const KNOWN_LEVELS = ['MGT1','MAG1','MGT2','MAG2','MGT3','MAG3','Honors2','Honors3','GT1','GT2','GT3','S1','S2','S3']
+
+function matchLevel(className: string): string | null {
+  const upper = className.toUpperCase()
+  for (const lv of KNOWN_LEVELS) {
+    if (upper.includes(lv.toUpperCase())) return lv
+  }
+  return null
+}
+
+function levelToGrade(level: string): string {
+  if (/^honors2$/i.test(level)) return '4학년'
+  if (/^honors3$/i.test(level)) return '5학년'
+  const m = level.match(/(\d)$/)
+  return m ? m[1] + '학년' : ''
+}
 
 function levelPrefix(level: string): string {
   if (/^honors/i.test(level)) {
@@ -133,7 +152,7 @@ function getDayKey(d: Date): Day {
 export default function ClassRosterPage() {
   const [pageTab, setPageTab] = useState<'management'|'homeroom'>('management')
   const [tab, setTab] = useState<'roster'|'students'|'enroll'|'log'>('roster')
-  const [month, setMonth] = useState(currentMonth())
+  const [month, setMonth] = useState('')
   const [addMonthLoading, setAddMonthLoading] = useState(false)
   const [deletingMonth, setDeletingMonth] = useState<string | null>(null)
   const [sessions, setSessions] = useState<Session[]>([])
@@ -160,6 +179,13 @@ export default function ClassRosterPage() {
   const [waitlistAddModal, setWaitlistAddModal] = useState<{ classId: string; classLevel: string } | null>(null)
   const [newStudentModal, setNewStudentModal] = useState<{ classId: string; classLevel: string } | null>(null)
   const [addStudentModal, setAddStudentModal] = useState(false)
+  // 동명 재원생 중복 확인 팝업
+  const [dupePrompt, setDupePrompt] = useState<{
+    name: string
+    existing: { id: string; name: string; english_name: string | null; grade: string | null }[]
+    onUseExisting: (existingId: string) => void
+    onCreateNew: () => void
+  } | null>(null)
   // Undo/redo
   const [undoStack, setUndoStack] = useState<{ student_id: string; class_id: string; arr_schedule: Record<string,string>; dep_schedule: Record<string,string>; label: string }[]>([])
   const [redoStack, setRedoStack] = useState<typeof undoStack>([])
@@ -172,13 +198,14 @@ export default function ClassRosterPage() {
   const [ktColorModal, setKtColorModal] = useState<{ name: string; color: string } | null>(null)
   const [ktReassignModal, setKtReassignModal] = useState<{ cls: ClassItem; sess: Session; count: number } | null>(null)
   const [ktReassignTarget, setKtReassignTarget] = useState('')
+  const [ftReassignTarget, setFtReassignTarget] = useState('')
   const [enrollHistory, setEnrollHistory] = useState<EnrollHistoryEntry[]>([])
   const [homeroomSaving, setHomeroomSaving] = useState(false)
   const [expandedTeachers, setExpandedTeachers] = useState<Set<string>>(new Set())
 
   // Forms
   const [sessForm, setSessForm] = useState({ name: '', time_range: '' })
-  const [clsForm, setClsForm] = useState({ level: '', room: '', teacher: '', kt_teacher: '', color: CLASS_COLORS[0] })
+  const [clsForm, setClsForm] = useState({ level: '', room: '', teacher: '', kt_teacher: '', color: CLASS_COLORS[0], hours_per_week: '' as string })
   const [studentForm, setStudentForm] = useState({ name: '', english_name: '', grade: '' })
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
@@ -189,23 +216,34 @@ export default function ClassRosterPage() {
   const [backupSaving, setBackupSaving] = useState(false)
   const [timeRestoring, setTimeRestoring] = useState(false)
   const [timeRestoreResult, setTimeRestoreResult] = useState<Record<string, { updated: number; skipped_no_student: number; skipped_no_time: number }> | null>(null)
+  const [purging, setPurging] = useState(false)
+  const [purgeResult, setPurgeResult] = useState<{ deleted: number } | null>(null)
+  const [busRestoring, setBusRestoring] = useState(false)
+  const [busRestoreResult, setBusRestoreResult] = useState<{ restored: number } | null>(null)
+  const [reactivating, setReactivating] = useState(false)
+  const [reactivateResult, setReactivateResult] = useState<{ reactivated: number; names: string[] } | null>(null)
+  // 지도에서 추가한 빈 정류장 마스터 — 학생 정류장 매칭 후보로 사용
+  const [registeredStops, setRegisteredStops] = useState<RegisteredStop[]>([])
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [rosterRes, studentsRes] = await Promise.all([
+    const [rosterRes, studentsRes, regStopsRes] = await Promise.all([
       fetch(`/api/campus/class-roster?month=${encodeURIComponent(month)}`),
       fetch('/api/campus/students'),
+      fetch('/api/campus/registered-stops'),
     ])
     const roster = await rosterRes.json()
     const studs = await studentsRes.json()
+    const regStops = await regStopsRes.json().catch(() => ({ stops: [] }))
     setSessions(roster.sessions ?? [])
     setClasses(roster.classes ?? [])
     setEnrollments(roster.enrollments ?? [])
     setBuses(roster.buses ?? [])
     setAllStudents(studs.students ?? [])
+    setRegisteredStops(regStops.stops ?? [])
     if (roster.availableMonths?.length) {
       setAvailableMonths(roster.availableMonths)
-      if (!roster.availableMonths.includes(month)) {
+      if (!month || !roster.availableMonths.includes(month)) {
         setMonth(roster.availableMonths[0])
       }
     }
@@ -253,32 +291,45 @@ export default function ClassRosterPage() {
   }
 
   async function handleAddNextMonth() {
-    if (!availableMonths.length) return
-    const sorted = [...availableMonths].sort((a, b) => {
-      const parse = (m: string) => { const p = m.match(/\d+/g)!; return Number(p[0]) * 100 + Number(p[1]) }
-      return parse(a) - parse(b)
-    })
-    const latest = sorted[sorted.length - 1]
-    const match = latest.match(/(\d+)년 (\d+)월/)
-    if (!match) return
-    let y = Number(match[1]), mo = Number(match[2]) + 1
+    // 기준 월: 가장 최근 월(없으면 현재 선택된 month) — 숫자만 추출해 형식 변동에 강하게
+    const ynum = (m: string) => { const n = m?.match(/\d+/g); return n && n.length >= 2 ? Number(n[0]) * 100 + Number(n[1]) : 0 }
+    const base = availableMonths.length
+      ? [...availableMonths].sort((a, b) => ynum(a) - ynum(b))[availableMonths.length - 1]
+      : month
+    const nums = (base || '').match(/\d+/g)
+    if (!nums || nums.length < 2) { alert(`기준 월 형식을 인식할 수 없습니다: "${base || '(없음)'}"`); return }
+    let y = Number(nums[0]), mo = Number(nums[1]) + 1
     if (mo > 12) { y++; mo = 1 }
     const toMonth = `${y}년 ${mo}월`
     if (availableMonths.includes(toMonth)) { setMonth(toMonth); return }
-    if (!confirm(`"${toMonth}"을 "${latest}" 기준으로 복사해서 추가할까요?`)) return
+    if (!confirm(`"${toMonth}"을 "${base}" 기준으로 복사해서 추가할까요?`)) return
     setAddMonthLoading(true)
-    const res = await fetch('/api/campus/class-roster', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'copy_month', from_month: latest, to_month: toMonth }),
-    })
+    let res: Response
+    try {
+      res = await fetch('/api/campus/class-roster', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'copy_month', from_month: base, to_month: toMonth }),
+      })
+    } catch (e) {
+      setAddMonthLoading(false); alert('다음 월 생성 실패(네트워크): ' + String(e)); return
+    }
     setAddMonthLoading(false)
-    if (res.ok) { setAvailableMonths(p => [...p, toMonth]); setMonth(toMonth); load() }
-    else { const d = await res.json(); alert(d.error ?? '오류') }
+    if (res.ok) { setMonth(toMonth); load() }
+    else { const d = await res.json().catch(() => ({})); alert(d.error ?? `다음 월 생성 실패 (HTTP ${res.status})`) }
   }
 
   const getEnrollments = (classId: string) => enrollments.filter(e => e.class_id === classId && !e.is_waitlist)
   const getWaitlist = (classId: string) => enrollments.filter(e => e.class_id === classId && e.is_waitlist)
   const uniqueStudents = new Set(enrollments.filter(e => !e.is_waitlist).map(e => e.student_id)).size
+
+  async function handleDeleteSession(sess: Session) {
+    const sessClasses = classes.filter(c => c.session_id === sess.id)
+    const studentCnt = sessClasses.reduce((n, c) => n + getEnrollments(c.id).length, 0)
+    if (!confirm(`⚠ "${sess.name}" 세션을 삭제합니다.\n\n이 세션의 ${sessClasses.length}개 반과 수강생 배정 ${studentCnt}명이 모두 삭제됩니다.\n삭제 후에는 되돌릴 수 없습니다. 계속하시겠습니까?`)) return
+    const r = await post({ action: 'delete_session', session_id: sess.id })
+    if (r) load()
+    else alert('세션 삭제에 실패했습니다.')
+  }
 
   // 헤더용: 세션별 합산 (대시보드와 동일)
   const _getSessCount = (filterFn: (name: string) => boolean) =>
@@ -287,9 +338,9 @@ export default function ClassRosterPage() {
       return sum + sc.reduce((n, c) => n + getEnrollments(c.id).length, 0)
     }, 0)
   const _유치부 = _getSessCount(n => n.includes('유치부') && !n.includes('방과후'))
-  const _매일반 = _getSessCount(n => n.includes('매일반') && !n.includes('유치부'))
-  const _삼일반 = _getSessCount(n => n.includes('월수금') || (n.includes('3일반') && !n.includes('유치부')))
-  const _이일반 = _getSessCount(n => n.includes('화목') || (n.includes('2일반') && !n.includes('유치부')))
+  const _매일반 = _getSessCount(n => (n.includes('매일반') || n.includes('5일')) && !n.includes('유치부'))
+  const _삼일반 = _getSessCount(n => (n.includes('월수금') || n.includes('3일')) && !n.includes('유치부'))
+  const _이일반 = _getSessCount(n => (n.includes('화목') || n.includes('2일')) && !n.includes('유치부'))
   const grandSessTotal = _유치부 + _매일반 + _삼일반 + _이일반
 
   const searchLower = search.toLowerCase()
@@ -338,6 +389,18 @@ export default function ClassRosterPage() {
     await post({ action: 'reorder_classes', orders })
   }
 
+  async function handleReorderSessions(orderedIds: string[]) {
+    // Optimistic: sessions 배열을 새 순서로 재정렬 (sort_order 반영)
+    setSessions(prev => {
+      const byId = new Map(prev.map(s => [s.id, s]))
+      const reordered = orderedIds.map((id, i) => ({ ...byId.get(id)!, sort_order: i })).filter(Boolean)
+      const others = prev.filter(s => !orderedIds.includes(s.id))
+      return [...reordered, ...others]
+    })
+    const orders = orderedIds.map((id, i) => ({ id, sort_order: i }))
+    await post({ action: 'reorder_sessions', orders })
+  }
+
   async function handleAddSession(e: React.FormEvent) {
     e.preventDefault()
     const r = await post({ action: 'add_session', name: sessForm.name, time_range: sessForm.time_range, month })
@@ -350,7 +413,7 @@ export default function ClassRosterPage() {
     if (!addClassModal) return
     const r = await post({ action: 'add_class', session_id: addClassModal, ...clsForm })
     if (!r) return
-    setAddClassModal(null); setClsForm({ level: '', room: '', teacher: '', kt_teacher: '', color: CLASS_COLORS[0] }); load()
+    setAddClassModal(null); setClsForm({ level: '', room: '', teacher: '', kt_teacher: '', color: CLASS_COLORS[0], hours_per_week: '' }); load()
   }
 
   async function handleUpdateClass(e: React.FormEvent) {
@@ -391,6 +454,37 @@ export default function ClassRosterPage() {
     const promises: Promise<Response>[] = []
     // 이름 변경
     if (name.trim() !== enr.campus_students.name || (englishName.trim() || null) !== enr.campus_students.english_name) {
+      // 동명이인 확인: 같은 student_id를 공유하는 다른 반이 있는지 검사
+      const otherEnrollments = enrollments.filter(e => e.student_id === enr.student_id && e.id !== enrollmentId)
+      if (otherEnrollments.length > 0) {
+        const splitOnly = window.confirm(
+          `"${enr.campus_students.name}" 학생은 다른 ${otherEnrollments.length}개 반에도 등록되어 있습니다.\n\n` +
+          `확인: 현재 반만 분리 등록 (동명이인)\n취소: 모든 반에 이름 적용`
+        )
+        if (splitOnly) {
+          // 새 student 생성 + 현재 enrollment만 교체
+          const r = await fetch('/api/campus/class-roster', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'split_enrollment', enrollment_id: enrollmentId, name: name.trim(), english_name: englishName.trim() || null }),
+          })
+          if (!r.ok) {
+            const d = await r.json().catch(() => ({}))
+            setFormError(d.error ?? '분리 등록 실패')
+            setSaving(false); return
+          }
+          // 버스/반 업데이트 계속 진행
+          const busRes = await fetch('/api/campus/class-roster', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(toClassId !== enr.class_id
+              ? { action: 'move_student', enrollment_id: enrollmentId, to_class_id: toClassId, arr_schedule: arr, dep_schedule: dep, highlight_color: highlightColor }
+              : { action: 'update_bus_schedule', enrollment_id: enrollmentId, arr_schedule: arr, dep_schedule: dep, highlight_color: highlightColor }
+            ),
+          })
+          setSaving(false)
+          if (!busRes.ok) { const d = await busRes.json().catch(() => ({})); setFormError(d.error ?? '저장 실패'); return }
+          setStudentDetailModal(null); load(); return
+        }
+      }
       promises.push(fetch('/api/campus/students', {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: enr.student_id, name: name.trim(), english_name: englishName.trim() || null }),
@@ -499,6 +593,54 @@ export default function ClassRosterPage() {
     setBackups(prev => prev.filter(b => b.id !== backupId))
   }
 
+  async function handlePurgeInactive() {
+    if (!confirm(`${month}의 퇴소 학생 수강 데이터를 삭제합니다.\n이 작업은 취소할 수 없습니다. 계속하시겠습니까?`)) return
+    setPurging(true)
+    setPurgeResult(null)
+    const res = await fetch('/api/campus/class-roster', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'purge_inactive', month }),
+    })
+    const d = await res.json()
+    setPurging(false)
+    if (d.ok) { setPurgeResult({ deleted: d.deleted }); load() }
+    else alert('정리 실패: ' + (d.error ?? ''))
+  }
+
+  async function handleReactivateStudent() {
+    const studentName = prompt('복구할 학생 이름을 입력하세요 (퇴소 처리된 학생)')
+    if (!studentName) return
+    setReactivating(true)
+    setReactivateResult(null)
+    const res = await fetch('/api/campus/class-roster', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'reactivate_student', student_name: studentName }),
+    })
+    const d = await res.json()
+    setReactivating(false)
+    if (d.ok) { setReactivateResult({ reactivated: d.reactivated, names: d.names }); load() }
+    else alert('복구 실패: ' + (d.error ?? ''))
+  }
+
+  async function handleBusRestore() {
+    const studentName = prompt('버스 정류장 복구할 학생 이름을 입력하세요 (예: 김하윤)')
+    if (!studentName) return
+    const fromMonth = prompt('복사할 원본 월 (예: 2026년 4월)')
+    if (!fromMonth) return
+    const toMonth = prompt('복구 대상 월 (예: 2026년 5월)')
+    if (!toMonth) return
+    setBusRestoring(true)
+    setBusRestoreResult(null)
+    const res = await fetch('/api/campus/class-roster', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'copy_student_bus_from_month', student_name: studentName, from_month: fromMonth, to_month: toMonth }),
+    })
+    const d = await res.json()
+    setBusRestoring(false)
+    if (d.ok) { setBusRestoreResult({ restored: d.restored }); load() }
+    else alert('복구 실패: ' + (d.error ?? ''))
+  }
+
   async function handleUndo() {
     if (!undoStack.length) return
     const [top, ...rest] = undoStack
@@ -539,38 +681,97 @@ export default function ClassRosterPage() {
     load()
   }
 
+  // 학생 생성 — 동명 재원생이 있으면(409) 확인 팝업으로 [기존 사용 / 동명이인 새로 등록 / 취소]
+  // 최종 사용할 student_id를 onResolved로 전달한다.
+  async function resolveStudentId(
+    name: string,
+    englishName: string,
+    onResolved: (studentId: string) => void | Promise<void>,
+  ) {
+    const createStudent = (allowDup: boolean) =>
+      fetch('/api/campus/students', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, english_name: englishName, allow_duplicate: allowDup }),
+      })
+    const res = await createStudent(false)
+    const data = await res.json()
+    if (res.status === 409 && data.code === 'DUPLICATE_NAME') {
+      setSaving(false)
+      setDupePrompt({
+        name,
+        existing: data.existing ?? [],
+        onUseExisting: (id: string) => { setDupePrompt(null); setSaving(true); onResolved(id) },
+        onCreateNew: async () => {
+          setDupePrompt(null); setSaving(true)
+          const r2 = await createStudent(true)
+          const d2 = await r2.json()
+          if (!r2.ok) { setFormError(d2.error ?? '학생 등록 오류'); setSaving(false); return }
+          onResolved(d2.student.id)
+        },
+      })
+      return
+    }
+    if (!res.ok) { setFormError(data.error ?? '학생 등록 오류'); setSaving(false); return }
+    onResolved(data.student.id)
+  }
+
   async function handleWaitlistAdd(classId: string, name: string, englishName: string, arr: Record<string, string>, dep: Record<string, string>) {
     setSaving(true); setFormError('')
-    const stuRes = await fetch('/api/campus/students', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, english_name: englishName }) })
-    const stuData = await stuRes.json()
-    if (!stuRes.ok) { setFormError(stuData.error ?? '학생 등록 오류'); setSaving(false); return }
-    const enrRes = await fetch('/api/campus/class-roster', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'enroll', class_id: classId, student_id: stuData.student.id, arr_schedule: arr, dep_schedule: dep, is_waitlist: true }) })
-    setSaving(false)
-    if (enrRes.ok) { setWaitlistAddModal(null); load() }
+    await resolveStudentId(name, englishName, async (studentId) => {
+      const enrRes = await fetch('/api/campus/class-roster', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'enroll', class_id: classId, student_id: studentId, arr_schedule: arr, dep_schedule: dep, is_waitlist: true }) })
+      setSaving(false)
+      if (enrRes.ok) { setWaitlistAddModal(null); load() }
+      else { const d = await enrRes.json(); setFormError(d.error ?? '수강 등록 오류') }
+    })
   }
 
   async function handleNewStudentAdd(classId: string, name: string, englishName: string, arr: Record<string, string>, dep: Record<string, string>) {
     setSaving(true); setFormError('')
-    const stuRes = await fetch('/api/campus/students', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, english_name: englishName }) })
-    const stuData = await stuRes.json()
-    if (!stuRes.ok) { setFormError(stuData.error ?? '학생 등록 오류'); setSaving(false); return }
-    const enrRes = await fetch('/api/campus/class-roster', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'enroll', class_id: classId, student_id: stuData.student.id, arr_schedule: arr, dep_schedule: dep, is_waitlist: false }) })
-    setSaving(false)
-    if (enrRes.ok) { setNewStudentModal(null); load() }
+    await resolveStudentId(name, englishName, async (studentId) => {
+      const enrRes = await fetch('/api/campus/class-roster', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'enroll', class_id: classId, student_id: studentId, arr_schedule: arr, dep_schedule: dep, is_waitlist: false }) })
+      const enrData = await enrRes.json()
+      setSaving(false)
+      if (enrRes.ok) {
+        if (enrData._historyError) console.warn('입퇴소 기록 오류:', enrData._historyError)
+        setNewStudentModal(null); load()
+      } else {
+        setFormError(enrData.error ?? '수강 등록 오류')
+      }
+    })
   }
 
   async function handleAddStudent(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true); setFormError('')
-    const res = await fetch('/api/campus/students', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(studentForm) })
+    const createStudent = (allowDup: boolean) =>
+      fetch('/api/campus/students', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...studentForm, create_enrollment_log: true, allow_duplicate: allowDup }) })
+    const res = await createStudent(false)
     const d = await res.json()
+    if (res.status === 409 && d.code === 'DUPLICATE_NAME') {
+      setSaving(false)
+      setDupePrompt({
+        name: studentForm.name,
+        existing: d.existing ?? [],
+        // 반 미지정 단순 등록이라 '기존 학생 사용' = 새로 만들지 않고 닫기
+        onUseExisting: () => { setDupePrompt(null); setAddStudentModal(false); setStudentForm({ name: '', english_name: '', grade: '' }); load() },
+        onCreateNew: async () => {
+          setDupePrompt(null); setSaving(true)
+          const r2 = await createStudent(true)
+          const d2 = await r2.json()
+          setSaving(false)
+          if (!r2.ok) { setFormError(d2.error ?? '오류'); return }
+          setAddStudentModal(false); setStudentForm({ name: '', english_name: '', grade: '' }); load()
+        },
+      })
+      return
+    }
     setSaving(false)
     if (!res.ok) { setFormError(d.error ?? '오류'); return }
     setAddStudentModal(false); setStudentForm({ name: '', english_name: '', grade: '' }); load()
   }
 
   function openEditClass(cls: ClassItem) {
-    setClsForm({ level: cls.level, room: cls.room ?? '', teacher: cls.teacher ?? '', kt_teacher: cls.kt_teacher ?? '', color: cls.color })
+    setClsForm({ level: cls.level, room: cls.room ?? '', teacher: cls.teacher ?? '', kt_teacher: cls.kt_teacher ?? '', color: cls.color, hours_per_week: cls.hours_per_week != null ? String(cls.hours_per_week) : '' })
     setEditClassModal(cls)
   }
 
@@ -594,7 +795,7 @@ export default function ClassRosterPage() {
     const { cls } = ktReassignModal
     const res = await fetch('/api/campus/class-roster', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'update_class', class_id: cls.id, level: cls.level, room: cls.room, teacher: cls.teacher, kt_teacher: ktReassignTarget || null, color: cls.color }),
+      body: JSON.stringify({ action: 'update_class', class_id: cls.id, level: cls.level, room: cls.room, teacher: ftReassignTarget || cls.teacher, kt_teacher: ktReassignTarget || null, color: cls.color }),
     })
     setHomeroomSaving(false)
     if (!res.ok) { const d = await res.json(); alert(d.error ?? '저장 실패'); return }
@@ -698,11 +899,13 @@ export default function ClassRosterPage() {
           onWaitlistAdd={(classId, classLevel) => setWaitlistAddModal({ classId, classLevel })}
           onNewStudent={(classId, classLevel) => setNewStudentModal({ classId, classLevel })}
           onReorderClasses={handleReorderClasses}
+          onDeleteSession={handleDeleteSession}
+          onReorderSessions={handleReorderSessions}
         />
       ) : tab === 'students' ? (
-        <StudentsTab allStudents={allStudents} enrollments={enrollments} classes={classes} sessions={sessions} onWithdrawSuccess={load} />
+        <StudentsTab allStudents={allStudents} enrollments={enrollments} classes={classes} sessions={sessions} month={month} isLatestMonth={month === availableMonths[0]} onWithdrawSuccess={load} />
       ) : tab === 'enroll' ? (
-        <EnrollTab />
+        <EnrollTab month={month} availableMonths={availableMonths} enrollments={enrollments} classes={classes} sessions={sessions} onReactivateSuccess={load} />
       ) : (
         <LogTab />
       )}
@@ -747,7 +950,8 @@ export default function ClassRosterPage() {
             // 직원 카테고리 분류
             function empCategory(emp: { name: string; position: string; role: string }): '원장'|'관리자'|'상담부'|'KT'|'FT'|null {
               const p = emp.position ?? ''
-              if (/원장/.test(p) || emp.role === 'campus_admin') return '원장'
+              // 부원장은 '관리자' 그룹에 표시 (원장과 분리)
+              if ((/원장/.test(p) && !/부원장/.test(p)) || emp.role === 'campus_admin') return '원장'
               if (/관리자|부원장/.test(p)) return '관리자'
               if (/상담/.test(p)) return '상담부'
               if (/KT/i.test(p)) return 'KT'
@@ -840,6 +1044,8 @@ export default function ClassRosterPage() {
                     })
                   }
 
+                  const totalHours = cat === 'FT' ? matched.reduce((sum, cls) => sum + (cls.hours_per_week ?? 0), 0) : 0
+
                   return (
                     <div key={emp.id} className="bg-white rounded-xl border border-[#E2E8F0] shadow-sm overflow-hidden">
                       {/* 헤더 */}
@@ -868,6 +1074,9 @@ export default function ClassRosterPage() {
                             {matched.length > 0 && (
                               <div className="flex flex-col items-end">
                                 <span className="text-xs font-bold text-[#1E293B]">{totalStudents}명</span>
+                                {cat === 'FT' && totalHours > 0 && (
+                                  <span className="text-xs font-bold text-[#D97706] bg-[#FFFBEB] px-1.5 py-0.5 rounded">{totalHours}T/주</span>
+                                )}
                                 {(deltaIn > 0 || deltaOut > 0) && (
                                   <span className="text-[9px] font-medium flex gap-0.5">
                                     {deltaIn > 0 && <span className="text-[#16A34A]">+{deltaIn}</span>}
@@ -894,13 +1103,18 @@ export default function ClassRosterPage() {
                                 const count = enrollments.filter(e => e.class_id === cls.id && !e.is_waitlist).length
                                 return (
                                   <div key={cls.id}
-                                    onClick={e => { e.stopPropagation(); setKtReassignModal({ cls, sess: sess!, count }); setKtReassignTarget(cls.kt_teacher?.trim() ?? '') }}
+                                    onClick={e => { e.stopPropagation(); setKtReassignModal({ cls, sess: sess!, count }); setKtReassignTarget(cls.kt_teacher?.trim() ?? ''); setFtReassignTarget(cls.teacher?.trim() ?? '') }}
                                     className="flex items-center justify-between px-4 py-2 border-b border-[#F8FAFC] hover:bg-[#F7F8FA] cursor-pointer last:border-0">
                                     <div className="min-w-0">
                                       <p className="text-[12px] font-semibold text-[#1E293B] truncate">{cls.level}</p>
                                       <p className="text-[10px] text-[#94A3B8] truncate">{sess?.name}</p>
                                     </div>
-                                    <span className="text-sm font-bold text-[#1E293B] shrink-0 ml-2">{count}명</span>
+                                    <div className="flex items-center gap-2 shrink-0 ml-2">
+                                      {cat === 'FT' && cls.hours_per_week != null && cls.hours_per_week > 0 && (
+                                        <span className="text-[11px] font-bold text-[#D97706] bg-[#FFFBEB] px-2 py-0.5 rounded">{cls.hours_per_week}T</span>
+                                      )}
+                                      <span className="text-sm font-bold text-[#1E293B]">{count}명</span>
+                                    </div>
                                   </div>
                                 )
                               })}
@@ -937,23 +1151,53 @@ export default function ClassRosterPage() {
             </Modal>
           )}
 
-          {/* KT 담임 변경 모달 */}
-          {ktReassignModal && (
-            <Modal title={`한국인 담임 변경 — ${ktReassignModal.cls.level}`} onClose={() => setKtReassignModal(null)}>
-              <form onSubmit={handleKtReassign} className="space-y-3">
-                <p className="text-xs text-[#64748B]">{ktReassignModal.sess.name} · {ktReassignModal.count}명</p>
-                <Field label="한국인 담임 선생님">
-                  <select value={ktReassignTarget} onChange={e => setKtReassignTarget(e.target.value)} className={inputCls}>
-                    <option value="">(미지정)</option>
-                    {[...new Set(classes.map(c => c.kt_teacher?.trim()).filter((t): t is string => Boolean(t)))].sort((a,b) => a.localeCompare(b,'ko')).map(t => (
-                      <option key={t} value={t}>{t}</option>
-                    ))}
-                  </select>
-                </Field>
-                <ModalBtns onClose={() => setKtReassignModal(null)} loading={homeroomSaving} label="변경" />
-              </form>
-            </Modal>
-          )}
+          {/* 반 상세 / 담임 변경 모달 */}
+          {ktReassignModal && (() => {
+            const { cls, sess } = ktReassignModal
+            const students = enrollments.filter(e => e.class_id === cls.id && !e.is_waitlist)
+            const allFtTeachers = [...new Set(classes.map(c => c.teacher?.trim()).filter((t): t is string => Boolean(t)))].sort((a,b) => a.localeCompare(b,'ko'))
+            const allKtTeachers = [...new Set(classes.map(c => c.kt_teacher?.trim()).filter((t): t is string => Boolean(t)))].sort((a,b) => a.localeCompare(b,'ko'))
+            return (
+              <Modal title={`${cls.level} — ${sess.name}`} onClose={() => setKtReassignModal(null)}>
+                <form onSubmit={handleKtReassign} className="space-y-4">
+                  {/* 학생 목록 */}
+                  <div>
+                    <p className="text-[10px] font-bold text-[#64748B] uppercase tracking-wide mb-2">재학생 {students.length}명</p>
+                    {students.length === 0 ? (
+                      <p className="text-xs text-[#CBD5E1] py-2">등록된 학생이 없습니다</p>
+                    ) : (
+                      <div className="max-h-40 overflow-y-auto rounded-lg border border-[#E2E8F0] divide-y divide-[#F1F5F9]">
+                        {students.map(enr => (
+                          <div key={enr.id} className="flex items-center gap-2 px-3 py-1.5">
+                            <span className="text-sm font-medium text-[#1E293B]">{enr.campus_students.name}</span>
+                            {enr.campus_students.english_name && <span className="text-xs text-[#94A3B8]">{enr.campus_students.english_name}</span>}
+                            {enr.campus_students.grade && <span className="ml-auto text-[10px] text-[#64748B] bg-[#F1F5F9] px-2 py-0.5 rounded-full">{enr.campus_students.grade}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {/* 선생님 변경 */}
+                  <div className="border-t border-[#F1F5F9] pt-3 space-y-3">
+                    <p className="text-[10px] font-bold text-[#64748B] uppercase tracking-wide">담임 변경</p>
+                    <Field label="원어민 선생님 (FT)">
+                      <select value={ftReassignTarget} onChange={e => setFtReassignTarget(e.target.value)} className={inputCls}>
+                        <option value="">(미지정)</option>
+                        {allFtTeachers.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </Field>
+                    <Field label="한국인 담임 (KT)">
+                      <select value={ktReassignTarget} onChange={e => setKtReassignTarget(e.target.value)} className={inputCls}>
+                        <option value="">(미지정)</option>
+                        {allKtTeachers.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </Field>
+                  </div>
+                  <ModalBtns onClose={() => setKtReassignModal(null)} loading={homeroomSaving} label="변경 저장" />
+                </form>
+              </Modal>
+            )
+          })()}
         </div>
       )}
 
@@ -981,6 +1225,33 @@ export default function ClassRosterPage() {
                       {m}: 업데이트 {r.updated}건 / 미매칭 {r.skipped_no_student} / 시간없음 {r.skipped_no_time}
                     </p>
                   ))}
+                </div>
+              )}
+              <button onClick={handlePurgeInactive} disabled={purging}
+                className="w-full border border-[#EF4444] text-[#EF4444] py-2.5 rounded-lg font-medium hover:bg-[#FEF2F2] disabled:opacity-50 transition-colors text-sm">
+                {purging ? '정리 중...' : `🧹 ${month} 퇴소학생 데이터 정리`}
+              </button>
+              {purgeResult && (
+                <div className="text-xs bg-[#FFF7ED] border border-[#FED7AA] rounded-lg p-3">
+                  <p className="text-[#92400E]">{purgeResult.deleted > 0 ? `퇴소 학생 ${purgeResult.deleted}건 수강 데이터 삭제 완료` : '정리할 데이터가 없습니다'}</p>
+                </div>
+              )}
+              <button onClick={handleReactivateStudent} disabled={reactivating}
+                className="w-full border border-[#7C3AED] text-[#7C3AED] py-2.5 rounded-lg font-medium hover:bg-[#F5F3FF] disabled:opacity-50 transition-colors text-sm">
+                {reactivating ? '복구 중...' : '♻️ 퇴소처리 학생 복구'}
+              </button>
+              {reactivateResult && (
+                <div className="text-xs bg-[#F5F3FF] border border-[#DDD6FE] rounded-lg p-3">
+                  <p className="text-[#4C1D95]">{reactivateResult.reactivated > 0 ? `${reactivateResult.names.join(', ')} 복구 완료 (${reactivateResult.reactivated}명)` : '복구할 학생이 없습니다'}</p>
+                </div>
+              )}
+              <button onClick={handleBusRestore} disabled={busRestoring}
+                className="w-full border border-[#0891B2] text-[#0891B2] py-2.5 rounded-lg font-medium hover:bg-[#ECFEFF] disabled:opacity-50 transition-colors text-sm">
+                {busRestoring ? '복구 중...' : '🚌 학생 버스 정류장 복구'}
+              </button>
+              {busRestoreResult && (
+                <div className="text-xs bg-[#ECFEFF] border border-[#A5F3FC] rounded-lg p-3">
+                  <p className="text-[#164E63]">{busRestoreResult.restored > 0 ? `버스 정류장 ${busRestoreResult.restored}건 복구 완료` : '복구할 데이터가 없습니다'}</p>
                 </div>
               )}
               <div className="border-t border-[#E2E8F0] pt-3">
@@ -1058,7 +1329,7 @@ export default function ClassRosterPage() {
         <StudentDetailModal
           enrollment={studentDetailModal.enrollment} student={studentDetailModal.student}
           classes={classes} sessions={sessions} buses={buses}
-          enrollments={enrollments}
+          enrollments={enrollments} registeredStops={registeredStops}
           onSave={handleStudentDetailSave} onDelete={handleStudentDetailDelete}
           onClose={() => setStudentDetailModal(null)} saving={saving}
         />
@@ -1076,10 +1347,51 @@ export default function ClassRosterPage() {
       {newStudentModal && (
         <NewStudentModal
           classId={newStudentModal.classId} classLevel={newStudentModal.classLevel}
-          buses={buses}
+          buses={buses} enrollments={enrollments} classes={classes}
           onAdd={handleNewStudentAdd} onClose={() => { setNewStudentModal(null); setFormError('') }} saving={saving}
           error={formError}
         />
+      )}
+
+      {/* ── 동명 재원생 중복 확인 모달 ── */}
+      {dupePrompt && (
+        <Modal title="동명 재원생 확인" onClose={() => { setDupePrompt(null); setSaving(false) }}>
+          <div className="space-y-4">
+            <p className="text-sm text-[#1E293B]">
+              <b className="text-[#DC2626]">{dupePrompt.name}</b> 이름의 재원생이 이미 있습니다. 같은 학생인가요?
+            </p>
+            <div className="space-y-1.5">
+              {dupePrompt.existing.map(ex => {
+                const enr = enrollments.find(e => e.student_id === ex.id && !e.is_waitlist)
+                const cls = enr ? classes.find(c => c.id === enr.class_id) : null
+                return (
+                  <button key={ex.id} onClick={() => dupePrompt.onUseExisting(ex.id)}
+                    className="w-full text-left border border-[#E2E8F0] rounded-xl px-3 py-2.5 hover:bg-[#F1F5F9] transition-colors">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-sm text-[#1E293B]">{ex.name}</span>
+                      {ex.english_name && <span className="text-xs text-[#64748B]">{ex.english_name}</span>}
+                      {ex.grade && <span className="text-[10px] text-[#94A3B8]">{ex.grade}</span>}
+                    </div>
+                    <div className="text-[11px] text-[#64748B] mt-0.5">
+                      {cls ? `현재 반: ${cls.level}` : '현재 배정된 반 없음'} · <span className="text-[#004EA2] font-semibold">이 학생으로 등록 →</span>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button onClick={() => { setDupePrompt(null); setSaving(false) }}
+                className="flex-1 border border-[#E2E8F0] text-[#64748B] py-2.5 rounded-xl text-sm">취소</button>
+              <button onClick={() => dupePrompt.onCreateNew()} disabled={saving}
+                className="flex-1 bg-[#F59E0B] text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
+                동명이인으로 새로 등록
+              </button>
+            </div>
+            <p className="text-[11px] text-[#94A3B8]">
+              ※ 같은 학생이면 위 목록에서 선택하세요. 정말 다른 학생일 때만 ‘동명이인으로 새로 등록’을 누르세요.
+            </p>
+          </div>
+        </Modal>
       )}
 
       {/* ── 퇴소처리 확인 모달 ── */}
@@ -1141,7 +1453,7 @@ function RosterTab({
   matchEnrollments, classVisible, getEnrollments, getWaitlist,
   dragEnrId, dragOverClassId, setDragEnrId, setDragOverClassId, onDrop,
   onAddClass, onEditClass, onEnroll, onUnenroll, onStudentClick, onWaitlistAdd, onNewStudent,
-  onReorderClasses,
+  onReorderClasses, onDeleteSession, onReorderSessions,
 }: {
   sessions: Session[]; classes: ClassItem[]; enrollments: Enrollment[]; buses: Bus[]
   search: string; setSearch: (s: string) => void; searchLower: string
@@ -1156,9 +1468,28 @@ function RosterTab({
   onWaitlistAdd: (classId: string, classLevel: string) => void
   onNewStudent: (classId: string, classLevel: string) => void
   onReorderClasses: (sessionId: string, orderedIds: string[]) => void
+  onDeleteSession: (sess: Session) => void
+  onReorderSessions: (orderedIds: string[]) => void
 }) {
   const [dragClsId, setDragClsId] = useState<string | null>(null)
   const [dragOverClsId, setDragOverClsId] = useState<string | null>(null)
+  // 세션 접기 + 접은 상태에서 세션 순서 드래그
+  const [collapsedSessions, setCollapsedSessions] = useState<Set<string>>(new Set())
+  const [dragSessId, setDragSessId] = useState<string | null>(null)
+  const [dragOverSessId, setDragOverSessId] = useState<string | null>(null)
+  const toggleSessionCollapse = (id: string) => setCollapsedSessions(prev => {
+    const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next
+  })
+  function dropReorderSession(targetId: string) {
+    if (!dragSessId || dragSessId === targetId) { setDragSessId(null); setDragOverSessId(null); return }
+    const order = sessions.map(s => s.id)
+    const from = order.indexOf(dragSessId), to = order.indexOf(targetId)
+    if (from < 0 || to < 0) { setDragSessId(null); setDragOverSessId(null); return }
+    order.splice(from, 1)
+    order.splice(order.indexOf(targetId) + (from < to ? 1 : 0), 0, dragSessId)
+    setDragSessId(null); setDragOverSessId(null)
+    onReorderSessions(order)
+  }
   // Grade stats
   const gradeMap: Record<string, number> = {}
   const seen = new Set<string>()
@@ -1177,9 +1508,9 @@ function RosterTab({
     }, 0)
   const 유치부SessTotal = getSessCount(n => n.includes('유치부') && !n.includes('방과후'))
   const 방과후SessTotal = getSessCount(n => n.includes('방과후'))
-  const 매일반SessTotal = getSessCount(n => n.includes('매일반') && !n.includes('유치부'))
-  const 삼일반SessTotal = getSessCount(n => n.includes('월수금') || (n.includes('3일반') && !n.includes('유치부')))
-  const 이일반SessTotal = getSessCount(n => n.includes('화목') || (n.includes('2일반') && !n.includes('유치부')))
+  const 매일반SessTotal = getSessCount(n => (n.includes('매일반') || n.includes('5일')) && !n.includes('유치부'))
+  const 삼일반SessTotal = getSessCount(n => (n.includes('월수금') || n.includes('3일')) && !n.includes('유치부'))
+  const 이일반SessTotal = getSessCount(n => (n.includes('화목') || n.includes('2일')) && !n.includes('유치부'))
   const 초등부SessTotal = 매일반SessTotal + 삼일반SessTotal + 이일반SessTotal
   const grandSessTotal = 유치부SessTotal + 초등부SessTotal  // 방과후 제외
 
@@ -1254,27 +1585,47 @@ function RosterTab({
         if (searchLower && visibleClasses.length === 0) return null
         const cols = Math.min(sessClasses.length, 16)
         const cardWidth = cols > 0 ? `calc((100% - ${(cols - 1) * 6}px) / ${cols})` : '120px'
+        const collapsed = collapsedSessions.has(sess.id)
 
         return (
-          <div key={sess.id}>
+          <div key={sess.id}
+            draggable={collapsed}
+            onDragStart={collapsed ? () => setDragSessId(sess.id) : undefined}
+            onDragOver={collapsed ? (e => { e.preventDefault(); if (dragSessId && dragSessId !== sess.id) setDragOverSessId(sess.id) }) : undefined}
+            onDragLeave={collapsed ? (() => setDragOverSessId(cur => (cur === sess.id ? null : cur))) : undefined}
+            onDrop={collapsed ? (() => dropReorderSession(sess.id)) : undefined}
+            className={dragOverSessId === sess.id ? 'rounded-lg ring-2 ring-[#1e3a5f] ring-offset-2' : ''}>
             {/* Section header */}
             <div className="flex items-center justify-between mb-2 pb-1.5" style={{ borderBottom: `2px solid ${color}` }}>
               <div className="flex items-center gap-2">
+                <button onClick={() => toggleSessionCollapse(sess.id)}
+                  title={collapsed ? '펼치기 · 접은 상태에서 드래그로 세션 순서 변경' : '접기'}
+                  className="text-[#94A3B8] hover:text-[#1E293B] text-[11px] leading-none w-5 h-5 flex items-center justify-center rounded hover:bg-[#F1F5F9]"
+                  style={collapsed ? { cursor: 'grab' } : {}}>
+                  {collapsed ? '▶' : '▼'}
+                </button>
                 <span className="text-[13px] font-extrabold" style={{ color }}>{sess.name}</span>
                 {sess.time_range && (
                   <span className="text-[11px] text-[#64748B] bg-[#F1F5F9] px-2 py-0.5 rounded-full">{sess.time_range}</span>
                 )}
                 <span className="text-[11px] text-[#94A3B8]">{sessClasses.length}반 · {sessEnrollCount}명</span>
               </div>
-              <button onClick={() => onAddClass(sess.id)}
-                className="text-[11px] border px-2 py-0.5 rounded-md hover:opacity-80 transition-colors whitespace-nowrap"
-                style={{ color, borderColor: color, background: `${color}15` }}>
-                + 반 추가
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button onClick={() => onAddClass(sess.id)}
+                  className="text-[11px] border px-2 py-0.5 rounded-md hover:opacity-80 transition-colors whitespace-nowrap"
+                  style={{ color, borderColor: color, background: `${color}15` }}>
+                  + 반 추가
+                </button>
+                <button onClick={() => onDeleteSession(sess)}
+                  title={`${sess.name} 세션 삭제`}
+                  className="text-[11px] border border-[#FCA5A5] text-[#EF4444] bg-[#FEF2F2] px-2 py-0.5 rounded-md hover:bg-[#FEE2E2] transition-colors whitespace-nowrap">
+                  ✕ 세션 삭제
+                </button>
+              </div>
             </div>
 
-            {/* Class cards */}
-            {sessClasses.length === 0 ? (
+            {/* Class cards — 접으면 숨김 */}
+            {!collapsed && (sessClasses.length === 0 ? (
               <div className="border border-dashed border-[#E2E8F0] rounded-lg py-6 text-center text-[#CBD5E1] text-xs">
                 반이 없습니다. 위 버튼으로 추가해 주세요.
               </div>
@@ -1319,9 +1670,9 @@ function RosterTab({
                         }
                       }}
                     >
-                      {/* Card header */}
+                      {/* Card header — 반별 색상(cls.color) 사용, 없으면 세션 색상 */}
                       <div className="px-1.5 py-1 text-white transition-all select-none"
-                        style={{ background: color }}>
+                        style={{ background: cls.color || color }}>
                         <div className="flex items-center gap-0.5">
                           {/* Drag handle */}
                           <span
@@ -1412,7 +1763,7 @@ function RosterTab({
                 })}
               </div>
               </div>
-            )}
+            ))}
           </div>
         )
       })}
@@ -1542,15 +1893,26 @@ function TodayTab({ month, buses }: { month: string; buses: Bus[] }) {
 }
 
 // ─── StudentsTab ──────────────────────────────────────────────
-function StudentsTab({ allStudents, enrollments, classes, sessions, onWithdrawSuccess }: {
+function StudentsTab({ allStudents, enrollments, classes, sessions, month, isLatestMonth, onWithdrawSuccess }: {
   allStudents: Student[]; enrollments: Enrollment[]; classes: ClassItem[]; sessions: Session[]
+  month: string
+  isLatestMonth: boolean
   onWithdrawSuccess: () => void
 }) {
   const [search, setSearch] = useState('')
+  const [filter, setFilter] = useState<'all' | 'no-class' | 'no-school'>('all')
   const [withdrawTarget, setWithdrawTarget] = useState<{ id: string; name: string } | null>(null)
   const [withdrawDate, setWithdrawDate] = useState(new Date().toISOString().slice(0, 10))
   const [withdrawNote, setWithdrawNote] = useState('')
   const [saving, setSaving] = useState(false)
+  const [editTarget, setEditTarget] = useState<Student | null>(null)
+  const [editSchool, setEditSchool] = useState('')
+  const [editApt, setEditApt] = useState('')
+  const [editClassId, setEditClassId] = useState('')
+  const [editSaving, setEditSaving] = useState(false)
+  const [showMultiModal, setShowMultiModal] = useState(false)
+  const [splitSelected, setSplitSelected] = useState<Set<string>>(new Set())
+  const [splitSaving, setSplitSaving] = useState(false)
 
   const classMap = Object.fromEntries(classes.map(c => [c.id, c]))
   const sessMap = Object.fromEntries(sessions.map(s => [s.id, s]))
@@ -1560,7 +1922,77 @@ function StudentsTab({ allStudents, enrollments, classes, sessions, onWithdrawSu
     const cls = classMap[enr.class_id]
     if (cls) enrollMap[enr.student_id].push({ cls, sess: sessMap[cls.session_id] })
   }
-  const filtered = allStudents.filter(s => !search || s.name.includes(search) || (s.english_name ?? '').toLowerCase().includes(search.toLowerCase()))
+
+  // 이번 달 수강생을 enrollments에서 추출 (월별 독립 — 과거 달은 퇴소생 포함 보존)
+  // allStudents를 ID로 빠르게 조회할 수 있도록 맵 생성 (campus_students 조인 null 시 fallback용)
+  const allStudentsById = Object.fromEntries(allStudents.map(s => [s.id, s]))
+  const enrolledStudentMap: Record<string, Student> = {}
+  for (const enr of enrollments) {
+    if (!enr.is_waitlist) {
+      // campus_students 조인이 null일 경우 allStudents에서 fallback
+      const stu = enr.campus_students ?? allStudentsById[enr.student_id] ?? null
+      if (stu && !enrolledStudentMap[enr.student_id]) {
+        enrolledStudentMap[enr.student_id] = stu
+      }
+    }
+  }
+  const enrolledIds = new Set(Object.keys(enrolledStudentMap))
+  // 전체학생 탭 = 반편성과 동일한 소스(class_enrollments)만 표시
+  const monthStudents: Student[] = Object.values(enrolledStudentMap).sort((a, b) => (a?.name ?? '').localeCompare(b?.name ?? ''))
+  // 반 미배정 카운트 (최신 월에서만 표시용으로 계산, 리스트에는 포함 안 함)
+  const unassigned = isLatestMonth ? allStudents.filter(s => s.is_active && !enrolledIds.has(s.id)) : []
+  const noClassStudents = unassigned
+  const noSchoolCount = monthStudents.filter(s => !s.school).length
+
+  // 동명이인 탐지 (이름이 같은 학생 row가 여러 개)
+  const nameCount: Record<string, number> = {}
+  monthStudents.forEach(s => { nameCount[s.name] = (nameCount[s.name] || 0) + 1 })
+  const dupeNames = new Set(Object.entries(nameCount).filter(([, c]) => c > 1).map(([n]) => n))
+
+  // 다중등록 학생 탐지 (한 student_id가 2개 이상 반에 등록 — 동명이인 후보)
+  // 정발처럼 import 시 이름 매칭으로 한 row에 합쳐진 경우 분리 필요
+  const multiEnrolled = monthStudents.filter(s => (enrollMap[s.id]?.length ?? 0) >= 2)
+  const multiEnrolledIds = new Set(multiEnrolled.map(s => s.id))
+
+  async function handleBulkSplit(targetIds: string[]) {
+    if (!targetIds.length) return
+    const totalEnr = targetIds.reduce((sum, id) => sum + (enrollMap[id]?.length ?? 0), 0)
+    if (!confirm(
+      `${targetIds.length}명을 동명이인으로 분리합니다.\n` +
+      `→ 총 ${totalEnr}개의 학생 row가 됩니다 (각 반마다 별도 학생 1명).\n\n` +
+      `자동 적용 규칙:\n` +
+      `· 이름/영문이름/아파트: 원본과 동일 복사\n` +
+      `· ECP* 반 → 학년=유치부, 학교=비움\n` +
+      `· 그 외 반 → 학년=초등부, 학교=원본 복사\n\n` +
+      `계속하시겠습니까?`
+    )) return
+    setSplitSaving(true)
+    try {
+      const res = await fetch('/api/campus/class-roster', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'bulk_split_homonyms', student_ids: targetIds, month }),
+      })
+      const data = await res.json()
+      if (!res.ok) { alert(`분리 실패: ${data.error ?? '알 수 없는 오류'}`); return }
+      let msg = `분리 완료\n· 새 학생 생성: ${data.newStudents}개\n· 원본 학생 정보 갱신: ${data.originalsUpdated}개\n· enrollment 재할당: ${data.reassigned}개`
+      if (data.errors?.length) msg += `\n\n오류 ${data.errors.length}건:\n${data.errors.slice(0, 5).join('\n')}`
+      alert(msg)
+      setShowMultiModal(false)
+      setSplitSelected(new Set())
+      onWithdrawSuccess()
+    } finally {
+      setSplitSaving(false)
+    }
+  }
+
+  // 반 미배정 필터 시 unassigned 목록을 별도로 표시
+  const baseList = filter === 'no-class' ? unassigned : monthStudents
+  const filtered = baseList
+    .filter(s => !search || s.name.includes(search) || (s.english_name ?? '').toLowerCase().includes(search.toLowerCase()))
+    .filter(s => {
+      if (filter === 'no-school') return !s.school
+      return true
+    })
 
   async function handleWithdraw() {
     if (!withdrawTarget) return
@@ -1576,13 +2008,154 @@ function StudentsTab({ allStudents, enrollments, classes, sessions, onWithdrawSu
     onWithdrawSuccess()
   }
 
+  const [showAddStudent, setShowAddStudent] = useState(false)
+  const [addName, setAddName] = useState('')
+  const [addEnglish, setAddEnglish] = useState('')
+  const [addGrade, setAddGrade] = useState('')
+  const [addSchool, setAddSchool] = useState('')
+  const [addApt, setAddApt] = useState('')
+  const [addSaving, setAddSaving] = useState(false)
+
+  function openEdit(s: Student) {
+    setEditTarget(s)
+    setEditSchool(s.school ?? '')
+    setEditApt(s.apartment ?? '')
+    setEditClassId('')
+  }
+
+  function handleExportExcel() {
+    const header = ['이름', '영문명', '학부', '학교', '아파트', '수강반', '상태']
+    const rows = monthStudents.map(s => {
+      const myClasses = enrollMap[s.id] ?? []
+      const classNames = myClasses.map(({ cls }) => cls.level).join(', ') || '미배정'
+      return [s.name, s.english_name ?? '', s.grade ?? '', s.school ?? '', s.apartment ?? '', classNames, s.is_active ? '재원' : '퇴원']
+    })
+    const bom = '\uFEFF'
+    const csvCell = (v: unknown) => { let s = String(v ?? ''); if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; return `"${s.replace(/"/g, '""')}"` }
+    const csv = bom + [header, ...rows].map(r => r.map(csvCell).join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `전체학생_${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  async function handleAddStudent() {
+    if (!addName.trim()) return
+    setAddSaving(true)
+    const createStudent = (allowDup: boolean) => fetch('/api/campus/students', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: addName.trim(),
+        english_name: addEnglish.trim() || null,
+        grade: addGrade.trim() || null,
+        create_enrollment_log: false,
+        allow_duplicate: allowDup,
+      }),
+    })
+    let res = await createStudent(false)
+    if (res.status === 409) {
+      const dup = await res.json()
+      if (dup.code === 'DUPLICATE_NAME') {
+        const ex = (dup.existing ?? [])[0]
+        const ok = confirm(`'${addName.trim()}' 재원생이 이미 있습니다${ex?.english_name ? ` (${ex.english_name})` : ''}.\n\n같은 학생이면 [취소] (추가 안 함).\n정말 다른 학생(동명이인)이면 [확인]을 눌러 새로 등록합니다.`)
+        if (!ok) { setAddSaving(false); return }
+        res = await createStudent(true)
+      }
+    }
+    if (res.ok) {
+      // 학교/아파트도 업데이트
+      const data = await res.json()
+      if (data.student?.id && (addSchool.trim() || addApt.trim())) {
+        await fetch('/api/campus/students', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: data.student.id, name: addName.trim(), english_name: addEnglish.trim() || null, school: addSchool.trim(), apartment: addApt.trim() }),
+        })
+      }
+      setAddName(''); setAddEnglish(''); setAddGrade(''); setAddSchool(''); setAddApt('')
+      setShowAddStudent(false)
+      onWithdrawSuccess()
+    }
+    setAddSaving(false)
+  }
+
+  async function handleEditSave() {
+    if (!editTarget) return
+    setEditSaving(true)
+    const res = await fetch('/api/campus/students', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: editTarget.id, name: editTarget.name, english_name: editTarget.english_name, school: editSchool, apartment: editApt }),
+    })
+    if (editClassId) {
+      await fetch('/api/campus/class-roster', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'enroll', class_id: editClassId, student_id: editTarget.id }),
+      })
+    }
+    setEditSaving(false)
+    if (res.ok) {
+      editTarget.school = editSchool || null
+      editTarget.apartment = editApt || null
+      setEditTarget(null)
+      onWithdrawSuccess() // reload
+    }
+  }
+
   return (
     <div>
-      <input value={search} onChange={e => setSearch(e.target.value)} placeholder="학생 이름 검색..."
-        className="w-full max-w-sm border border-[#E2E8F0] rounded-xl px-3 py-2 text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]" />
+      {/* 요약 + 필터 */}
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="학생 이름 검색..."
+          className="max-w-[200px] border border-[#E2E8F0] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]" />
+        <button
+          className={`text-xs px-3 py-1.5 rounded-lg font-medium border transition-colors ${filter === 'all' ? 'bg-[#1E293B] text-white border-[#1E293B]' : 'bg-white text-[#64748B] border-[#E2E8F0] hover:bg-[#F7F8FA]'}`}
+          onClick={() => setFilter('all')}>
+          전체 {monthStudents.length}명
+        </button>
+        <button
+          className={`text-xs px-3 py-1.5 rounded-lg font-medium border transition-colors ${filter === 'no-class' ? 'bg-[#EF4444] text-white border-[#EF4444]' : 'bg-white text-[#EF4444] border-[#FCA5A5] hover:bg-[#FEF2F2]'}`}
+          onClick={() => setFilter(f => f === 'no-class' ? 'all' : 'no-class')}>
+          반 미배정 {noClassStudents.length}명
+        </button>
+        <button
+          className={`text-xs px-3 py-1.5 rounded-lg font-medium border transition-colors ${filter === 'no-school' ? 'bg-[#F59E0B] text-white border-[#F59E0B]' : 'bg-white text-[#92400E] border-[#FCD34D] hover:bg-[#FEF3C7]'}`}
+          onClick={() => setFilter(f => f === 'no-school' ? 'all' : 'no-school')}>
+          학교 미입력 {noSchoolCount}명
+        </button>
+        {dupeNames.size > 0 && (
+          <span className="text-xs bg-[#EDE9FE] text-[#5B21B6] px-3 py-1.5 rounded-lg font-medium">
+            동명이인 {dupeNames.size}건
+          </span>
+        )}
+        {multiEnrolled.length > 0 && (
+          <button
+            onClick={() => { setSplitSelected(new Set(multiEnrolled.map(s => s.id))); setShowMultiModal(true) }}
+            className="text-xs px-3 py-1.5 rounded-lg font-medium bg-[#FEF3C7] text-[#92400E] border border-[#FCD34D] hover:bg-[#FDE68A] transition-colors"
+            title="한 학생 row가 여러 반에 등록된 경우 — 동명이인일 가능성"
+          >
+            다중등록 {multiEnrolled.length}명 ▸ 분리
+          </button>
+        )}
+        <div className="ml-auto flex gap-2">
+          <button onClick={() => setShowAddStudent(true)}
+            className="text-xs px-3 py-1.5 rounded-lg font-medium bg-[#004EA2] text-white hover:bg-[#003E83] transition-colors">
+            + 학생 추가
+          </button>
+          <button onClick={handleExportExcel}
+            className="text-xs px-3 py-1.5 rounded-lg font-medium border border-[#E2E8F0] text-[#64748B] hover:bg-[#F7F8FA] transition-colors">
+            엑셀 내보내기
+          </button>
+        </div>
+      </div>
       <div className="bg-white rounded-2xl border border-[#E2E8F0] overflow-hidden shadow-sm">
-        <div className="hidden sm:grid grid-cols-[2fr_1.5fr_1fr_auto_auto] px-4 py-2.5 bg-[#F7F8FA] border-b border-[#E2E8F0] text-xs font-semibold text-[#64748B]">
-          <span>이름</span><span>수강 반</span><span>학부</span><span>상태</span><span/>
+        <div className="hidden sm:grid grid-cols-[1.5fr_1.2fr_0.8fr_1.2fr_1fr_auto_auto] px-4 py-2.5 bg-[#F7F8FA] border-b border-[#E2E8F0] text-xs font-semibold text-[#64748B]">
+          <span>이름</span><span>수강 반</span><span>학부</span><span>학교</span><span>아파트</span><span>상태</span><span/>
         </div>
         <div className="divide-y divide-[#F1F5F9]">
           {filtered.map(s => {
@@ -1592,8 +2165,13 @@ function StudentsTab({ allStudents, enrollments, classes, sessions, onWithdrawSu
                 {/* 모바일 */}
                 <div className="sm:hidden flex items-center gap-2">
                   <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-sm text-[#1E293B]">{s.name}</p>
+                    <p className="font-semibold text-sm text-[#1E293B]">
+                      {s.name}
+                      {dupeNames.has(s.name) && <span className="ml-1 text-[10px] bg-[#EDE9FE] text-[#5B21B6] px-1.5 py-0.5 rounded font-medium">동명이인</span>}
+                      {multiEnrolledIds.has(s.id) && <span className="ml-1 text-[10px] bg-[#FEF3C7] text-[#92400E] px-1.5 py-0.5 rounded font-medium">다중등록 {enrollMap[s.id]?.length ?? 0}반</span>}
+                    </p>
                     {s.english_name && <p className="text-xs text-[#94A3B8]">{s.english_name}</p>}
+                    <p className="text-xs text-[#64748B] mt-0.5">{s.school || '학교 미입력'} · {s.apartment || '-'}</p>
                     {myClasses.length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-1">
                         {myClasses.map(({ cls }) => (
@@ -1602,6 +2180,7 @@ function StudentsTab({ allStudents, enrollments, classes, sessions, onWithdrawSu
                       </div>
                     )}
                   </div>
+                  <button onClick={() => openEdit(s)} className="flex-shrink-0 text-xs text-[#004EA2] underline">수정</button>
                   <span className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 ${s.is_active ? 'bg-[#F0FDF4] text-[#16A34A]' : 'bg-[#FEF2F2] text-[#EF4444]'}`}>{s.is_active ? '재원' : '퇴원'}</span>
                   {s.is_active && (
                     <button onClick={() => { setWithdrawTarget({ id: s.id, name: s.name }); setWithdrawDate(new Date().toISOString().slice(0,10)); setWithdrawNote('') }}
@@ -1611,9 +2190,13 @@ function StudentsTab({ allStudents, enrollments, classes, sessions, onWithdrawSu
                   )}
                 </div>
                 {/* 데스크탑 */}
-                <div className="hidden sm:grid grid-cols-[2fr_1.5fr_1fr_auto_auto] items-center gap-2">
+                <div className="hidden sm:grid grid-cols-[1.5fr_1.2fr_0.8fr_1.2fr_1fr_auto_auto] items-center gap-2">
                   <div>
-                    <p className="font-medium text-sm text-[#1E293B]">{s.name}</p>
+                    <p className="font-medium text-sm text-[#1E293B]">
+                      {s.name}
+                      {dupeNames.has(s.name) && <span className="ml-1 text-[10px] bg-[#EDE9FE] text-[#5B21B6] px-1.5 py-0.5 rounded font-medium">동명이인</span>}
+                      {multiEnrolledIds.has(s.id) && <span className="ml-1 text-[10px] bg-[#FEF3C7] text-[#92400E] px-1.5 py-0.5 rounded font-medium">다중등록 {enrollMap[s.id]?.length ?? 0}반</span>}
+                    </p>
                     {s.english_name && <p className="text-xs text-[#94A3B8]">{s.english_name}</p>}
                   </div>
                   <div className="flex flex-wrap gap-1">
@@ -1623,13 +2206,20 @@ function StudentsTab({ allStudents, enrollments, classes, sessions, onWithdrawSu
                     {myClasses.length === 0 && <span className="text-xs text-[#CBD5E1]">미배정</span>}
                   </div>
                   <span className="text-xs text-[#64748B]">{s.grade ?? '-'}</span>
+                  <span className={`text-xs truncate ${s.school ? 'text-[#1E293B]' : 'text-[#F59E0B] font-medium'}`}>{s.school || '미입력'}</span>
+                  <span className="text-xs text-[#64748B] truncate">{s.apartment || '-'}</span>
                   <span className={`text-xs px-2 py-0.5 rounded-full ${s.is_active ? 'bg-[#F0FDF4] text-[#16A34A]' : 'bg-[#FEF2F2] text-[#EF4444]'}`}>{s.is_active ? '재원' : '퇴원'}</span>
-                  {s.is_active ? (
-                    <button onClick={() => { setWithdrawTarget({ id: s.id, name: s.name }); setWithdrawDate(new Date().toISOString().slice(0,10)); setWithdrawNote('') }}
-                      className="w-6 h-6 rounded-full bg-[#FEF2F2] text-[#EF4444] text-xs font-bold flex items-center justify-center hover:bg-[#FECACA] transition-colors">
-                      ✕
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => openEdit(s)} className="w-6 h-6 rounded-full bg-[#EAF2FB] text-[#004EA2] text-xs flex items-center justify-center hover:bg-[#DBEAFE] transition-colors" title="수정">
+                      ✎
                     </button>
-                  ) : <div/>}
+                    {s.is_active ? (
+                      <button onClick={() => { setWithdrawTarget({ id: s.id, name: s.name }); setWithdrawDate(new Date().toISOString().slice(0,10)); setWithdrawNote('') }}
+                        className="w-6 h-6 rounded-full bg-[#FEF2F2] text-[#EF4444] text-xs font-bold flex items-center justify-center hover:bg-[#FECACA] transition-colors">
+                        ✕
+                      </button>
+                    ) : <div className="w-6"/>}
+                  </div>
                 </div>
               </div>
             )
@@ -1637,6 +2227,194 @@ function StudentsTab({ allStudents, enrollments, classes, sessions, onWithdrawSu
           {filtered.length === 0 && <p className="text-center text-[#94A3B8] text-sm py-12">학생 없음</p>}
         </div>
       </div>
+
+      {/* 다중등록 일괄 분리 모달 */}
+      {showMultiModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowMultiModal(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-[#E2E8F0]">
+              <div className="flex items-start justify-between">
+                <div>
+                  <h3 className="font-bold text-[#1E293B] text-base">다중등록 학생 분리 ({month})</h3>
+                  <p className="text-xs text-[#64748B] mt-1">한 학생이 2개 이상 반에 등록된 경우 — 동명이인일 가능성. 분리 시 각 반마다 별도 학생 row가 됩니다.</p>
+                  <p className="text-[11px] text-[#94A3B8] mt-1.5">
+                    자동 적용: 이름·영문·아파트는 동일 복사 · ECP*반 → 유치부(학교 비움) · 그 외 → 초등부(학교 복사)
+                  </p>
+                </div>
+                <button onClick={() => setShowMultiModal(false)} className="text-[#94A3B8] text-lg leading-none">✕</button>
+              </div>
+              <div className="mt-3 flex items-center gap-2 text-xs">
+                <button
+                  onClick={() => setSplitSelected(new Set(multiEnrolled.map(s => s.id)))}
+                  className="px-2.5 py-1 rounded-md border border-[#E2E8F0] text-[#64748B] hover:bg-[#F7F8FA]">
+                  전체 선택
+                </button>
+                <button
+                  onClick={() => setSplitSelected(new Set())}
+                  className="px-2.5 py-1 rounded-md border border-[#E2E8F0] text-[#64748B] hover:bg-[#F7F8FA]">
+                  전체 해제
+                </button>
+                <span className="text-[#94A3B8]">선택: {splitSelected.size} / {multiEnrolled.length}</span>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto px-6 py-3">
+              {multiEnrolled.map(s => {
+                const enrs = enrollMap[s.id] ?? []
+                const checked = splitSelected.has(s.id)
+                return (
+                  <label key={s.id} className="flex items-start gap-3 py-2 border-b border-[#F1F5F9] cursor-pointer hover:bg-[#F7F8FA] px-2 rounded">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => {
+                        const next = new Set(splitSelected)
+                        if (next.has(s.id)) next.delete(s.id)
+                        else next.add(s.id)
+                        setSplitSelected(next)
+                      }}
+                      className="mt-1"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-[#1E293B]">
+                        {s.name}
+                        {s.english_name && <span className="text-[#94A3B8] ml-1">({s.english_name})</span>}
+                        <span className="ml-2 text-[10px] bg-[#FEF3C7] text-[#92400E] px-1.5 py-0.5 rounded">{enrs.length}반</span>
+                      </p>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {enrs.map(({ cls, sess }) => {
+                          const isEcp = /^ecp/i.test(cls.level ?? '')
+                          return (
+                            <span key={cls.id} className="text-[10px] px-2 py-0.5 rounded-full text-white inline-flex items-center gap-1" style={{ background: cls.color }}>
+                              {cls.level}{sess ? ` · ${sess.name}` : ''}
+                              <span className="bg-white/25 px-1 rounded text-[9px]">{isEcp ? '유치부' : '초등부'}</span>
+                            </span>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </label>
+                )
+              })}
+              {multiEnrolled.length === 0 && (
+                <p className="text-center text-[#94A3B8] text-sm py-12">분리 대상 없음</p>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t border-[#E2E8F0] flex items-center justify-between">
+              <p className="text-xs text-[#94A3B8]">분리 결과 학생 row = 선택 학생당 그 학생의 반 수</p>
+              <div className="flex gap-2">
+                <button onClick={() => setShowMultiModal(false)} disabled={splitSaving}
+                  className="px-4 py-2 rounded-lg text-sm border border-[#E2E8F0] text-[#64748B] hover:bg-[#F7F8FA] disabled:opacity-50">
+                  취소
+                </button>
+                <button
+                  onClick={() => handleBulkSplit(Array.from(splitSelected))}
+                  disabled={splitSaving || splitSelected.size === 0}
+                  className="px-4 py-2 rounded-lg text-sm font-semibold bg-[#92400E] text-white hover:bg-[#78350F] disabled:opacity-50">
+                  {splitSaving ? '분리 중...' : `선택 ${splitSelected.size}명 분리`}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 학교/아파트 수정 모달 */}
+      {editTarget && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setEditTarget(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold text-[#1E293B] text-base mb-1">학생 정보 수정</h3>
+            <p className="text-sm text-[#64748B] mb-4">
+              <span className="font-semibold text-[#1E293B]">{editTarget.name}</span>
+              {editTarget.english_name && <span className="text-[#94A3B8] ml-1">({editTarget.english_name})</span>}
+            </p>
+            <div className="space-y-3 mb-5">
+              <div>
+                <label className="block text-xs font-semibold text-[#64748B] mb-1.5">학교</label>
+                <input value={editSchool} onChange={e => setEditSchool(e.target.value)} placeholder="예: ○○초등학교"
+                  className="w-full border border-[#E2E8F0] rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]"/>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-[#64748B] mb-1.5">아파트</label>
+                <input value={editApt} onChange={e => setEditApt(e.target.value)} placeholder="예: ○○아파트"
+                  className="w-full border border-[#E2E8F0] rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]"/>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-[#64748B] mb-1.5">수강반 배정 <span className="text-[#94A3B8] font-normal">(선택)</span></label>
+                <select value={editClassId} onChange={e => setEditClassId(e.target.value)}
+                  className="w-full border border-[#E2E8F0] rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2] bg-white">
+                  <option value="">-- 선택 안함 --</option>
+                  {sessions.map(sess => (
+                    <optgroup key={sess.id} label={sess.name}>
+                      {classes.filter(c => c.session_id === sess.id).map(c => {
+                        const alreadyEnrolled = enrollMap[editTarget?.id ?? '']?.some(e => e.cls.id === c.id)
+                        return <option key={c.id} value={c.id} disabled={!!alreadyEnrolled}>{c.level}{alreadyEnrolled ? ' (이미 등록)' : ''}</option>
+                      })}
+                    </optgroup>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setEditTarget(null)}
+                className="flex-1 py-2.5 rounded-xl border border-[#E2E8F0] text-sm font-semibold text-[#64748B] hover:bg-[#F7F8FA]">취소</button>
+              <button onClick={handleEditSave} disabled={editSaving}
+                className="flex-1 py-2.5 rounded-xl bg-[#004EA2] text-white text-sm font-semibold hover:bg-[#003E83] disabled:opacity-50">
+                {editSaving ? '저장 중...' : '저장'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 학생 추가 모달 (입퇴소 기록 없음) */}
+      {showAddStudent && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowAddStudent(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold text-[#1E293B] text-base mb-1">학생 추가</h3>
+            <p className="text-xs text-[#94A3B8] mb-4">전체 학생 명단에 추가합니다. 입퇴소 기록에는 반영되지 않습니다.</p>
+            <div className="space-y-3 mb-5">
+              <div>
+                <label className="block text-xs font-semibold text-[#64748B] mb-1">이름 *</label>
+                <input value={addName} onChange={e => setAddName(e.target.value)} placeholder="학생 이름"
+                  className="w-full border border-[#E2E8F0] rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]"/>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-[#64748B] mb-1">영문명</label>
+                <input value={addEnglish} onChange={e => setAddEnglish(e.target.value)} placeholder="English Name"
+                  className="w-full border border-[#E2E8F0] rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]"/>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-[#64748B] mb-1">학부</label>
+                <select value={addGrade} onChange={e => setAddGrade(e.target.value)}
+                  className="w-full border border-[#E2E8F0] rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2] bg-white">
+                  <option value="">선택</option>
+                  {['5세','6세','7세','1학년','2학년','3학년','4학년','5학년','6학년'].map(g => <option key={g} value={g}>{g}</option>)}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-semibold text-[#64748B] mb-1">학교</label>
+                  <input value={addSchool} onChange={e => setAddSchool(e.target.value)} placeholder="○○초등학교"
+                    className="w-full border border-[#E2E8F0] rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]"/>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#64748B] mb-1">아파트</label>
+                  <input value={addApt} onChange={e => setAddApt(e.target.value)} placeholder="○○아파트"
+                    className="w-full border border-[#E2E8F0] rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]"/>
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setShowAddStudent(false)}
+                className="flex-1 py-2.5 rounded-xl border border-[#E2E8F0] text-sm font-semibold text-[#64748B] hover:bg-[#F7F8FA]">취소</button>
+              <button onClick={handleAddStudent} disabled={addSaving || !addName.trim()}
+                className="flex-1 py-2.5 rounded-xl bg-[#004EA2] text-white text-sm font-semibold hover:bg-[#003E83] disabled:opacity-50">
+                {addSaving ? '추가 중...' : '추가'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 퇴소 확인 모달 */}
       {withdrawTarget && (
@@ -1676,48 +2454,198 @@ function StudentsTab({ allStudents, enrollments, classes, sessions, onWithdrawSu
   )
 }
 
+interface HistoryEntry { id: string; student_name: string; type: string; class_name: string; effective_date: string; note: string | null; created_at: string; changed_by_name?: string | null }
+
+
 // ─── EnrollTab ────────────────────────────────────────────────
-interface HistoryEntry { id: string; student_name: string; type: string; class_name: string; effective_date: string; note: string | null; created_at: string }
-function EnrollTab() {
+function EnrollTab({ month: propMonth, availableMonths, enrollments, classes, sessions, onReactivateSuccess }: {
+  month: string; availableMonths: string[]
+  enrollments: Enrollment[]; classes: ClassItem[]; sessions: Session[]
+  onReactivateSuccess?: () => void
+}) {
+  const [selectedMonth, setSelectedMonth] = useState(propMonth)
   const [logs, setLogs] = useState<HistoryEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [isAdmin, setIsAdmin] = useState(false)
+  const [canEnrollEdit, setCanEnrollEdit] = useState(false)
   const [typeFilter, setTypeFilter] = useState<'all'|'enrolled'|'withdrawn'>('all')
   const [deletingId, setDeletingId] = useState<string|null>(null)
+  const [reactivatingName, setReactivatingName] = useState<string|null>(null)
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [addForm, setAddForm] = useState({ student_name: '', type: 'enrolled' as 'enrolled'|'withdrawn', class_name: '', effective_date: new Date().toISOString().slice(0, 10), note: '' })
+  const [addSaving, setAddSaving] = useState(false)
+  const [showSuggestions, setShowSuggestions] = useState(false)
 
-  function loadLogs() {
-    fetch('/api/campus/class-roster/history').then(r => r.json()).then(d => {
+  // 현재 월 학생 목록 (이름 + 반 정보)
+  const studentList = useMemo(() => {
+    const classMap: Record<string, { level: string; sessionName: string }> = {}
+    for (const cls of classes) {
+      const sess = sessions.find(s => s.id === cls.session_id)
+      classMap[cls.id] = { level: cls.level, sessionName: sess?.name ?? '' }
+    }
+    const seen = new Map<string, { name: string; englishName: string | null; className: string }>()
+    for (const enr of enrollments) {
+      if (enr.is_waitlist) continue
+      const stu = enr.campus_students
+      if (!stu || seen.has(stu.name)) continue
+      const ci = classMap[enr.class_id]
+      const className = ci ? `${ci.sessionName} ${ci.level}`.trim() : ''
+      seen.set(stu.name, { name: stu.name, englishName: stu.english_name, className })
+    }
+    return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name))
+  }, [enrollments, classes, sessions])
+
+  function loadLogs(m: string) {
+    setLoading(true)
+    const prefix = monthToPrefix(m) // "2026-05"
+    fetch(`/api/campus/class-roster/history?month=${prefix}`).then(r => r.json()).then(d => {
       setLogs((d.logs ?? []).filter((l: HistoryEntry) => l.type === 'enrolled' || l.type === 'withdrawn'))
       setIsAdmin(d.isAdmin === true)
+      setCanEnrollEdit(d.canEnrollEdit === true)
       setLoading(false)
     })
   }
 
-  useEffect(() => { loadLogs() }, [])
+  useEffect(() => { loadLogs(selectedMonth) }, [selectedMonth])
+  // 부모 month가 바뀌면 동기화
+  useEffect(() => { setSelectedMonth(propMonth) }, [propMonth])
 
   async function handleDelete(id: string) {
     if (!confirm('이 기록을 삭제하시겠습니까?')) return
     setDeletingId(id)
     await fetch(`/api/campus/class-roster/history?id=${id}`, { method: 'DELETE' })
     setDeletingId(null)
-    loadLogs()
+    loadLogs(selectedMonth)
+  }
+
+  async function handleReactivate(studentName: string) {
+    if (!confirm(`"${studentName}" 학생을 재원생으로 복구하시겠습니까?\n(퇴소 취소 — is_active 복원)`)) return
+    setReactivatingName(studentName)
+    const res = await fetch('/api/campus/class-roster', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'reactivate_student', student_name: studentName }),
+    })
+    const d = await res.json()
+    setReactivatingName(null)
+    if (d.ok) { onReactivateSuccess?.(); alert(`${studentName} 복구 완료`) }
+    else alert('복구 실패: ' + (d.error ?? ''))
+  }
+
+  async function handleAddManual(e: React.FormEvent) {
+    e.preventDefault()
+    if (!addForm.student_name.trim()) return
+    setAddSaving(true)
+    const res = await fetch('/api/campus/class-roster/history', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(addForm),
+    })
+    setAddSaving(false)
+    if (res.ok) {
+      setShowAddForm(false)
+      setAddForm({ student_name: '', type: 'enrolled', class_name: '', effective_date: new Date().toISOString().slice(0, 10), note: '' })
+      loadLogs(selectedMonth)
+    }
   }
 
   const filtered = typeFilter === 'all' ? logs : logs.filter(l => l.type === typeFilter)
   const enrollCount = logs.filter(l => l.type === 'enrolled').length
   const withdrawCount = logs.filter(l => l.type === 'withdrawn').length
 
-  if (loading) return <div className="flex justify-center py-16"><div className="w-7 h-7 border-4 border-[#1e3a5f] border-t-transparent rounded-full animate-spin"/></div>
-
   return (
     <div className="space-y-3">
+      {/* 월 탭 */}
+      <div className="flex items-center gap-2">
+        {availableMonths.length > 1 && (
+          <div className="flex gap-1.5 overflow-x-auto pb-1 flex-1">
+            {availableMonths.map(m => (
+              <button key={m} onClick={() => setSelectedMonth(m)}
+                className={`shrink-0 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors border ${
+                  selectedMonth === m
+                    ? 'bg-[#1e3a5f] text-white border-[#1e3a5f]'
+                    : 'bg-white text-[#64748B] border-[#E2E8F0] hover:border-[#1e3a5f] hover:text-[#1e3a5f]'
+                }`}>
+                {m}
+              </button>
+            ))}
+          </div>
+        )}
+        {canEnrollEdit && (
+          <button onClick={() => setShowAddForm(!showAddForm)}
+            className="shrink-0 px-3 py-1.5 rounded-xl text-xs font-semibold border border-[#16A34A] text-[#16A34A] hover:bg-[#F0FDF4] transition-colors">
+            + 수동 추가
+          </button>
+        )}
+      </div>
+
+      {/* 수동 추가 폼 */}
+      {showAddForm && (
+        <form onSubmit={handleAddManual} className="bg-white rounded-2xl border border-[#E2E8F0] p-4 space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="relative">
+              <label className="text-[10px] font-bold text-[#64748B] mb-1 block">학생 이름 *</label>
+              <input value={addForm.student_name}
+                onChange={e => { setAddForm(f => ({ ...f, student_name: e.target.value })); setShowSuggestions(true) }}
+                onFocus={() => setShowSuggestions(true)}
+                className="w-full border border-[#E2E8F0] rounded-lg px-3 py-2 text-sm" placeholder="이름 입력..." autoComplete="off" />
+              {showSuggestions && addForm.student_name.trim() && (() => {
+                const q = addForm.student_name.trim()
+                const matches = studentList.filter(s => s.name.includes(q) || (s.englishName ?? '').toLowerCase().includes(q.toLowerCase()))
+                return matches.length > 0 ? (
+                  <div className="absolute z-20 left-0 right-0 top-full mt-1 bg-white border border-[#E2E8F0] rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                    {matches.slice(0, 20).map(s => (
+                      <button key={s.name} type="button"
+                        onClick={() => { setAddForm(f => ({ ...f, student_name: s.name, class_name: s.className })); setShowSuggestions(false) }}
+                        className="w-full text-left px-3 py-2 hover:bg-[#EAF2FB] text-sm flex items-center gap-2 transition-colors">
+                        <span className="font-medium text-[#1E293B]">{s.name}</span>
+                        {s.englishName && <span className="text-[#94A3B8] text-[10px]">{s.englishName}</span>}
+                        {s.className && <span className="ml-auto text-[10px] text-[#64748B] bg-[#F1F5F9] px-1.5 py-0.5 rounded-full">{s.className}</span>}
+                      </button>
+                    ))}
+                  </div>
+                ) : null
+              })()}
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-[#64748B] mb-1 block">구분</label>
+              <select value={addForm.type} onChange={e => setAddForm(f => ({ ...f, type: e.target.value as 'enrolled'|'withdrawn' }))}
+                className="w-full border border-[#E2E8F0] rounded-lg px-3 py-2 text-sm">
+                <option value="enrolled">입소</option>
+                <option value="withdrawn">퇴소</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-[#64748B] mb-1 block">반 이름</label>
+              <input value={addForm.class_name} onChange={e => setAddForm(f => ({ ...f, class_name: e.target.value }))}
+                className="w-full border border-[#E2E8F0] rounded-lg px-3 py-2 text-sm" placeholder="매일반 S1C" />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-[#64748B] mb-1 block">날짜</label>
+              <input type="date" value={addForm.effective_date} onChange={e => setAddForm(f => ({ ...f, effective_date: e.target.value }))}
+                className="w-full border border-[#E2E8F0] rounded-lg px-3 py-2 text-sm" />
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <input value={addForm.note} onChange={e => setAddForm(f => ({ ...f, note: e.target.value }))}
+              className="flex-1 border border-[#E2E8F0] rounded-lg px-3 py-2 text-sm" placeholder="비고 (선택)" />
+            <button type="submit" disabled={addSaving || !addForm.student_name.trim()}
+              className="px-4 py-2 bg-[#16A34A] text-white text-sm font-semibold rounded-lg hover:bg-[#15803D] disabled:opacity-50 transition-colors">
+              {addSaving ? '...' : '추가'}
+            </button>
+            <button type="button" onClick={() => setShowAddForm(false)}
+              className="px-4 py-2 bg-[#F1F5F9] text-[#64748B] text-sm rounded-lg hover:bg-[#E2E8F0] transition-colors">
+              취소
+            </button>
+          </div>
+        </form>
+      )}
+
       {/* 요약 카드 */}
       <div className="grid grid-cols-3 gap-3">
         <button onClick={() => setTypeFilter('all')}
           className={`rounded-2xl border p-4 text-left transition-colors ${typeFilter === 'all' ? 'border-[#1e3a5f] bg-[#EAF2FB]' : 'border-[#E2E8F0] bg-white hover:bg-[#F7F8FA]'}`}>
           <p className="text-[10px] font-bold text-[#64748B] mb-1">전체</p>
           <p className="text-2xl font-black text-[#1E293B]">{logs.length}</p>
-          <p className="text-[10px] text-[#94A3B8]">입소 + 퇴소</p>
+          <p className="text-[10px] text-[#94A3B8]">{selectedMonth}</p>
         </button>
         <button onClick={() => setTypeFilter('enrolled')}
           className={`rounded-2xl border p-4 text-left transition-colors ${typeFilter === 'enrolled' ? 'border-[#16A34A] bg-[#F0FDF4]' : 'border-[#E2E8F0] bg-white hover:bg-[#F7F8FA]'}`}>
@@ -1734,10 +2662,12 @@ function EnrollTab() {
       </div>
 
       {/* 목록 */}
-      {filtered.length === 0 ? (
+      {loading ? (
+        <div className="flex justify-center py-12"><div className="w-7 h-7 border-4 border-[#1e3a5f] border-t-transparent rounded-full animate-spin"/></div>
+      ) : filtered.length === 0 ? (
         <div className="text-center py-16 text-[#94A3B8]">
           <p className="text-3xl mb-2">{typeFilter === 'enrolled' ? '🎉' : typeFilter === 'withdrawn' ? '👋' : '📋'}</p>
-          <p className="text-sm">기록이 없습니다</p>
+          <p className="text-sm">{selectedMonth} 기록이 없습니다</p>
         </div>
       ) : (
         <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-sm overflow-hidden">
@@ -1758,16 +2688,25 @@ function EnrollTab() {
                     {label}
                   </span>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="text-sm font-semibold text-[#1E293B]">{log.student_name}</span>
-                      <span className="text-xs text-[#64748B]">{log.class_name}</span>
+                      {(() => { const lv = matchLevel(log.class_name); const gr = lv ? levelToGrade(lv) : ''; return gr ? <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-[#EAF2FB] text-[#004EA2]">{gr}</span> : null })()}
+                      {(() => { const lv = matchLevel(log.class_name); return lv ? <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-[#F1F5F9] text-[#475569]">{lv}</span> : null })()}
                     </div>
-                    {log.note && <p className="text-xs text-[#94A3B8] mt-0.5">{log.note}</p>}
+                    <p className="text-xs text-[#94A3B8] mt-0.5">{log.class_name}{log.note ? ` · ${log.note}` : ''}</p>
                   </div>
                   <div className="text-right flex-shrink-0">
                     <p className="text-xs font-medium text-[#475569]">{log.effective_date}</p>
                     <p className="text-[10px] text-[#94A3B8]">{new Date(log.created_at).toLocaleDateString('ko-KR')}</p>
+                    {log.changed_by_name && <p className="text-[10px] text-[#60A5FA] font-medium mt-0.5">{log.changed_by_name}</p>}
                   </div>
+                  {!isEnroll && (
+                    <button onClick={() => handleReactivate(log.student_name)}
+                      disabled={reactivatingName === log.student_name}
+                      className="flex-shrink-0 px-2 py-1 rounded-lg bg-[#F5F3FF] text-[#7C3AED] text-[10px] font-bold hover:bg-[#EDE9FE] disabled:opacity-40 transition-colors whitespace-nowrap">
+                      {reactivatingName === log.student_name ? '...' : '복구'}
+                    </button>
+                  )}
                   {isAdmin && (
                     <button onClick={() => handleDelete(log.id)} disabled={deletingId === log.id}
                       className="flex-shrink-0 w-6 h-6 rounded-full bg-[#FEF2F2] text-[#EF4444] text-xs font-bold flex items-center justify-center hover:bg-[#FECACA] disabled:opacity-40 transition-colors">
@@ -1788,15 +2727,37 @@ function EnrollTab() {
 function LogTab() {
   const [logs, setLogs] = useState<HistoryEntry[]>([])
   const [loading, setLoading] = useState(true)
-  useEffect(() => {
-    fetch('/api/campus/class-roster/history').then(r => r.json()).then(d => { setLogs(d.logs ?? []); setLoading(false) })
-  }, [])
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  function loadLogs() {
+    fetch('/api/campus/class-roster/history').then(r => r.json()).then(d => {
+      setLogs(d.logs ?? [])
+      setIsAdmin(d.isAdmin === true)
+      setLoading(false)
+    })
+  }
+  useEffect(() => { loadLogs() }, [])
+
+  async function handleDelete(id: string) {
+    if (!confirm('이 기록을 삭제하시겠습니까?')) return
+    setDeletingId(id)
+    await fetch(`/api/campus/class-roster/history?id=${id}`, { method: 'DELETE' })
+    setDeletingId(null)
+    loadLogs()
+  }
+
   const typeLabel = (t: string) => t === 'enrolled' ? '입소' : t === 'withdrawn' ? '퇴소' : '이동'
   const typeColor = (t: string) => t === 'enrolled' ? '#16A34A' : t === 'withdrawn' ? '#DC2626' : '#2563EB'
   if (loading) return <div className="flex justify-center py-16"><div className="w-7 h-7 border-4 border-[#1e3a5f] border-t-transparent rounded-full animate-spin"/></div>
   if (!logs.length) return <div className="text-center py-16 text-[#94A3B8]"><p className="text-3xl mb-2">📝</p><p className="text-sm">변경 기록이 없습니다</p></div>
   return (
     <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-sm overflow-hidden">
+      {isAdmin && (
+        <div className="px-4 py-2 bg-[#FFF8F0] border-b border-[#FDE68A] flex items-center gap-1.5">
+          <span className="text-[10px] text-[#92400E] font-semibold">원장 모드 — 기록 삭제 가능</span>
+        </div>
+      )}
       <div className="divide-y divide-[#F1F5F9]">
         {logs.map(log => (
           <div key={log.id} className="px-4 py-3 flex items-start gap-3 hover:bg-[#F7F8FA]">
@@ -1805,16 +2766,24 @@ function LogTab() {
               {typeLabel(log.type)}
             </span>
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="text-sm font-semibold text-[#1E293B]">{log.student_name}</span>
-                <span className="text-xs text-[#64748B]">{log.class_name}</span>
+                {(() => { const lv = matchLevel(log.class_name); const gr = lv ? levelToGrade(lv) : ''; return gr ? <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-[#EAF2FB] text-[#004EA2]">{gr}</span> : null })()}
+                {(() => { const lv = matchLevel(log.class_name); return lv ? <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-[#F1F5F9] text-[#475569]">{lv}</span> : null })()}
               </div>
-              {log.note && <p className="text-xs text-[#94A3B8] mt-0.5">{log.note}</p>}
+              <p className="text-xs text-[#94A3B8] mt-0.5">{log.class_name}{log.note ? ` · ${log.note}` : ''}</p>
             </div>
             <div className="text-right flex-shrink-0">
               <p className="text-xs font-medium text-[#475569]">{log.effective_date}</p>
               <p className="text-[10px] text-[#94A3B8]">{new Date(log.created_at).toLocaleDateString('ko-KR')}</p>
+              {log.changed_by_name && <p className="text-[10px] text-[#60A5FA] font-medium mt-0.5">{log.changed_by_name}</p>}
             </div>
+            {isAdmin && (
+              <button onClick={() => handleDelete(log.id)} disabled={deletingId === log.id}
+                className="flex-shrink-0 w-6 h-6 rounded-full bg-[#FEF2F2] text-[#EF4444] text-xs font-bold flex items-center justify-center hover:bg-[#FECACA] disabled:opacity-40 transition-colors mt-0.5">
+                {deletingId === log.id ? '…' : '✕'}
+              </button>
+            )}
           </div>
         ))}
       </div>
@@ -1836,9 +2805,9 @@ function extractLocOnly(sched: Record<string, string>) {
   return out
 }
 
-function StudentDetailModal({ enrollment, student, classes, sessions, buses, enrollments, onSave, onDelete, onClose, saving }: {
+function StudentDetailModal({ enrollment, student, classes, sessions, buses, enrollments, registeredStops, onSave, onDelete, onClose, saving }: {
   enrollment: Enrollment; student: Student; classes: ClassItem[]; sessions: Session[]; buses: Bus[]
-  enrollments: Enrollment[]
+  enrollments: Enrollment[]; registeredStops: RegisteredStop[]
   onSave: (enrollmentId: string, arr: Record<string, string>, dep: Record<string, string>, toClassId: string, highlightColor: string, name: string, englishName: string) => void
   onDelete: () => void; onClose: () => void; saving: boolean
 }) {
@@ -1887,17 +2856,29 @@ function StudentDetailModal({ enrollment, student, classes, sessions, buses, enr
   }
 
   const curSessId = currentClass?.session_id ?? ''
+  // 지도에서 추가한 빈 정류장(학생 0명)을 호차·방향 맞춰 후보에 합집합 — 집계 행이 아니라 선택지로만 노출
+  function withRegistered(busName: string, dir: 'arr' | 'dep', base: { loc: string; time?: string }[]): { loc: string; time?: string }[] {
+    if (!busName) return base
+    const merged = [...base]
+    for (const rs of registeredStops) {
+      if (rs.bus_name !== busName || rs.direction !== dir) continue
+      const loc = rs.stop_name.trim()
+      if (merged.some(x => x.loc === loc)) continue
+      merged.push({ loc, time: rs.default_time ?? undefined })
+    }
+    return merged
+  }
   function getArrStops(busName: string): { loc: string; time?: string }[] {
     const same = busSessionArrStops[busName]?.[curSessId] ?? []
-    if (same.length > 0) return same
-    const all = Object.values(busSessionArrStops[busName] ?? {}).flat()
-    return all.filter((s, i, a) => a.findIndex(x => x.loc === s.loc) === i)
+    const base = same.length > 0 ? same
+      : Object.values(busSessionArrStops[busName] ?? {}).flat().filter((s, i, a) => a.findIndex(x => x.loc === s.loc) === i)
+    return withRegistered(busName, 'arr', base)
   }
   function getDepStops(busName: string): { loc: string; time?: string }[] {
     const same = busSessionDepStops[busName]?.[curSessId] ?? []
-    if (same.length > 0) return same
-    const all = Object.values(busSessionDepStops[busName] ?? {}).flat()
-    return all.filter((s, i, a) => a.findIndex(x => x.loc === s.loc) === i)
+    const base = same.length > 0 ? same
+      : Object.values(busSessionDepStops[busName] ?? {}).flat().filter((s, i, a) => a.findIndex(x => x.loc === s.loc) === i)
+    return withRegistered(busName, 'dep', base)
   }
 
   function handleSessionChange(sessId: string) {
@@ -2128,8 +3109,8 @@ function WaitlistAddModal({ classId, classLevel, buses, onAdd, onClose, saving, 
 }
 
 // ─── NewStudentModal ───────────────────────────────────────────
-function NewStudentModal({ classId, classLevel, buses, onAdd, onClose, saving, error }: {
-  classId: string; classLevel: string; buses: Bus[]
+function NewStudentModal({ classId, classLevel, buses, enrollments, classes, onAdd, onClose, saving, error }: {
+  classId: string; classLevel: string; buses: Bus[]; enrollments: Enrollment[]; classes: ClassItem[]
   onAdd: (classId: string, name: string, englishName: string, arr: Record<string, string>, dep: Record<string, string>) => void
   onClose: () => void; saving: boolean; error: string
 }) {
@@ -2139,6 +3120,46 @@ function NewStudentModal({ classId, classLevel, buses, onAdd, onClose, saving, e
   const [dep, setDep] = useState<Record<string, string>>({})
   const [arrLoc, setArrLoc] = useState<Record<string, string>>({})
   const [depLoc, setDepLoc] = useState<Record<string, string>>({})
+
+  // 호차별 정류장 집계 (재원생과 동일 로직)
+  const curSessId = classes.find(c => c.id === classId)?.session_id ?? ''
+  const busArrStops: Record<string, Record<string, { loc: string; time?: string }[]>> = {}
+  const busDepStops: Record<string, Record<string, { loc: string; time?: string }[]>> = {}
+  for (const enr of enrollments) {
+    const sessId = classes.find(c => c.id === enr.class_id)?.session_id ?? ''
+    for (const d of DAYS) {
+      const aBus = enr.arr_schedule[d]; const aLoc = enr.arr_schedule[`${d}_loc`]
+      const aTime = (enr.arr_schedule as Record<string,string>)[`${d}_time`] || (enr.arr_schedule as Record<string,string>)['_time'] || undefined
+      if (aBus && aLoc) {
+        if (!busArrStops[aBus]) busArrStops[aBus] = {}
+        if (!busArrStops[aBus][sessId]) busArrStops[aBus][sessId] = []
+        const ex = busArrStops[aBus][sessId].find(x => x.loc === aLoc)
+        if (!ex) busArrStops[aBus][sessId].push({ loc: aLoc, time: aTime })
+        else if (!ex.time && aTime) ex.time = aTime
+      }
+      const dBus = enr.dep_schedule[d]; const dLoc = enr.dep_schedule[`${d}_loc`]
+      const dTime = (enr.dep_schedule as Record<string,string>)[`${d}_time`] || (enr.dep_schedule as Record<string,string>)['_time'] || undefined
+      if (dBus && dLoc) {
+        if (!busDepStops[dBus]) busDepStops[dBus] = {}
+        if (!busDepStops[dBus][sessId]) busDepStops[dBus][sessId] = []
+        const ex = busDepStops[dBus][sessId].find(x => x.loc === dLoc)
+        if (!ex) busDepStops[dBus][sessId].push({ loc: dLoc, time: dTime })
+        else if (!ex.time && dTime) ex.time = dTime
+      }
+    }
+  }
+  function getArrStops(busName: string): { loc: string; time?: string }[] {
+    const same = busArrStops[busName]?.[curSessId] ?? []
+    if (same.length > 0) return same
+    const all = Object.values(busArrStops[busName] ?? {}).flat()
+    return all.filter((s, i, a) => a.findIndex(x => x.loc === s.loc) === i)
+  }
+  function getDepStops(busName: string): { loc: string; time?: string }[] {
+    const same = busDepStops[busName]?.[curSessId] ?? []
+    if (same.length > 0) return same
+    const all = Object.values(busDepStops[busName] ?? {}).flat()
+    return all.filter((s, i, a) => a.findIndex(x => x.loc === s.loc) === i)
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -2195,7 +3216,13 @@ function NewStudentModal({ classId, classLevel, buses, onAdd, onClose, saving, e
                       {buses.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}
                     </select>
                   </td>
-                  <td className="py-1 pr-1"><input placeholder="장소" className="w-full text-xs border border-[#E2E8F0] rounded px-1 py-1" onChange={e => { const v = e.target.value; const obj: Record<string,string>={}; DAYS.forEach(d=>{if(v)obj[d]=v}); setArrLoc(obj) }} /></td>
+                  <td className="py-1 pr-1">
+                    <select className="w-full text-xs border border-[#E2E8F0] rounded px-1 py-1 bg-white"
+                      onChange={e => { const v = e.target.value; const obj: Record<string,string>={}; DAYS.forEach(d=>{if(v)obj[d]=v}); setArrLoc(obj) }}>
+                      <option value="">-</option>
+                      {(() => { const allStops = Object.values(busArrStops).flatMap(s => Object.values(s).flat()); return allStops.filter((s,i,a) => a.findIndex(x => x.loc === s.loc) === i).map(s => <option key={s.loc} value={s.loc}>{s.loc}{s.time ? ` · ${s.time}` : ''}</option>) })()}
+                    </select>
+                  </td>
                   <td className="py-1 pr-1">
                     <select onChange={e => fillAll('dep', e.target.value)}
                       className="w-full text-xs border border-[#E2E8F0] rounded px-1 py-1 bg-white">
@@ -2203,7 +3230,13 @@ function NewStudentModal({ classId, classLevel, buses, onAdd, onClose, saving, e
                       {buses.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}
                     </select>
                   </td>
-                  <td className="py-1 pr-1"><input placeholder="장소" className="w-full text-xs border border-[#E2E8F0] rounded px-1 py-1" onChange={e => { const v = e.target.value; const obj: Record<string,string>={}; DAYS.forEach(d=>{if(v)obj[d]=v}); setDepLoc(obj) }} /></td>
+                  <td className="py-1 pr-1">
+                    <select className="w-full text-xs border border-[#E2E8F0] rounded px-1 py-1 bg-white"
+                      onChange={e => { const v = e.target.value; const obj: Record<string,string>={}; DAYS.forEach(d=>{if(v)obj[d]=v}); setDepLoc(obj) }}>
+                      <option value="">-</option>
+                      {(() => { const allStops = Object.values(busDepStops).flatMap(s => Object.values(s).flat()); return allStops.filter((s,i,a) => a.findIndex(x => x.loc === s.loc) === i).map(s => <option key={s.loc} value={s.loc}>{s.loc}{s.time ? ` · ${s.time}` : ''}</option>) })()}
+                    </select>
+                  </td>
                 </tr>
               </thead>
               <tbody>
@@ -2218,9 +3251,18 @@ function NewStudentModal({ classId, classLevel, buses, onAdd, onClose, saving, e
                       </select>
                     </td>
                     <td className="py-1 pr-1">
-                      <input value={arrLoc[day] ?? ''} onChange={e => setArrLoc(p => ({ ...p, [day]: e.target.value }))}
-                        placeholder="장소"
-                        className="w-full text-xs border border-[#E2E8F0] rounded px-1 py-1" />
+                      {(() => {
+                        const opts = getArrStops(arr[day] ?? '')
+                        const cur = arrLoc[day] ?? ''
+                        const allOpts = cur && !opts.find(x => x.loc === cur) ? [{ loc: cur, time: undefined }, ...opts] : opts
+                        return (
+                          <select value={cur} onChange={e => setArrLoc(p => ({ ...p, [day]: e.target.value }))}
+                            className="w-full text-xs border border-[#E2E8F0] rounded px-1 py-1 bg-white">
+                            <option value="">-</option>
+                            {allOpts.map(s => <option key={s.loc} value={s.loc}>{s.loc}{s.time ? ` · ${s.time}` : ''}</option>)}
+                          </select>
+                        )
+                      })()}
                     </td>
                     <td className="py-1 pr-1">
                       <select value={dep[day] ?? ''} onChange={e => setDep(p => ({ ...p, [day]: e.target.value }))}
@@ -2230,9 +3272,18 @@ function NewStudentModal({ classId, classLevel, buses, onAdd, onClose, saving, e
                       </select>
                     </td>
                     <td className="py-1 pr-1">
-                      <input value={depLoc[day] ?? ''} onChange={e => setDepLoc(p => ({ ...p, [day]: e.target.value }))}
-                        placeholder="장소"
-                        className="w-full text-xs border border-[#E2E8F0] rounded px-1 py-1" />
+                      {(() => {
+                        const opts = getDepStops(dep[day] ?? '')
+                        const cur = depLoc[day] ?? ''
+                        const allOpts = cur && !opts.find(x => x.loc === cur) ? [{ loc: cur, time: undefined }, ...opts] : opts
+                        return (
+                          <select value={cur} onChange={e => setDepLoc(p => ({ ...p, [day]: e.target.value }))}
+                            className="w-full text-xs border border-[#E2E8F0] rounded px-1 py-1 bg-white">
+                            <option value="">-</option>
+                            {allOpts.map(s => <option key={s.loc} value={s.loc}>{s.loc}{s.time ? ` · ${s.time}` : ''}</option>)}
+                          </select>
+                        )
+                      })()}
                     </td>
                   </tr>
                 ))}
@@ -2252,7 +3303,7 @@ function NewStudentModal({ classId, classLevel, buses, onAdd, onClose, saving, e
 
 // ─── ClassForm ─────────────────────────────────────────────────
 function ClassForm({ form, setForm, onSubmit, onClose, saving, error, onDelete, ftEmployees, ktEmployees }: {
-  form: { level: string; room: string; teacher: string; kt_teacher: string; color: string }
+  form: { level: string; room: string; teacher: string; kt_teacher: string; color: string; hours_per_week: string }
   setForm: (f: typeof form | ((prev: typeof form) => typeof form)) => void
   onSubmit: (e: React.FormEvent) => void; onClose: () => void
   saving: boolean; error: string; onDelete?: () => void
@@ -2261,9 +3312,14 @@ function ClassForm({ form, setForm, onSubmit, onClose, saving, error, onDelete, 
 }) {
   return (
     <form onSubmit={onSubmit} className="space-y-3">
-      <Field label="반 이름" required>
-        <input required value={form.level} onChange={e => setForm(f => ({ ...f, level: e.target.value }))} placeholder="GT2, MAG1..." className={inputCls} />
-      </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="반 이름" required>
+          <input required value={form.level} onChange={e => setForm(f => ({ ...f, level: e.target.value }))} placeholder="GT2, MAG1..." className={inputCls} />
+        </Field>
+        <Field label="주간 시수">
+          <input type="number" min="0" max="40" value={form.hours_per_week} onChange={e => setForm(f => ({ ...f, hours_per_week: e.target.value }))} placeholder="0" className={inputCls} />
+        </Field>
+      </div>
       <Field label="교실이름">
         <input value={form.room} onChange={e => setForm(f => ({ ...f, room: e.target.value }))} placeholder="America, France..." className={inputCls} />
       </Field>

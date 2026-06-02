@@ -6,10 +6,11 @@ import RouteMapView from './RouteMapView'
 const DAYS = ['월', '화', '수', '목', '금'] as const
 const DAY_DOT_COLOR = ['#2196F3','#9C27B0','#4CAF50','#FF9800','#E91E63']
 
-const BUS_COLORS = ['#FF9800','#2196F3','#9C27B0','#4CAF50','#FFC107','#E91E63','#607D8B','#795548','#00BCD4','#FF5722']
+// 서로 최대한 구분되는 팔레트 (겹침/유사색 제거) — RouteMapView와 동일
+const BUS_COLORS = ['#2563EB','#EA580C','#16A34A','#9333EA','#0891B2','#DB2777','#CA8A04','#64748B','#0D9488','#B45309']
 const BUS_COLOR_MAP: Record<string,string> = {
-  '1호차':'#FF9800','2호차':'#2196F3','3호차':'#9C27B0',
-  '5호차':'#4CAF50','6호차':'#FFC107','7호차':'#E91E63','8호차':'#607D8B','마미버스':'#E91E63',
+  '1호차':'#EA580C','2호차':'#2563EB','3호차':'#9333EA',
+  '5호차':'#16A34A','6호차':'#0891B2','7호차':'#DB2777','8호차':'#64748B','마미버스':'#CA8A04','개별등하원':'#CA8A04',
 }
 function getBusColor(name: string, idx: number) {
   return BUS_COLOR_MAP[name] ?? BUS_COLORS[idx % BUS_COLORS.length]
@@ -26,9 +27,9 @@ function getRunColor(sessName: string, dir?: 'arr'|'dep') {
     if (sessName.includes('유치부')) return '#FF6B35'
     return dir === 'dep' ? '#2196F3' : '#8B5CF6'
   }
-  if (sessName.includes('매일반')) return '#2196F3'
-  if (sessName.includes('월수금')||sessName.includes('3일반')) return '#4CAF50'
-  if (sessName.includes('화목')||sessName.includes('2일반')) return '#9C27B0'
+  if (sessName.includes('매일반')||sessName.includes('5일')) return '#2196F3'
+  if (sessName.includes('월수금')||sessName.includes('3일')) return '#4CAF50'
+  if (sessName.includes('화목')||sessName.includes('2일')) return '#9C27B0'
   if (sessName.includes('유치부')) return '#FF6B35'
   return '#64748B'
 }
@@ -39,9 +40,9 @@ function getRunLabel(sessName: string, dir: 'arr'|'dep') {
     if (sessName.includes('유치부')) return `유치부 ${d}`
     return dir === 'dep' ? `매일반 ${d}` : `방과후 ${d}`
   }
-  if (sessName.includes('매일반')) return `매일반 ${d}`
-  if (sessName.includes('월수금')||sessName.includes('3일반')) return `3일반 ${d}`
-  if (sessName.includes('화목')||sessName.includes('2일반')) return `2일반 ${d}`
+  if (sessName.includes('매일반')||sessName.includes('5일')) return `매일반 ${d}`
+  if (sessName.includes('월수금')||sessName.includes('3일')) return `3일반 ${d}`
+  if (sessName.includes('화목')||sessName.includes('2일')) return `2일반 ${d}`
   if (sessName.includes('유치부')) return `유치부 ${d}`
   return `${sessName} ${d}`
 }
@@ -67,6 +68,20 @@ function getRunTime(timeRange: string, dir: 'arr'|'dep') {
   const t = dir === 'arr' ? (p[0]?.trim() ?? '') : (p[1]?.trim() ?? '')
   return t || timeRange.trim()  // split 실패 시 전체 time_range 반환
 }
+// 같은 학생이 여러 enrollment로 같은 버스에 중복 등록된 경우 days 합산 후 1명으로 표기
+function deduplicateStudents(students: StudentEntry[]): StudentEntry[] {
+  const map = new Map<string, StudentEntry>()
+  for (const s of students) {
+    if (map.has(s.student_id)) {
+      const ex = map.get(s.student_id)!
+      ex.days = [...new Set([...ex.days, ...s.days])]
+    } else {
+      map.set(s.student_id, { ...s })
+    }
+  }
+  return [...map.values()]
+}
+
 // 같은 레이블(예: '매일반 하원')을 가진 timeGroups를 하나로 병합
 // 방과후+dep와 매일반+dep가 각각 다른 time_range로 분리되는 문제 해결
 function mergeGroupsByLabel(groups: TimeGroup[], dir: 'arr'|'dep'): TimeGroup[] {
@@ -83,6 +98,8 @@ function mergeGroupsByLabel(groups: TimeGroup[], dir: 'arr'|'dep'): TimeGroup[] 
       for (const [bus, students] of Object.entries(group.busMap)) {
         if (!existing.busMap[bus]) existing.busMap[bus] = []
         existing.busMap[bus].push(...students)
+        // 동일 학생 중복 제거 (다른 enrollment에서 같은 버스에 배정된 경우)
+        existing.busMap[bus] = deduplicateStudents(existing.busMap[bus])
         if (group.busLocations[bus]) {
           const locSet = new Set(existing.busLocations[bus] ?? [])
           for (const loc of group.busLocations[bus]) locSet.add(loc)
@@ -100,9 +117,9 @@ function getSessPriority(sessName: string, dir?: 'arr'|'dep'): number {
   // 방과후(유치부 방과후 포함): 하원→매일반(2), 등원→유치부(1)과 매일반(2) 사이
   if (sessName.includes('방과후')) return dir === 'dep' ? 2 : 1.5
   if (sessName.includes('유치부')) return 1
-  if (sessName.includes('매일반')) return 2
-  if (sessName.includes('월수금') || sessName.includes('3일반')) return 3
-  if (sessName.includes('화목') || sessName.includes('2일반')) return 4
+  if (sessName.includes('매일반') || sessName.includes('5일')) return 2
+  if (sessName.includes('월수금') || sessName.includes('3일')) return 3
+  if (sessName.includes('화목') || sessName.includes('2일')) return 4
   return 9
 }
 function sessMatchesFilter(sessName: string, filter: string, dir?: 'arr'|'dep') {
@@ -112,13 +129,13 @@ function sessMatchesFilter(sessName: string, filter: string, dir?: 'arr'|'dep') 
     return dir === 'dep' ? filter === '매일반' : (filter === '전체' || filter === '유치부')
   }
   if (filter === '유치부') return sessName.includes('유치부')
-  if (filter === '매일반') return sessName.includes('매일반')
-  if (filter === '3일반') return sessName.includes('월수금') || sessName.includes('3일반')
-  if (filter === '2일반') return sessName.includes('화목') || sessName.includes('2일반')
+  if (filter === '매일반') return sessName.includes('매일반') || sessName.includes('5일')
+  if (filter === '3일반') return sessName.includes('월수금') || sessName.includes('3일')
+  if (filter === '2일반') return sessName.includes('화목') || sessName.includes('2일')
   return true
 }
 
-interface Bus { id: string; name: string; sort_order: number; driver?: string; driver_phone?: string; safety?: string; safety_phone?: string; kt_name?: string; kt_phone?: string }
+interface Bus { id: string; name: string; sort_order: number; capacity?: number; driver?: string; driver_phone?: string; safety?: string; safety_phone?: string; kt_name?: string; kt_phone?: string }
 interface ChangeRequest {
   id: string; student_id: string; student_name: string; class_id: string
   direction: 'arr' | 'dep'; from_bus: string | null; to_bus: string
@@ -163,9 +180,11 @@ export default function VehiclesPage() {
   const today = new Date()
   const todayStr = [today.getFullYear(), String(today.getMonth()+1).padStart(2,'0'), String(today.getDate()).padStart(2,'0')].join('-')
 
-  const [tab, setTab] = useState<'master'|'today'|'approval'|'history'|'map'|'settings'>('master')
+  const [tab, setTab] = useState<'master'|'today'|'map'>('map')
+  const [fullscreen, setFullscreen] = useState(false)
   const [vehiclesRestricted, setVehiclesRestricted] = useState(false)
   const [campusName, setCampusName] = useState<string | undefined>(undefined)
+  const [campusId, setCampusId] = useState<string | undefined>(undefined)
 
   // ── 백업 ─────────────────────────────────────────────────────
   const [backupModal, setBackupModal] = useState(false)
@@ -186,6 +205,10 @@ export default function VehiclesPage() {
   const [masterGroups, setMasterGroups] = useState<TimeGroup[]>([])
   const [masterBusMap, setMasterBusMap] = useState<Record<string, StudentEntry[]>>({})
   const [masterBusLocMap, setMasterBusLocMap] = useState<Record<string,string[]>>({})
+  // 빈 정류장 마스터의 운행시간 폴백 — key `${bus_name}|${stop_name}` → default_time
+  const [masterRegStopTimes, setMasterRegStopTimes] = useState<Record<string,string>>({})
+  // 빈 정류장 마스터 — 호차별 정류장명 (현재 방향, 학생 0명이어도 후보로 노출)
+  const [masterRegStopsByBus, setMasterRegStopsByBus] = useState<Record<string,string[]>>({})
   const [masterLoading, setMasterLoading] = useState(true)
   const [collapsedBuses, setCollapsedBuses] = useState<Set<string>>(new Set())
 
@@ -204,13 +227,6 @@ export default function VehiclesPage() {
   const [overrideTime, setOverrideTime] = useState('')
   const [busFilter, setBusFilter] = useState('전체')
   const [sessionFilter, setSessionFilter] = useState('전체')
-
-  // ── 차량 설정 ─────────────────────────────────────────────────
-  const [addBusModal, setAddBusModal] = useState(false)
-  const [newBusName, setNewBusName] = useState('')
-  const [editBusModal, setEditBusModal] = useState<Bus|null>(null)
-  const [editBusForm, setEditBusForm] = useState({ name:'', driver:'', driver_phone:'', safety:'', safety_phone:'', kt_name:'', kt_phone:'' })
-  const [safetyStaff, setSafetyStaff] = useState<{id:string; name:string}[]>([])
 
   // ── 스케줄 편집 (차량관리 탭) ─────────────────────────────────
   const [editSchedModal, setEditSchedModal] = useState<{
@@ -266,6 +282,15 @@ export default function VehiclesPage() {
     setMasterGroups(d.timeGroups ?? [])
     setMasterBusMap(d.busMap ?? {})
     setMasterBusLocMap(d.busLocationMap ?? {})
+    setMasterRegStopTimes(d.registeredStopTimes ?? {})
+    {
+      const byBus: Record<string, string[]> = {}
+      for (const rs of (d.registeredStops ?? []) as { stop_name: string; bus_name: string }[]) {
+        if (!byBus[rs.bus_name]) byBus[rs.bus_name] = []
+        if (!byBus[rs.bus_name].includes(rs.stop_name)) byBus[rs.bus_name].push(rs.stop_name)
+      }
+      setMasterRegStopsByBus(byBus)
+    }
     setBuses(d.buses ?? [])
     setAvailableMonths(d.availableMonths ?? [])
     setMonth(m => m || (d.month ?? ''))
@@ -352,22 +377,20 @@ export default function VehiclesPage() {
           setTab('today')
         }
         if (d.campusName) setCampusName(d.campusName)
+        if (d.campusId) setCampusId(d.campusId)
       })
   }, [])
 
+  // 전체화면 중 Esc 로 종료
+  useEffect(() => {
+    if (!fullscreen) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFullscreen(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [fullscreen])
+
   useEffect(() => { if (tab === 'master') loadMaster() }, [tab, masterDir, month])
   useEffect(() => { if (tab === 'today') loadToday() }, [tab, selectedDate, todayDir, month])
-  useEffect(() => { if (tab === 'approval' || tab === 'history') loadRequests() }, [tab])
-  useEffect(() => {
-    // 버스 목록은 항상 필요
-    if (tab === 'settings') {
-      fetch(`/api/campus/vehicles?date=${todayStr}&direction=dep`).then(r=>r.json()).then(d => {
-        setBuses(d.buses ?? [])
-        setAvailableMonths(d.availableMonths ?? [])
-        setMonth(m => m || (d.month ?? ''))
-      })
-    }
-  }, [tab])
 
   const busNames = buses.map(b => b.name)
   const allBusNames = [...new Set([...busNames, ...Object.keys(masterBusMap), ...Object.keys(todayBusMap)])]
@@ -413,61 +436,6 @@ export default function VehiclesPage() {
     await doOverride(overrideModal.student.student_id, overrideBus || null, false, finalLoc, overrideTime)
   }
 
-  async function handleAddBus(e: React.FormEvent) {
-    e.preventDefault()
-    if (!newBusName.trim()) return
-    setSaving(true); setFormError('')
-    const res = await fetch('/api/campus/vehicles', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ action: 'add_bus', name: newBusName.trim() }),
-    })
-    const d = await res.json()
-    setSaving(false)
-    if (!res.ok) { setFormError(d.error ?? '오류'); return }
-    setAddBusModal(false); setNewBusName('')
-    loadMaster()
-  }
-
-  async function handleDeleteBus(busId: string) {
-    if (!confirm('차량을 삭제하시겠습니까?')) return
-    await fetch('/api/campus/vehicles', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ action: 'delete_bus', bus_id: busId }),
-    })
-    loadMaster()
-  }
-
-  async function openEditBus(bus: Bus) {
-    setEditBusForm({
-      name: bus.name,
-      driver: bus.driver ?? '', driver_phone: bus.driver_phone ?? '',
-      safety: bus.safety ?? '', safety_phone: bus.safety_phone ?? '',
-      kt_name: bus.kt_name ?? '', kt_phone: bus.kt_phone ?? '',
-    })
-    setEditBusModal(bus)
-    if (safetyStaff.length === 0) {
-      const res = await fetch('/api/campus/employees')
-      const d = await res.json()
-      setSafetyStaff((d.employees ?? []).filter((e: {is_active:boolean; position:string}) => e.is_active && (e.position?.includes('안전') || e.position?.includes('POLY'))).map((e: {id:string; name:string}) => ({ id: e.id, name: e.name })))
-    }
-  }
-
-  async function handleEditBus(e: React.FormEvent) {
-    e.preventDefault()
-    if (!editBusModal) return
-    setSaving(true)
-    const res = await fetch('/api/campus/vehicles', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ action: 'update_bus', bus_id: editBusModal.id, ...editBusForm }),
-    })
-    const d = await res.json()
-    setSaving(false)
-    if (!res.ok) { alert(d.error ?? '오류'); return }
-    setBuses(prev => prev.map(b => b.id === editBusModal.id ? { ...b, ...editBusForm, name: editBusForm.name || b.name } : b))
-    setEditBusModal(null)
-    loadMaster()
-  }
-
   function openEditSched(student: StudentEntry, currentBus: string, busLocs: Record<string,string[]>, defaultTime?: string, sessionName?: string) {
     setEditSchedBus(currentBus)
     setEditSchedLoc(student.location ?? '')
@@ -476,13 +444,22 @@ export default function VehiclesPage() {
     setEditLocIsNew(false)
     setEditTimeEditing(false)
     setEditTimeDraft('')
-    setEditSchedModal({ student, currentBus, busLocs, sessionName: sessionName ?? '', defaultTime: defaultTime ?? '' })
+    // 빈 정류장 마스터는 세션 무관 — 모든 호차 후보에 합집합 (학생 0명 호차로 전환해도 노출)
+    const mergedLocs: Record<string, string[]> = { ...busLocs }
+    for (const [b, locs] of Object.entries(masterRegStopsByBus)) {
+      mergedLocs[b] = [...new Set([...(mergedLocs[b] ?? []), ...locs])]
+    }
+    setEditSchedModal({ student, currentBus, busLocs: mergedLocs, sessionName: sessionName ?? '', defaultTime: defaultTime ?? '' })
   }
 
   async function handleSaveEditSched() {
     if (!editSchedModal) return
     setSaving(true)
-    await fetch('/api/campus/vehicles', {
+    // editTimeEditing 중이면 draft 값 우선 사용 (수정 후 "저장" 직접 클릭 시)
+    const finalPickupTime = editTimeEditing && editTimeDraft
+      ? normalizeTime(editTimeDraft)
+      : editSchedTime
+    const res = await fetch('/api/campus/vehicles', {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({
         action: 'update_enrollment_schedule',
@@ -492,10 +469,12 @@ export default function VehiclesPage() {
         days: editSchedDays,
         bus_name: editSchedBus || undefined,
         location: editSchedLoc,
-        pickup_time: editSchedTime,
+        pickup_time: finalPickupTime,
       }),
     })
+    const d = await res.json()
     setSaving(false)
+    if (!res.ok || d.error) { alert(d.error ?? '저장 실패'); return }
     setEditSchedModal(null)
     loadMaster()
   }
@@ -900,38 +879,36 @@ export default function VehiclesPage() {
     })
 
   return (
-    <div className="max-w-full">
-      {/* 페이지 헤더 */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
-        <div>
-          <h1 className="text-xl font-bold text-[#1E293B]">차량 관리</h1>
-          <p className="text-xs text-[#64748B] mt-0.5">{buses.length}개 차량</p>
+    <div className={fullscreen
+      ? 'fixed inset-0 z-[55] bg-[#F7F8FA] flex flex-col p-2 sm:p-3'
+      : 'max-w-full'}>
+      {/* 헤더 + 탭 (한 줄 압축) */}
+      <div className="flex items-center gap-1 mb-2 flex-shrink-0 border-b border-[#E2E8F0]">
+        <h1 className="text-sm font-bold text-[#1E293B] whitespace-nowrap pr-2 hidden md:block">차량 관리</h1>
+        <div className="flex gap-0 overflow-x-auto">
+          {([['map','시스템'],['today','모바일'],['master','학생 설정']] as const)
+            .filter(([k]) => !vehiclesRestricted || k === 'today' || k === 'map')
+            .map(([k, label]) => (
+            <button key={k} onClick={() => setTab(k)}
+              className={`relative flex-shrink-0 px-3.5 py-2 text-sm font-medium border-b-2 transition-colors ${
+                tab===k ? 'border-[#004EA2] text-[#004EA2]' : 'border-transparent text-[#64748B] hover:text-[#1E293B]'}`}>
+              {label}
+            </button>
+          ))}
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <select value={month} onChange={e => setMonth(e.target.value)}
-            className="text-sm border border-[#E2E8F0] rounded-lg px-3 py-2 bg-white focus:outline-none">
-            {availableMonths.map(m => <option key={m} value={m}>{m}</option>)}
-          </select>
+        <div className="ml-auto flex items-center gap-2 pr-0.5">
+          {month && <span className="text-[11px] font-semibold text-[#1D4ED8] whitespace-nowrap hidden sm:inline">📅 {month}</span>}
+          <button onClick={() => setFullscreen(f => !f)}
+            title={fullscreen ? '전체화면 종료 (Esc)' : '전체화면으로 보기'}
+            className="flex items-center gap-1 text-xs font-bold text-[#334155] bg-white border border-[#E2E8F0] rounded-lg px-2.5 py-1.5 hover:bg-[#F1F5F9] transition-colors whitespace-nowrap">
+            <span className="text-sm leading-none">{fullscreen ? '🗗' : '⛶'}</span>
+            <span className="hidden sm:inline">{fullscreen ? '닫기' : '전체화면'}</span>
+          </button>
         </div>
       </div>
 
-      {/* 탭 */}
-      <div className="flex gap-0 border-b border-[#E2E8F0] mb-4 overflow-x-auto">
-        {([['master','차량 관리'],['today','오늘 등하원'],['approval','변경 승인'],['history','변경기록'],['map','노선 지도'],['settings','차량 설정']] as const)
-          .filter(([k]) => !vehiclesRestricted || k === 'today' || k === 'history' || k === 'map')
-          .map(([k, label]) => (
-          <button key={k} onClick={() => setTab(k)}
-            className={`relative flex-shrink-0 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-              tab===k ? 'border-[#004EA2] text-[#004EA2]' : 'border-transparent text-[#64748B] hover:text-[#1E293B]'}`}>
-            {label}
-            {k === 'approval' && pendingCount > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-[#EF4444] text-white text-[9px] font-bold flex items-center justify-center">
-                {pendingCount > 9 ? '9+' : pendingCount}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
+      {/* 탭 콘텐츠 (전체화면 시 남은 공간 채움) */}
+      <div className={fullscreen ? 'flex-1 min-h-0 overflow-auto' : ''}>
 
       {/* ═══ 차량 관리 탭 ═══════════════════════════════════════ */}
       {tab === 'master' && (
@@ -1086,198 +1063,11 @@ export default function VehiclesPage() {
         </div>
       )}
 
-      {/* ═══ 변경 승인 탭 ════════════════════════════════════════ */}
-      {tab === 'approval' && (
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <p className="text-xs text-[#64748B]">승인하면 차량관리(정기 스케줄)에 영구 반영됩니다.</p>
-            </div>
-            <button onClick={loadRequests} className="text-xs text-[#004EA2] hover:bg-blue-50 px-3 py-1.5 rounded-lg border border-[#E2E8F0]">새로고침</button>
-          </div>
-
-          {requestsLoading ? <Spinner /> : changeRequests.length === 0 ? (
-            <div className="text-center py-16 text-[#94A3B8]">
-              <p className="text-2xl mb-2">✅</p>
-              <p className="text-sm">처리할 변경 요청이 없습니다.</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {changeRequests.map(req => {
-                const isPending = req.status === 'pending'
-                const isApproved = req.status === 'approved'
-                return (
-                  <div key={req.id} className={`bg-white rounded-2xl border p-4 shadow-sm ${
-                    isPending ? 'border-[#FCD34D]' : isApproved ? 'border-[#86EFAC]' : 'border-[#FECACA]'
-                  }`}>
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1 flex-wrap">
-                          <span className="font-bold text-[#1E293B] text-sm">{req.student_name}</span>
-                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
-                            req.direction === 'arr' ? 'bg-[#EFF6FF] text-[#2563eb]' : 'bg-[#FFF1F2] text-[#dc2626]'
-                          }`}>{req.direction === 'arr' ? '등원' : '하원'}</span>
-                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
-                            isPending ? 'bg-[#FEF9C3] text-[#92400E]' : isApproved ? 'bg-[#DCFCE7] text-[#166534]' : 'bg-[#FEE2E2] text-[#991B1B]'
-                          }`}>{isPending ? '대기' : isApproved ? '승인됨' : '거절됨'}</span>
-                        </div>
-                        <div className="flex items-center gap-1.5 text-xs text-[#475569] mb-1">
-                          <span className="font-semibold">{req.from_bus || '미배정'}</span>
-                          <span className="text-[#94A3B8]">→</span>
-                          <span className="font-bold" style={{ color: getBusColor(req.to_bus, allBusNames.indexOf(req.to_bus)) }}>{req.to_bus}</span>
-                        </div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <div className="flex gap-0.5">
-                            {DAYS.map((d, di) => (
-                              <span key={d} className="w-4 h-4 rounded-full text-[8px] font-bold flex items-center justify-center"
-                                style={req.days.includes(d)
-                                  ? { background: DAY_DOT_COLOR[di], color: '#fff' }
-                                  : { background: '#F1F5F9', color: '#CBD5E1' }}>
-                                {d}
-                              </span>
-                            ))}
-                          </div>
-                          {req.location && <span className="text-[10px] text-[#64748B]">📍 {req.location}</span>}
-                          {req.pickup_time && <span className="text-[10px] text-[#64748B]">⏱ {normalizeTime(req.pickup_time)}</span>}
-                        </div>
-                        {req.note && <p className="text-[11px] text-[#64748B] mt-1 italic">"{req.note}"</p>}
-                        <p className="text-[9px] text-[#CBD5E1] mt-1">{new Date(req.created_at).toLocaleString('ko-KR')}</p>
-                      </div>
-                      {isPending && (
-                        <div className="flex flex-col gap-1.5 flex-shrink-0">
-                          <button onClick={() => approveRequest(req.id)} disabled={saving}
-                            className="px-3 py-1.5 text-xs font-bold text-white bg-[#10B981] rounded-xl hover:bg-[#059669] disabled:opacity-40">
-                            승인
-                          </button>
-                          <button onClick={() => rejectRequest(req.id)} disabled={saving}
-                            className="px-3 py-1.5 text-xs font-bold text-[#EF4444] border border-[#FECACA] rounded-xl hover:bg-[#FEF2F2] disabled:opacity-40">
-                            거절
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ═══ 변경기록 탭 ═════════════════════════════════════════ */}
-      {tab === 'history' && (
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-xs text-[#64748B]">승인 또는 거절 처리된 차량 변경 요청 기록입니다.</p>
-            <button onClick={loadRequests} className="text-xs text-[#004EA2] hover:bg-blue-50 px-3 py-1.5 rounded-lg border border-[#E2E8F0]">새로고침</button>
-          </div>
-          {requestsLoading ? <Spinner /> : (() => {
-            const history = changeRequests.filter(r => r.status !== 'pending')
-            return history.length === 0 ? (
-              <div className="text-center py-16 text-[#94A3B8]">
-                <p className="text-2xl mb-2">📋</p>
-                <p className="text-sm">처리된 변경 기록이 없습니다.</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {history.map(req => {
-                  const isApproved = req.status === 'approved'
-                  return (
-                    <div key={req.id} className={`bg-white rounded-2xl border p-4 shadow-sm ${isApproved ? 'border-[#86EFAC]' : 'border-[#FECACA]'}`}>
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1 flex-wrap">
-                            <span className="font-bold text-[#1E293B] text-sm">{req.student_name}</span>
-                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${req.direction === 'arr' ? 'bg-[#EFF6FF] text-[#2563eb]' : 'bg-[#FFF1F2] text-[#dc2626]'}`}>
-                              {req.direction === 'arr' ? '등원' : '하원'}
-                            </span>
-                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${isApproved ? 'bg-[#DCFCE7] text-[#166534]' : 'bg-[#FEE2E2] text-[#991B1B]'}`}>
-                              {isApproved ? '승인됨' : '거절됨'}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-1.5 text-xs text-[#475569] mb-1">
-                            <span className="font-semibold">{req.from_bus || '미배정'}</span>
-                            <span className="text-[#94A3B8]">→</span>
-                            <span className="font-bold" style={{ color: getBusColor(req.to_bus, allBusNames.indexOf(req.to_bus)) }}>{req.to_bus}</span>
-                          </div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <div className="flex gap-0.5">
-                              {DAYS.map((d, di) => (
-                                <span key={d} className="w-4 h-4 rounded-full text-[8px] font-bold flex items-center justify-center"
-                                  style={req.days.includes(d) ? { background: DAY_DOT_COLOR[di], color: '#fff' } : { background: '#F1F5F9', color: '#CBD5E1' }}>
-                                  {d}
-                                </span>
-                              ))}
-                            </div>
-                            {req.location && <span className="text-[10px] text-[#64748B]">📍 {req.location}</span>}
-                            {req.pickup_time && <span className="text-[10px] text-[#64748B]">⏱ {normalizeTime(req.pickup_time)}</span>}
-                          </div>
-                          {req.note && <p className="text-[11px] text-[#64748B] mt-1 italic">"{req.note}"</p>}
-                          <div className="flex items-center gap-3 mt-1">
-                            <p className="text-[9px] text-[#CBD5E1]">신청: {new Date(req.created_at).toLocaleString('ko-KR')}</p>
-                            {req.approved_at && <p className="text-[9px] text-[#CBD5E1]">처리: {new Date(req.approved_at).toLocaleString('ko-KR')}</p>}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )
-          })()}
-        </div>
-      )}
-
+      {/* ═══ 변경/기록 탭 (좌: 승인 대기 | 우: 변경 기록) ════════ */}
       {/* ═══ 노선 지도 탭 ════════════════════════════════════════ */}
-      {tab === 'map' && <RouteMapView campusName={campusName} />}
+      {tab === 'map' && <RouteMapView campusId={campusId} campusName={campusName} fullscreen={fullscreen} />}
 
-      {/* ═══ 차량 설정 탭 ════════════════════════════════════════ */}
-      {tab === 'settings' && (
-        <div>
-          <div className="flex justify-end mb-4">
-            <button onClick={() => setAddBusModal(true)}
-              className="text-sm bg-[#004EA2] text-white px-4 py-2 rounded-xl hover:bg-[#003d82]">
-              + 차량 추가
-            </button>
-          </div>
-          <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-sm overflow-hidden">
-            <div className="divide-y divide-[#F1F5F9]">
-              {buses.length === 0 ? (
-                <p className="text-center text-[#94A3B8] text-sm py-12">등록된 차량 없음</p>
-              ) : buses.map((bus, bi) => {
-                const color = getBusColor(bus.name, bi)
-                return (
-                  <div key={bus.id} className="px-4 py-3 hover:bg-[#F7F8FA]">
-                    <div className="flex items-center gap-3">
-                      <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: color }}/>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="font-semibold text-[#1E293B] text-sm">{bus.name}</span>
-                          <div className="flex gap-1">
-                            <button onClick={() => openEditBus(bus)}
-                              className="text-xs text-[#004EA2] hover:bg-blue-50 px-2 py-1 rounded-lg">수정</button>
-                            <button onClick={() => handleDeleteBus(bus.id)}
-                              className="text-xs text-[#EF4444] hover:bg-[#FEF2F2] px-2 py-1 rounded-lg">삭제</button>
-                          </div>
-                        </div>
-                        {(bus.driver||bus.safety||bus.kt_name) ? (
-                          <div className="flex flex-wrap gap-3 text-[10px] text-[#64748B]">
-                            {bus.driver && <span>기사: {bus.driver} {bus.driver_phone}</span>}
-                            {bus.safety && <span>안전: {bus.safety} {bus.safety_phone}</span>}
-                            {bus.kt_name && <span>KT: {bus.kt_name} {bus.kt_phone}</span>}
-                          </div>
-                        ) : (
-                          <p className="text-[10px] text-[#CBD5E1]">기사/안전교사 정보 없음</p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        </div>
-      )}
+      </div>{/* /탭 콘텐츠 */}
 
       {/* ── 스케줄 편집 모달 (차량관리 탭) ─────────── */}
       {editSchedModal && (
@@ -1329,7 +1119,7 @@ export default function VehiclesPage() {
                       locTimes.forEach(t => { locFreq[t] = (locFreq[t]??0) + 1 })
                       const locTime = locTimes.length > 0
                         ? normalizeTime(Object.entries(locFreq).sort((a,b) => b[1]-a[1])[0][0])
-                        : ''
+                        : normalizeTime(masterRegStopTimes[`${editSchedBus}|${loc}`] ?? '')
                       return (
                         <button key={loc} onClick={() => {
                           setEditSchedLoc(loc)
@@ -1743,10 +1533,14 @@ export default function VehiclesPage() {
                 const srcGroups = sessLabel
                   ? allGroups.filter(g => getRunLabel(g.session_name, addRiderModal?.sessionDir ?? 'arr') === sessLabel)
                   : allGroups
-                // 해당 버스 기존 탑승자의 시간 목록
-                const existTimes = [...new Set(
-                  srcGroups.flatMap(g => (g.busMap[bus] ?? []).map(s => s.pickup_time)).filter(Boolean) as string[]
-                )].sort()
+                // 해당 버스 기존 탑승자의 시간 목록 + 빈 정류장 마스터의 운행시간
+                const regTimesForBus = Object.entries(masterRegStopTimes)
+                  .filter(([k]) => k.startsWith(`${bus}|`))
+                  .map(([, t]) => t)
+                const existTimes = [...new Set([
+                  ...(srcGroups.flatMap(g => (g.busMap[bus] ?? []).map(s => s.pickup_time)).filter(Boolean) as string[]),
+                  ...regTimesForBus,
+                ])].sort()
                 // 선택된 시간의 장소 목록 (없으면 버스 전체 장소)
                 const locsAtTime = riderTime
                   ? [...new Set([...srcGroups, ...masterGroups].flatMap(g =>
@@ -1754,7 +1548,11 @@ export default function VehiclesPage() {
                     ))]
                   : []
                 const sessionLocs = addRiderModal?.sessionLocs ?? []
-                const allLocs = sessionLocs.length > 0 ? sessionLocs : (masterBusLocMap[bus] ?? [])
+                // 빈 정류장 마스터는 세션 무관 — 항상 후보에 합집합
+                const allLocs = [...new Set([
+                  ...(sessionLocs.length > 0 ? sessionLocs : (masterBusLocMap[bus] ?? [])),
+                  ...(masterRegStopsByBus[bus] ?? []),
+                ])]
                 const existLocs = locsAtTime.length > 0 ? locsAtTime : allLocs
                 return (
                   <>
@@ -1878,85 +1676,6 @@ export default function VehiclesPage() {
         </div>
       )}
 
-      {/* ── 차량 정보 수정 모달 ─────────────────────────── */}
-      {editBusModal && (
-        <div className="fixed inset-0 bg-black/60 flex items-end sm:items-center justify-center z-50 px-0 sm:px-4"
-          onClick={() => setEditBusModal(null)}>
-          <div className="bg-white w-full sm:max-w-sm rounded-t-2xl sm:rounded-2xl shadow-2xl p-5 max-h-[90vh] overflow-y-auto"
-            onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="font-bold text-[#1E293B]">{editBusModal.name} 정보 수정</h3>
-                <p className="text-[11px] text-[#64748B]">기사/안전교사/KT 담당자</p>
-              </div>
-              <button onClick={() => setEditBusModal(null)} className="text-[#94A3B8] text-xl">✕</button>
-            </div>
-            <form onSubmit={handleEditBus} className="space-y-3">
-              <div>
-                <label className="text-[10px] font-bold text-[#64748B] mb-1 block">차량 이름</label>
-                <input value={editBusForm.name} onChange={e => setEditBusForm(f=>({...f, name: e.target.value}))}
-                  placeholder="예: 1호차, 마미버스, 개별하원"
-                  className="w-full border border-[#E2E8F0] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]"/>
-                <p className="text-[9px] text-[#F59E0B] mt-0.5">이름을 바꾸면 모든 탑승 스케줄에 자동 반영됩니다</p>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[10px] font-bold text-[#64748B] mb-1 block">기사 이름</label>
-                  <input value={editBusForm.driver} onChange={e => setEditBusForm(f=>({...f, driver: e.target.value}))}
-                    placeholder="홍길동"
-                    className="w-full border border-[#E2E8F0] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]"/>
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-[#64748B] mb-1 block">기사 연락처</label>
-                  <input value={editBusForm.driver_phone} onChange={e => setEditBusForm(f=>({...f, driver_phone: e.target.value}))}
-                    placeholder="010-0000-0000"
-                    className="w-full border border-[#E2E8F0] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]"/>
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-[#64748B] mb-1 block">POLY안전 선생님</label>
-                  <select value={editBusForm.safety} onChange={e => setEditBusForm(f=>({...f, safety: e.target.value}))}
-                    className="w-full border border-[#E2E8F0] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2] bg-white">
-                    <option value="">선택</option>
-                    {safetyStaff.map(s => (
-                      <option key={s.id} value={s.name}>{s.name}</option>
-                    ))}
-                    {editBusForm.safety && !safetyStaff.some(s => s.name === editBusForm.safety) && (
-                      <option value={editBusForm.safety}>{editBusForm.safety}</option>
-                    )}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-[#64748B] mb-1 block">안전 선생님 연락처</label>
-                  <input value={editBusForm.safety_phone} onChange={e => setEditBusForm(f=>({...f, safety_phone: e.target.value}))}
-                    placeholder="010-0000-0000"
-                    className="w-full border border-[#E2E8F0] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]"/>
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-[#64748B] mb-1 block">KT 이름</label>
-                  <input value={editBusForm.kt_name} onChange={e => setEditBusForm(f=>({...f, kt_name: e.target.value}))}
-                    placeholder="홍길동"
-                    className="w-full border border-[#E2E8F0] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]"/>
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-[#64748B] mb-1 block">KT 연락처</label>
-                  <input value={editBusForm.kt_phone} onChange={e => setEditBusForm(f=>({...f, kt_phone: e.target.value}))}
-                    placeholder="010-0000-0000"
-                    className="w-full border border-[#E2E8F0] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]"/>
-                </div>
-              </div>
-              <div className="flex gap-2 pt-1">
-                <button type="button" onClick={() => setEditBusModal(null)}
-                  className="flex-1 border border-[#E2E8F0] text-[#64748B] py-2.5 rounded-xl text-sm">취소</button>
-                <button type="submit" disabled={saving}
-                  className="flex-1 bg-[#004EA2] text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
-                  {saving ? '저장 중...' : '저장'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
       {/* ── 백업 모달 ────────────────────────────────────── */}
       {backupModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -2035,33 +1754,6 @@ export default function VehiclesPage() {
         </div>
       )}
 
-      {/* ── 차량 추가 모달 ──────────────────────────────── */}
-      {addBusModal && (
-        <div className="fixed inset-0 bg-black/60 flex items-end sm:items-center justify-center z-50 px-0 sm:px-4"
-          onClick={() => setAddBusModal(false)}>
-          <div className="bg-white w-full sm:max-w-sm rounded-t-2xl sm:rounded-2xl shadow-2xl p-5"
-            onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-[#1E293B]">차량 추가</h3>
-              <button onClick={() => setAddBusModal(false)} className="text-[#94A3B8] text-xl">✕</button>
-            </div>
-            <form onSubmit={handleAddBus} className="space-y-3">
-              <input required value={newBusName} onChange={e => setNewBusName(e.target.value)}
-                placeholder="1호차, 마미버스..."
-                className="w-full border border-[#E2E8F0] rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]"/>
-              {formError && <p className="text-red-500 text-xs">{formError}</p>}
-              <div className="flex gap-2">
-                <button type="button" onClick={() => setAddBusModal(false)}
-                  className="flex-1 border border-[#E2E8F0] text-[#64748B] py-2.5 rounded-xl text-sm">취소</button>
-                <button type="submit" disabled={saving}
-                  className="flex-1 bg-[#004EA2] text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
-                  {saving ? '추가 중...' : '추가'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

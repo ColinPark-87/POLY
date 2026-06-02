@@ -1,11 +1,22 @@
 'use client'
 
-import { use } from 'react'
+import { use, useEffect, useState } from 'react'
 import Link from 'next/link'
 import RouteMapView from '@/app/(campus)/campus/vehicles/RouteMapView'
 
 export default function HqCampusVehiclesPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
+  const [campusName, setCampusName] = useState<string | undefined>(undefined)
+
+  useEffect(() => {
+    fetch('/api/hq/campuses')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        const c = (d?.campuses ?? []).find((x: { id: string; name: string }) => x.id === id)
+        if (c) setCampusName(c.name)
+      })
+      .catch(() => {})
+  }, [id])
 
   return (
     <div className="space-y-4">
@@ -16,7 +27,7 @@ export default function HqCampusVehiclesPage({ params }: { params: Promise<{ id:
         <span className="text-[#E2E8F0]">/</span>
         <span className="text-sm font-semibold text-[#1E293B]">차량 운행 현황</span>
       </div>
-      <RouteMapView campusId={id} />
+      <RouteMapView campusId={id} campusName={campusName} />
     </div>
   )
 }

@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServiceClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 
-// auth user ID와 users 테이블 ID를 동기화
+// auth user ID와 users 테이블 ID를 동기화 (본사 관리자 전용 일회성 보정 스크립트)
 // body: { email: "로그인에 사용할 이메일", old_id: "기존 users 테이블 UUID" }
 export async function POST(request: NextRequest) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
+  const svc = createServiceClient()
+  const { data: requester } = await svc.from('users').select('role').eq('id', user.id).single()
+  if (requester?.role !== 'hq_admin') return NextResponse.json({ error: '본사 관리자 전용' }, { status: 403 })
+
   const { email, old_id } = await request.json()
   if (!email || !old_id) return NextResponse.json({ error: 'email, old_id 필요' }, { status: 400 })
 

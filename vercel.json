@@ -1,3 +1,4 @@
 {
-  "alias": ["poly-system.vercel.app"]
+  "alias": ["poly-system.vercel.app"],
+  "regions": ["icn1"]
 }

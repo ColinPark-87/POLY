@@ -7,6 +7,9 @@ export async function GET(request: NextRequest) {
   if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
 
   const service = createServiceClient()
+  const { data: me } = await service.from('users').select('role').eq('id', user.id).single()
+  if (me?.role !== 'hq_admin') return NextResponse.json({ error: '권한 없음' }, { status: 403 })
+
   const { searchParams } = new URL(request.url)
   const campusId = searchParams.get('campus_id')
   const status = searchParams.get('status') ?? 'approved'

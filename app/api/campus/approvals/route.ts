@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { isCampusAdminLike } from '@/lib/auth/routing'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,10 +14,13 @@ export async function GET(request: NextRequest) {
 
   const service = createServiceClient()
   const { data: me } = await service
-    .from('users').select('campus_id').eq('id', user.id).single()
+    .from('users').select('campus_id, role, position').eq('id', user.id).single()
 
   if (!me?.campus_id) {
     return NextResponse.json({ error: '캠퍼스 정보가 없습니다.', requests: [] }, { status: 400 })
+  }
+  if (!isCampusAdminLike(me.role ?? '', me.position ?? '')) {
+    return NextResponse.json({ error: '관리자 권한이 필요합니다.', requests: [] }, { status: 403 })
   }
 
   const { data, error } = await service

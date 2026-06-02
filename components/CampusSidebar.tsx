@@ -11,7 +11,7 @@ function getAvatarColor(name: string) {
   return AVATAR_COLORS[code % AVATAR_COLORS.length]
 }
 
-interface NavDef { href: string; label: string; required?: boolean; employeeOnly?: boolean; needsClassRoster?: boolean; needsVehicles?: boolean }
+interface NavDef { href: string; label: string; required?: boolean; employeeOnly?: boolean; staffLeave?: boolean; needsClassRoster?: boolean; needsVehicles?: boolean; needsAnalytics?: boolean }
 
 const DASHBOARD_NAV: NavDef[] = [
   { href: '/campus/dashboard', label: '캠퍼스 대시보드', required: true },
@@ -21,6 +21,12 @@ const DASHBOARD_NAV: NavDef[] = [
 const LEAVE_NAV: NavDef[] = [
   { href: '/campus/overview', label: '통합 연차관리' },
   { href: '/campus/my-history', label: '나의 연차 내역', employeeOnly: true },
+]
+// 캠퍼스 제한 직원(상담/KT/관리자/POLY안전) 전용 — 직원 자가서비스(개인 연차) 영역 링크
+const STAFF_LEAVE_NAV: NavDef[] = [
+  { href: '/dashboard', label: '내 대시보드', staffLeave: true },
+  { href: '/apply', label: '연차 신청', staffLeave: true },
+  { href: '/history', label: '나의 연차 내역', staffLeave: true },
 ]
 const TOOLS_NAV: NavDef[] = [
   { href: '/campus/class-roster', label: '개설반 현황', needsClassRoster: true },
@@ -36,6 +42,7 @@ const MANAGE_NAV: NavDef[] = [
 
 const ALL_SECTIONS = [
   { id: 'dashboard', label: '대시보드',   items: DASHBOARD_NAV, noCollapse: true },
+  { id: 'myleave',   label: '내 연차',    items: STAFF_LEAVE_NAV, noCollapse: true },
   { id: 'leave',     label: '연차관리',   items: LEAVE_NAV,     noCollapse: true },
   { id: 'tools',     label: '캠퍼스 도구', items: TOOLS_NAV,    noCollapse: true },
   { id: 'upload',    label: '업로드',     items: UPLOAD_NAV,    noCollapse: true },
@@ -44,11 +51,19 @@ const ALL_SECTIONS = [
 
 const PREFS_KEY = 'campus-sidebar-hidden'
 
-export default function CampusSidebar({ userName, campusName, role, position, permClassRoster, permVehicles }: {
+// 캠퍼스 제한 직원(상담/KT/관리자/POLY안전)이 실제로 접근 가능한 경로 — proxy.ts 의 화이트리스트와 동기화
+const STAFF_ONLY_ALLOWED = new Set<string>([
+  '/campus/class-roster',
+  '/campus/vehicles',
+])
+
+export default function CampusSidebar({ userName, campusName, role, position, permClassRoster, permVehicles, permAnalytics, staffOnly = false }: {
   userName: string; campusName: string; role: string; position?: string
-  permClassRoster: boolean; permVehicles: boolean
+  permClassRoster: boolean; permVehicles: boolean; permAnalytics: boolean
+  staffOnly?: boolean
 }) {
-  const isAdmin = role === 'campus_admin' || role === 'hq_admin'
+  const isViceAdmin = (position ?? '').includes('부원장')
+  const isAdmin = role === 'campus_admin' || role === 'hq_admin' || isViceAdmin
   const roleLabel = role === 'hq_admin' ? '본사 관리자' : (role === 'campus_admin' ? '원장' : (position ?? '직원'))
   const pathname = usePathname()
   const router = useRouter()
@@ -118,8 +133,10 @@ export default function CampusSidebar({ userName, campusName, role, position, pe
     const visibleItems = items.filter(item =>
       !hiddenHrefs.includes(item.href) &&
       !(isAdmin && item.employeeOnly) &&
+      (item.staffLeave ? staffOnly : !(staffOnly && !STAFF_ONLY_ALLOWED.has(item.href))) &&
       !(item.needsClassRoster && !permClassRoster) &&
-      !(item.needsVehicles && !permVehicles)
+      !(item.needsVehicles && !permVehicles) &&
+      !(item.needsAnalytics && !permAnalytics)
     )
     if (visibleItems.length === 0) return null
     const hasActive = visibleItems.some(item => pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href)))
@@ -223,8 +240,10 @@ export default function CampusSidebar({ userName, campusName, role, position, pe
                 <div className="space-y-0.5">
                   {sec.items.filter(item =>
                     !(isAdmin && item.employeeOnly) &&
+                    (item.staffLeave ? staffOnly : !(staffOnly && !STAFF_ONLY_ALLOWED.has(item.href))) &&
                     !(item.needsClassRoster && !permClassRoster) &&
-                    !(item.needsVehicles && !permVehicles)
+                    !(item.needsVehicles && !permVehicles) &&
+                    !(item.needsAnalytics && !permAnalytics)
                   ).map(item => {
                     const isHidden = draftHidden.includes(item.href)
                     const isRequired = item.required

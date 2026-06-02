@@ -42,9 +42,17 @@ function parseTimeMin(t: string | null | undefined): number {
   return h * 60 + parseInt(m[2])
 }
 
+export interface RegisteredStop {
+  stop_name: string
+  bus_name: string
+  direction: 'arr' | 'dep'
+  default_time: string | null
+}
+
 export function buildStopSearchResults(
   bothDirGroups: Array<{ group: TimeGroup; dir: 'arr' | 'dep' }>,
-  query: string
+  query: string,
+  registeredStops?: RegisteredStop[]
 ): StopSearchRow[] {
   const q = query.trim().toLowerCase()
   if (!q) return []
@@ -69,6 +77,16 @@ export function buildStopSearchResults(
           row.time = s.pickup_time
         }
       }
+    }
+  }
+
+  // 빈 정류장 마스터(학생 0명)도 검색 결과에 노출 — 세션 정보가 없어 sessionLabel은 빈 문자열
+  for (const rs of registeredStops ?? []) {
+    const loc = rs.stop_name.trim()
+    if (!loc.toLowerCase().includes(q)) continue
+    const key = `${loc}||${rs.bus_name}||${rs.direction}||`
+    if (!map.has(key)) {
+      map.set(key, { stopName: loc, busName: rs.bus_name, dir: rs.direction, sessionLabel: '', time: rs.default_time, count: 0 })
     }
   }
 
