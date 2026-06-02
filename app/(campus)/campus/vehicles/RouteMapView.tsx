@@ -234,11 +234,18 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
   const [sidebarPage, setSidebarPage] = useState<1 | 2 | 3 | 4 | 5>(1)
   // 리모컨 플로팅 위치 (지도 컨테이너 기준 px). null = 기본(우상단). 드래그로 이동, localStorage 기억
   const [remotePos, setRemotePos] = useState<{ x: number; y: number } | null>(null)
+  const [remoteMinimized, setRemoteMinimized] = useState(false)
   const vehRootRef = useRef<HTMLDivElement>(null)
   const remoteWrapRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     try { const s = localStorage.getItem('veh-remote-pos'); if (s) setRemotePos(JSON.parse(s)) } catch {}
   }, [])
+  useEffect(() => {
+    try { const s = localStorage.getItem(`veh-remote-min-${campusId ?? 'default'}`); setRemoteMinimized(s === '1') } catch {}
+  }, [campusId])
+  useEffect(() => {
+    try { localStorage.setItem(`veh-remote-min-${campusId ?? 'default'}`, remoteMinimized ? '1' : '0') } catch {}
+  }, [remoteMinimized, campusId])
   function startRemoteDrag(e: React.PointerEvent) {
     const cont = vehRootRef.current, wrap = remoteWrapRef.current
     if (!cont || !wrap) return
@@ -764,7 +771,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
       if (center) mapRef.current?.setCenter?.(center) // 리레이아웃 후 중심 유지
     }, 260)
     return () => clearTimeout(t)
-  }, [fullscreen, mapReady])
+  }, [fullscreen, mapReady, remoteMinimized])
 
   // 지도 클릭
   useEffect(() => {
@@ -3305,13 +3312,40 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
       {/* 플로팅 리모컨 — 지도 위에 떠서 드래그 이동 */}
       <div ref={remoteWrapRef} className="absolute flex z-[1100]"
         style={{ ...(remotePos ? { left: remotePos.x, top: remotePos.y } : { right: 8, top: 8 }), maxHeight: 'calc(100% - 16px)' }}>
+      {/* ── 최소화 캡슐 (선택 요약 + 펼치기) */}
+      {remoteMinimized && (
+        <div className="flex items-center gap-2 rounded-full border border-[#DADCE0] bg-white pl-3 pr-1.5 py-1.5 shrink-0"
+          style={{ boxShadow: '0 1px 3px rgba(60,64,67,.3), 0 4px 8px rgba(60,64,67,.15)' }}>
+          <div onPointerDown={startRemoteDrag} className="flex items-center gap-1.5 cursor-grab active:cursor-grabbing select-none" style={{ touchAction: 'none' }}>
+            <span className="text-[#475569] text-[11px] leading-none tracking-widest">⠿</span>
+            <span className="text-[12px] font-black text-[#202124] whitespace-nowrap">
+              {sidebarPage === 1
+                ? (selectedSession
+                    ? `🗺️ ${selectedSession} · ${dir === 'arr' ? '등원' : '하원'}${selectedBuses.length ? ` · ${allSelected ? `전체 ${sessionBuses.length}호차` : selectedBuses.join(',')}` : ''}`
+                    : '🗺️ 세션 선택')
+                : sidebarPage === 2 ? '📅 오늘'
+                : sidebarPage === 3 ? '🔁 변경'
+                : sidebarPage === 4 ? '📍 탑승장소설정'
+                : '🚌 호차설정'}
+            </span>
+          </div>
+          <button onClick={() => setRemoteMinimized(false)} title="펼치기"
+            className="shrink-0 w-7 h-7 flex items-center justify-center rounded-full text-[#1A73E8] hover:bg-[#E8F0FE] text-[13px] leading-none">▢</button>
+        </div>
+      )}
       {/* ── 우측 리모컨 (구글 라이트 셸 — 모드 탭 + 본문 한 덩어리) */}
+      {!remoteMinimized && (
       <div className="flex flex-col gap-2 shrink-0 overflow-hidden rounded-2xl border border-[#DADCE0]" style={{ width: 320, height: (sidebarPage === 1 || sidebarPage === 3) ? undefined : 'min(560px, calc(100vh - 190px))', background: '#FFFFFF', padding: 6, boxShadow: '0 1px 3px rgba(60,64,67,.3), 0 4px 8px rgba(60,64,67,.15)' }}>
 
-        {/* 드래그 그립 — 리모컨 이동 손잡이 */}
-        <div onPointerDown={startRemoteDrag} className="flex items-center justify-center gap-1.5 py-0.5 cursor-grab active:cursor-grabbing select-none shrink-0" style={{ touchAction: 'none' }}>
-          <span className="text-[#475569] text-[12px] leading-none tracking-widest">⠿⠿</span>
-          <span className="text-[#64748B] text-[9px] font-bold">드래그로 이동</span>
+        {/* 드래그 그립 — 리모컨 이동 손잡이 + 최소화 */}
+        <div className="flex items-center shrink-0">
+          <div onPointerDown={startRemoteDrag} className="flex-1 flex items-center justify-center gap-1.5 py-0.5 cursor-grab active:cursor-grabbing select-none" style={{ touchAction: 'none' }}>
+            <span className="text-[#475569] text-[12px] leading-none tracking-widest">⠿⠿</span>
+            <span className="text-[#64748B] text-[9px] font-bold">드래그로 이동</span>
+          </div>
+          <button onPointerDown={e => e.stopPropagation()} onClick={() => setRemoteMinimized(true)}
+            title="최소화"
+            className="shrink-0 w-6 h-6 flex items-center justify-center rounded-lg text-[#5F6368] hover:bg-black/5 text-[15px] leading-none">−</button>
         </div>
 
         {/* 페이지 네비게이션 — 리모컨 모드 버튼 (다크) */}
@@ -3922,6 +3956,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
           )
         })()}
       </div>
+      )}
       </div>
     </div>
 
