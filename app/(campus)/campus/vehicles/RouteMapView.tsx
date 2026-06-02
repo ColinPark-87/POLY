@@ -1031,8 +1031,9 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
           const c = coords[stop.name]; if (!c) continue
           const isSchool = stop.name === (effectiveSchoolName ?? SCHOOL_STOP.name)
           if (isSchool) continue // 캠퍼스는 항상-표시 엠블럼 마커가 담당
-          num++
-          const ttId = `tt-${targetDir}-${num}`
+          const isSpot = stop.count === 0 // 이 방향 탑승 0명 = 스팟(경유·추가가능)
+          if (!isSpot) num++
+          const ttId = `tt-${targetDir}-${markersRef.current.length}`
           const timeStr = stop.time ? normalizeTime(stop.time) : ''
           const isArr = targetDir === 'arr'
           const dirLabel = isArr ? '등원' : '하원'
@@ -1040,8 +1041,8 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
           const radius = isArr ? '50%' : '7px'
           // 하원 정류장이 등원과 같은 위치면 살짝 어긋나게 표시(겹침 방지)
           const offset = (!isArr && arrStopNames.has(stop.name)) ? 'transform:translate(16px,-16px);' : ''
-          const overlayHtml = isSchool
-            ? `<div style="display:flex;flex-direction:column;align-items:center;cursor:default"><div style="background:#004EA2;color:#fff;border-radius:20px;padding:4px 10px;font-size:10px;font-weight:900;white-space:nowrap">${(effectiveSchoolName ?? '학원').slice(0, 7)}</div><div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid #004EA2;margin-top:-1px"></div></div>`
+          const overlayHtml = isSpot
+            ? `<div style="${offset}position:relative;display:flex;flex-direction:column;align-items:center"><div style="background:#fff;border:2.5px dashed ${dirColor};border-radius:${radius};width:22px;height:22px;display:flex;align-items:center;justify-content:center;color:${dirColor};font-size:13px;font-weight:900;line-height:1;box-shadow:0 2px 6px rgba(0,0,0,.2);cursor:pointer" onmouseover="document.getElementById('${ttId}').style.display='block'" onmouseout="document.getElementById('${ttId}').style.display='none'">+</div><div id="${ttId}" style="display:none;position:absolute;bottom:30px;left:50%;transform:translateX(-50%);background:#1E293B;color:#fff;border-radius:8px;padding:6px 8px;min-width:130px;z-index:999;font-size:10px"><p style="font-weight:700;margin:0 0 3px 0;color:${dirColor}">${dirLabel} · ${stop.name}</p><p style="margin:0;opacity:.8">차량 경유 · 탑승 추가 가능</p></div></div>`
             : `<div style="${offset}position:relative;display:flex;flex-direction:column;align-items:center"><div style="background:${dirColor};border:2.5px solid #fff;border-radius:${radius};width:26px;height:26px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:900;font-variant-numeric:tabular-nums;box-shadow:0 3px 9px rgba(0,0,0,.3);cursor:pointer" onmouseover="document.getElementById('${ttId}').style.display='block'" onmouseout="document.getElementById('${ttId}').style.display='none'">${num}</div><div id="${ttId}" style="display:none;position:absolute;bottom:32px;left:50%;transform:translateX(-50%);background:#1E293B;color:#fff;border-radius:8px;padding:6px 8px;min-width:120px;z-index:999;font-size:10px"><p style="font-weight:700;margin:0 0 3px 0;color:${dirColor}">${dirLabel} · ${stop.name}</p><p style="margin:0;opacity:.8">${timeStr ? `🚌 ${timeStr}` : '시간 미설정'} · ${stop.count}명</p></div></div>`
           markersRef.current.push(new kakao.maps.CustomOverlay({
             map, position: new kakao.maps.LatLng(c.lat, c.lng), content: overlayHtml,
@@ -1086,25 +1087,30 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
       }
 
       // 카드(타임라인 리스트)와 동일한 정류장 순서·번호 사용 → 카드 #N == 지도 마커 #N
-      const stopNumByName = new Map(getOrderedStopNodesForBus(busName).map((n, i) => [n.name, i + 1]))
+      // 탑승 정류장(학생 1명+)만 순번 부여. 학생 0명 '스팟'(빈/등록 정류장)은 번호 없이 빈 마커 — 차량은 경유하므로 탑승 추가 가능 지점.
+      const stopNumByName = new Map<string, number>()
+      { let bn = 0; for (const node of getOrderedStopNodesForBus(busName)) { if (node.students.length > 0) { bn++; stopNumByName.set(node.name, bn) } } }
       let fallbackNum = 0
       for (const stop of stops) {
         const c = coords[stop.name]; if (!c) continue
         const isSchool = stop.name === (effectiveSchoolName ?? SCHOOL_STOP.name)
         if (isSchool) continue // 캠퍼스는 항상-표시 엠블럼 마커가 담당
-        const num = stopNumByName.get(stop.name) ?? ++fallbackNum
+        const isSpot = stop.count === 0 // 이 방향 탑승 0명 = 스팟(경유·추가가능)
+        const num = isSpot ? 0 : (stopNumByName.get(stop.name) ?? ++fallbackNum)
         const timeStr = stop.time ? normalizeTime(stop.time) : ''
         const studentStr = stop.studentNames.slice(0, 4).join(', ') + (stop.studentNames.length > 4 ? ` 외 ${stop.studentNames.length - 4}명` : '')
-        const ttId = `tt-${busIdx}-${num}`
+        const ttId = `tt-${busIdx}-${markersRef.current.length}`
         // 등원=원형, 하원=둥근 사각형 (방향을 모양으로 구분)
         const stopRadius = dir === 'arr' ? '50%' : '9px'
 
-        const overlayHtml = isSchool
-          ? `<div style="display:flex;flex-direction:column;align-items:center;cursor:default">
-              <div style="background:#004EA2;color:#fff;border-radius:20px;padding:5px 12px;font-size:11px;font-weight:900;white-space:nowrap;box-shadow:0 3px 12px rgba(0,78,162,.45)">
-                ${(effectiveSchoolName ?? '학원').slice(0, 7)}
+        const overlayHtml = isSpot
+          ? `<div style="position:relative;display:flex;flex-direction:column;align-items:center">
+              <div style="background:#fff;border:2.5px dashed ${color};border-radius:${stopRadius};width:24px;height:24px;display:flex;align-items:center;justify-content:center;color:${color};font-size:15px;font-weight:900;line-height:1;box-shadow:0 2px 7px rgba(0,0,0,.2);cursor:pointer"
+                onmouseover="document.getElementById('${ttId}').style.display='block'" onmouseout="document.getElementById('${ttId}').style.display='none'">+</div>
+              <div id="${ttId}" style="display:none;position:absolute;bottom:32px;left:50%;transform:translateX(-50%);background:#1E293B;color:#fff;border-radius:9px;padding:7px 9px;min-width:150px;z-index:999;box-shadow:0 4px 16px rgba(0,0,0,.3);pointer-events:none">
+                <p style="font-size:11px;font-weight:700;margin:0 0 3px 0;color:${color}">${stop.name}</p>
+                <p style="font-size:10px;margin:0;opacity:.85">${timeStr ? `🚌 ${timeStr} · ` : ''}차량 경유 · 탑승 추가 가능</p>
               </div>
-              <div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid #004EA2;margin-top:-1px"></div>
             </div>`
           : `<div style="position:relative;display:flex;flex-direction:column;align-items:center">
               <div style="background:${color};border:3px solid #fff;border-radius:${stopRadius};width:28px;height:28px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:900;font-variant-numeric:tabular-nums;box-shadow:0 3px 10px rgba(0,0,0,.32),0 0 0 1px rgba(0,0,0,.04);cursor:pointer;transition:transform .15s"
@@ -2492,6 +2498,9 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
                 const sessColor = getSessionColor(busSession)
                 // 카드·지도 마커가 같은 순서/번호를 쓰도록 단일 소스 함수 사용
                 const stopNodes = getOrderedStopNodesForBus(bus.name)
+                // 탑승 정류장(학생 1명+)만 순번. 학생 0명은 '스팟'(번호 없음) — 차량 경유·탑승 추가 가능
+                const boardingNumByName = new Map<string, number>()
+                { let bn = 0; for (const n of stopNodes) { if (n.students.length > 0) { bn++; boardingNumByName.set(n.name, bn) } } }
                 return (
                   <div key={bus.name} className="bg-white rounded-2xl shadow-sm ring-1 ring-[#E2E8F0] overflow-hidden">
                     {/* 호차 헤더 */}
@@ -2540,17 +2549,20 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
                         <div className="absolute w-0.5 rounded-full"
                           style={{ left: 14.5, top: 22, bottom: 22, background: `linear-gradient(180deg, ${bColor} 0%, ${bColor}40 100%)` }} />
                       )}
-                      {stopNodes.map((stop, si) => {
+                      {stopNodes.map((stop) => {
                         const hasCoord = !!coords[stop.name]
+                        const isSpot = stop.students.length === 0 // 학생 0명 = 스팟(경유·추가가능)
                         return (
                           <div key={stop.name} className="relative pl-8 pb-3 last:pb-0">
-                            <div className="absolute left-0 top-0.5 w-[24px] h-[24px] rounded-full flex items-center justify-center font-black text-[11px] text-white"
+                            <div className="absolute left-0 top-0.5 w-[24px] h-[24px] rounded-full flex items-center justify-center font-black text-[11px]"
                               style={{
-                                background: hasCoord ? bColor : '#94A3B8',
+                                background: isSpot ? '#fff' : (hasCoord ? bColor : '#94A3B8'),
+                                color: isSpot ? bColor : '#fff',
+                                border: isSpot ? `2px dashed ${bColor}` : undefined,
                                 boxShadow: `0 0 0 3px #fff, 0 0 0 4px ${(hasCoord ? bColor : '#94A3B8')}30, 0 2px 4px rgba(15,23,42,0.15)`,
                                 fontVariantNumeric: 'tabular-nums',
                               }}>
-                              {si + 1}
+                              {isSpot ? '+' : boardingNumByName.get(stop.name)}
                             </div>
                             {/* 정류장 헤더 — 클릭 시 작은 팝업으로 명단·좌표설정 (카드는 접힌 채 유지) */}
                             <button onClick={() => setStopPopup(p => p?.bus === bus.name && p?.stop === stop.name ? null : { bus: bus.name, stop: stop.name })} className="w-full text-left">
