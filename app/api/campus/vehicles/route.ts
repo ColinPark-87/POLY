@@ -618,7 +618,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === 'update_enrollment_schedule') {
-    const { student_id, class_id, direction: dir, days, bus_name, old_bus_name, location, pickup_time } = body
+    const { student_id, class_id, direction: dir, days, bus_name, old_bus_name, location, pickup_time, day_locations } = body
     const campusErr = await assertClassInCampus(class_id)
     if (campusErr) return campusErr
     const { data: enr } = await service.from('class_enrollments')
@@ -666,8 +666,10 @@ export async function POST(request: NextRequest) {
     for (const d of dayList) {
       if (bus_name) sched[d] = bus_name
       else delete sched[d]  // 미배정: 선택 요일의 버스 배정 제거
-      if (location !== undefined && location !== null) sched[d + '_loc'] = location
-      if (location === '') delete sched[d + '_loc']
+      // 요일별 장소(day_locations)가 있으면 그 요일은 개별 장소, 없으면 단일 location 적용
+      const dloc = (day_locations && Object.prototype.hasOwnProperty.call(day_locations, d)) ? day_locations[d] : location
+      if (dloc === '' || dloc === null || dloc === undefined) delete sched[d + '_loc']
+      else sched[d + '_loc'] = dloc
     }
     if (pickup_time !== undefined) {
       if (pickup_time) sched['_time'] = pickup_time

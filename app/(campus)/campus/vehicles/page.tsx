@@ -236,6 +236,8 @@ export default function VehiclesPage() {
   const [editSchedLoc, setEditSchedLoc] = useState('')
   const [editSchedTime, setEditSchedTime] = useState('')
   const [editSchedDays, setEditSchedDays] = useState<string[]>([])
+  const [editSchedPerDayLoc, setEditSchedPerDayLoc] = useState(false)
+  const [editSchedDayLocs, setEditSchedDayLocs] = useState<Record<string, string>>({})
   const [editLocIsNew, setEditLocIsNew] = useState(false)
   const [editTimeEditing, setEditTimeEditing] = useState(false)
   const [editTimeDraft, setEditTimeDraft] = useState('')
@@ -441,6 +443,8 @@ export default function VehiclesPage() {
     setEditSchedLoc(student.location ?? '')
     setEditSchedTime(student.pickup_time ?? '')
     setEditSchedDays([...student.days])
+    setEditSchedPerDayLoc(false)
+    setEditSchedDayLocs({})
     setEditLocIsNew(false)
     setEditTimeEditing(false)
     setEditTimeDraft('')
@@ -470,6 +474,7 @@ export default function VehiclesPage() {
         bus_name: editSchedBus || undefined,
         old_bus_name: editSchedModal.currentBus || undefined,  // 원래 호차 — 호차 이동+요일제거 시 옛 호차의 빠진 요일 정리
         location: editSchedLoc,
+        ...(editSchedPerDayLoc ? { day_locations: Object.fromEntries(editSchedDays.map(d => [d, editSchedDayLocs[d] ?? editSchedLoc])) } : {}),
         pickup_time: finalPickupTime,
       }),
     })
@@ -1226,6 +1231,33 @@ export default function VehiclesPage() {
                   )
                 })}
               </div>
+            </div>
+
+            {/* 요일별 장소 다름 (같은 호차, 요일마다 다른 지점) */}
+            <div className="mb-4">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-[#64748B]">요일별 장소 다름</span>
+                <button onClick={() => setEditSchedPerDayLoc(v => !v)}
+                  className={`w-9 h-5 rounded-full transition-colors relative shrink-0 ${editSchedPerDayLoc ? 'bg-[#004EA2]' : 'bg-[#CBD5E1]'}`}>
+                  <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${editSchedPerDayLoc ? 'left-4' : 'left-0.5'}`} />
+                </button>
+              </div>
+              {editSchedPerDayLoc && (
+                <div className="mt-2 space-y-1.5">
+                  {editSchedDays.length === 0 ? (
+                    <p className="text-[10px] text-[#94A3B8]">먼저 적용 요일을 선택하세요</p>
+                  ) : DAYS.filter(d => editSchedDays.includes(d)).map(d => (
+                    <div key={d} className="flex items-center gap-2">
+                      <span className="text-[11px] font-bold w-5 text-center text-[#475569] shrink-0">{d}</span>
+                      <input value={editSchedDayLocs[d] ?? editSchedLoc}
+                        onChange={e => setEditSchedDayLocs(prev => ({ ...prev, [d]: e.target.value }))}
+                        placeholder="이 요일 탑승 장소"
+                        className="flex-1 border border-[#E2E8F0] rounded-lg px-2 py-1.5 text-[12px] focus:outline-none focus:ring-1 focus:ring-[#004EA2]" />
+                    </div>
+                  ))}
+                  <p className="text-[9px] text-[#94A3B8]">비우면 위 기본 장소가 적용됩니다.</p>
+                </div>
+              )}
             </div>
 
             <div className="flex gap-2">
