@@ -2687,14 +2687,14 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
       onError={() => console.error('[KakaoMap] SDK 로드 실패 — 카카오 콘솔 도메인/키 확인 필요')}
     />
     <div
-      className="flex bg-[#EEF2F7] rounded-2xl p-2"
+      className="relative bg-[#EEF2F7] rounded-2xl p-2"
       style={fullscreen
-        ? { height: '100%', minHeight: 0, gap: 4 }
-        : { height: 'calc(100vh - 150px)', minHeight: 480, gap: 4 }}>
+        ? { height: '100%', minHeight: 0 }
+        : { height: 'calc(100vh - 150px)', minHeight: 480 }}>
 
 
-      {/* ── 지도 (flex-1로 최대 크기) */}
-      <div className="flex-1 relative rounded-2xl overflow-hidden border border-[#E2E8F0] shadow-sm">
+      {/* ── 지도 (화면 전체 채움, 리모컨은 위에 떠 있음) */}
+      <div className="w-full h-full relative rounded-2xl overflow-hidden border border-[#E2E8F0] shadow-sm">
 
 
         {loading && (
@@ -3267,6 +3267,8 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
 
       </div>
 
+      {/* 플로팅 리모컨 클러스터 (폴드 핸들 + 패널) — 지도 위에 떠 있음 */}
+      <div className="absolute top-2 right-2 bottom-2 flex z-[1100]" style={{ gap: 4 }}>
       {/* ── 우측 fold 핸들 (책 척추 스타일) */}
       <div
         onClick={() => setSidebarExpanded(e => !e)}
@@ -3993,6 +3995,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
             </div>
           )
         })()}
+      </div>
       </div>
     </div>
 
