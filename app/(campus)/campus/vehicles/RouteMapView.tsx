@@ -3526,11 +3526,19 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
                             setBusFormSaving(true)
                             const res = await fetch('/api/campus/vehicles', { method: 'POST', headers: {'Content-Type':'application/json'},
                               body: JSON.stringify({ action: 'add_bus', name: addBusName.trim() }) })
-                            if (res.ok) { const d = await res.json(); setBuses(prev => [...prev, d.bus ?? { id: d.id, name: addBusName.trim(), sort_order: 99 }]); setAddBusName('') }
+                            if (res.ok) {
+                              const d = await res.json()
+                              const newBus = d.bus ?? { id: d.id, name: addBusName.trim(), sort_order: 99 }
+                              setBuses(prev => [...prev, newBus])
+                              setAddBusName('')
+                              // 추가 직후 그 차량 편집 폼 자동 열기 → 정원·기사·안전 등 바로 입력
+                              setEditingBus(newBus)
+                              setEditBusForm({ name: newBus.name, capacity: String(newBus.capacity ?? 17), driver: newBus.driver ?? '', driver_phone: newBus.driver_phone ?? '', safety: newBus.safety ?? '', safety_phone: newBus.safety_phone ?? '', kt_name: newBus.kt_name ?? '', kt_phone: newBus.kt_phone ?? '' })
+                            }
                             setBusFormSaving(false)
                           }}
                           className="w-full bg-[#F1F5F9] text-[#004EA2] py-1.5 rounded-lg text-[11px] font-bold disabled:opacity-40 hover:bg-[#EAF2FB]">
-                          + 차량 추가
+                          + 차량 추가 (추가 후 상세 입력)
                         </button>
                       </div>
                     </div>
