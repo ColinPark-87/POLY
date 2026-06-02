@@ -533,6 +533,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ override: data })
   }
 
+  if (action === 'clear_override') {
+    const { student_id, date, direction } = body
+    const { error } = await service.from('pickup_overrides')
+      .delete()
+      .eq('student_id', student_id).eq('campus_id', campusId)
+      .eq('date', date).eq('direction', direction)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ ok: true })
+  }
+
   if (action === 'search_students') {
     const { query } = body
     const q = (query ?? '').trim()
