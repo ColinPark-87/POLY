@@ -414,7 +414,7 @@ export default function VehiclesPage() {
 
   async function doOverride(studentId: string, busName: string|null, isAbsent: boolean, location?: string, pickupTime?: string) {
     setSaving(true)
-    await fetch('/api/campus/vehicles', {
+    const res = await fetch('/api/campus/vehicles', {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({
         action: 'set_override', student_id: studentId, date: selectedDate, direction: todayDir,
@@ -422,6 +422,8 @@ export default function VehiclesPage() {
         location: location || null, pickup_time: pickupTime || null,
       }),
     })
+    const d = await res.json().catch(() => ({}))
+    if (!res.ok || d.error) { setSaving(false); alert(`저장 실패: ${d.error ?? res.status}`); return }
     setSaving(false); closeOverrideModal(); loadToday()
   }
 
@@ -638,14 +640,17 @@ export default function VehiclesPage() {
     setSaving(true); setFormError('')
     if (addRiderMode === 'today') {
       // 오늘 하루만 override (임시 배정)
-      await fetch('/api/campus/vehicles', {
+      const res = await fetch('/api/campus/vehicles', {
         method: 'POST', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({
           action: 'set_override', student_id: riderSelected.id,
           date: selectedDate, direction: todayDir, bus_name: addRiderModal.bus, is_absent: false,
         }),
       })
-      setSaving(false); setAddRiderModal(null); resetRiderForm(); loadToday()
+      const d = await res.json().catch(() => ({}))
+      setSaving(false)
+      if (!res.ok || d.error) { setFormError(d.error ?? '추가 실패'); return }
+      setAddRiderModal(null); resetRiderForm(); loadToday()
     } else {
       // 영구: 스케줄 영구 변경
       const dir = addRiderModal.sessionDir ?? (tab === 'today' ? todayDir : masterDir)
