@@ -231,6 +231,30 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
   // 사이드바 페이지 (1=노선지도, 2=오늘등하원, 3=변경승인)
   const [sidebarPage, setSidebarPage] = useState<1 | 2 | 3 | 4 | 5>(1)
   const [sidebarExpanded, setSidebarExpanded] = useState(false)
+  // 리모컨 플로팅 위치 (지도 컨테이너 기준 px). null = 기본(우상단). 드래그로 이동, localStorage 기억
+  const [remotePos, setRemotePos] = useState<{ x: number; y: number } | null>(null)
+  const vehRootRef = useRef<HTMLDivElement>(null)
+  const remoteWrapRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    try { const s = localStorage.getItem('veh-remote-pos'); if (s) setRemotePos(JSON.parse(s)) } catch {}
+  }, [])
+  function startRemoteDrag(e: React.PointerEvent) {
+    const cont = vehRootRef.current, wrap = remoteWrapRef.current
+    if (!cont || !wrap) return
+    const cr = cont.getBoundingClientRect(), wr = wrap.getBoundingClientRect()
+    const offX = e.clientX - wr.left, offY = e.clientY - wr.top
+    const w = wrap.offsetWidth, h = wrap.offsetHeight
+    const move = (ev: PointerEvent) => {
+      let x = ev.clientX - cr.left - offX, y = ev.clientY - cr.top - offY
+      x = Math.max(0, Math.min(x, cr.width - w)); y = Math.max(0, Math.min(y, cr.height - h))
+      setRemotePos({ x, y })
+    }
+    const end = () => {
+      window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', end)
+      setRemotePos(p => { try { if (p) localStorage.setItem('veh-remote-pos', JSON.stringify(p)) } catch {} return p })
+    }
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', end)
+  }
   // Hero 정원 배지 클릭 시 호차별 현황 팝업
   const [capPopup, setCapPopup] = useState<{ name: string; count: number; cap: number }[] | null>(null)
   // 좌측 호차 카드 클릭 시 확장 팝업 (호차명)
@@ -2687,6 +2711,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
       onError={() => console.error('[KakaoMap] SDK 로드 실패 — 카카오 콘솔 도메인/키 확인 필요')}
     />
     <div
+      ref={vehRootRef}
       className="relative bg-[#EEF2F7] rounded-2xl p-2"
       style={fullscreen
         ? { height: '100%', minHeight: 0 }
@@ -3267,8 +3292,9 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
 
       </div>
 
-      {/* 플로팅 리모컨 클러스터 (폴드 핸들 + 패널) — 지도 위에 떠 있음 */}
-      <div className="absolute top-2 right-2 bottom-2 flex z-[1100]" style={{ gap: 4 }}>
+      {/* 플로팅 리모컨 클러스터 (폴드 핸들 + 패널) — 지도 위에 떠서 드래그 이동 */}
+      <div ref={remoteWrapRef} className="absolute flex z-[1100]"
+        style={{ gap: 4, ...(remotePos ? { left: remotePos.x, top: remotePos.y } : { right: 8, top: 8 }), maxHeight: 'calc(100% - 16px)' }}>
       {/* ── 우측 fold 핸들 (책 척추 스타일) */}
       <div
         onClick={() => setSidebarExpanded(e => !e)}
@@ -3282,6 +3308,12 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
 
       {/* ── 우측 리모컨 (다크 셸 — 모드 탭 + 본문 한 덩어리) */}
       <div className="flex flex-col gap-2 shrink-0 overflow-hidden rounded-2xl shadow-xl" style={{ width: sidebarExpanded ? (sidebarPage === 4 ? 468 : sidebarPage === 5 ? 420 : sidebarPage === 1 ? 300 : 384) : 160, transition: 'width 250ms ease', background: '#0B1220', padding: 6 }}>
+
+        {/* 드래그 그립 — 리모컨 이동 손잡이 */}
+        <div onPointerDown={startRemoteDrag} className="flex items-center justify-center gap-1.5 py-0.5 cursor-grab active:cursor-grabbing select-none shrink-0" style={{ touchAction: 'none' }}>
+          <span className="text-[#475569] text-[12px] leading-none tracking-widest">⠿⠿</span>
+          <span className="text-[#64748B] text-[9px] font-bold">드래그로 이동</span>
+        </div>
 
         {/* 페이지 네비게이션 — 리모컨 모드 버튼 (다크) */}
         <div className="flex gap-1 p-1 rounded-xl shrink-0" style={{ background: '#1E293B' }}>
