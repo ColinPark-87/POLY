@@ -147,6 +147,7 @@ interface StudentEntry {
   student_id: string; name: string; english_name: string|null
   class_id: string
   override?: boolean; location: string|null; days: string[]; pickup_time: string|null
+  dayLocs?: Record<string, string>  // 요일별 탑승 장소 (같은 호차·요일별 다른 지점)
   is_bangwaHu?: boolean  // 방과후 세션 + 하원 → 매일반 탭 내 유치 배지용
 }
 interface AbsentEntry { student_id: string; name: string }
@@ -443,8 +444,11 @@ export default function VehiclesPage() {
     setEditSchedLoc(student.location ?? '')
     setEditSchedTime(student.pickup_time ?? '')
     setEditSchedDays([...student.days])
-    setEditSchedPerDayLoc(false)
-    setEditSchedDayLocs({})
+    // 요일별 장소 prefill — 저장된 값이 요일마다 다르면 토글 자동 ON
+    const dl = student.dayLocs ?? {}
+    setEditSchedDayLocs({ ...dl })
+    const distinctLocs = new Set(student.days.map(d => dl[d] ?? (student.location ?? '')))
+    setEditSchedPerDayLoc(distinctLocs.size > 1)
     setEditLocIsNew(false)
     setEditTimeEditing(false)
     setEditTimeDraft('')
@@ -762,9 +766,16 @@ export default function VehiclesPage() {
                   {stu.english_name && <div className="text-[9px] text-[#94A3B8] truncate">{stu.english_name}</div>}
                 </div>
                 <div className="min-w-0">
-                  {stu.location
-                    ? <span className="text-[9px] text-[#475569] line-clamp-2">📍 {stu.location}</span>
-                    : <span className="text-[9px] text-[#CBD5E1]">-</span>}
+                  {(() => {
+                    const dl = stu.dayLocs ?? {}
+                    const distinct = new Set(stu.days.map(d => dl[d] ?? (stu.location ?? '')))
+                    if (distinct.size > 1) {
+                      return <span className="text-[9px] text-[#475569] line-clamp-2">📍 {stu.days.map(d => `${d}:${dl[d] ?? stu.location ?? '-'}`).join(' ')}</span>
+                    }
+                    return stu.location
+                      ? <span className="text-[9px] text-[#475569] line-clamp-2">📍 {stu.location}</span>
+                      : <span className="text-[9px] text-[#CBD5E1]">-</span>
+                  })()}
                 </div>
                 <DayDots days={stu.days} />
                 {tab === 'master' && (

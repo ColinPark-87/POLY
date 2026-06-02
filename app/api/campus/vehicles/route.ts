@@ -177,6 +177,7 @@ export async function GET(request: NextRequest) {
     student_id: string; name: string; english_name: string | null
     class_id: string
     override?: boolean; location: string | null
+    dayLocs?: Record<string, string>  // 요일별 탑승 장소 (같은 호차·요일별 다른 지점)
     days: string[]  // 해당 방향으로 탑승하는 요일 목록
     pickup_time: string | null  // arr_schedule["_time"] / dep_schedule["_time"]
     is_bangwaHu?: boolean  // 방과후 세션 + 하원 여부 (매일반 탭 내 유치 배지용)
@@ -243,6 +244,12 @@ export async function GET(request: NextRequest) {
         // → 방향별 defaultTime(session time_range 기반)으로 표시
         const resolvedTime = pickup_time || dayTime || null
         const location = cleanLoc
+        // 요일별 장소 수집 (같은 호차라도 요일마다 다른 지점 지원)
+        const dayLocs: Record<string, string> = {}
+        for (const day of assignedDays) {
+          const { cleanLoc: dl } = parseLocTime(sched?.[day + '_loc'] ?? null)
+          if (dl) dayLocs[day] = dl
+        }
         const entry: StudentEntry = {
           student_id: enr.student_id,
           class_id: enr.class_id,
@@ -250,6 +257,7 @@ export async function GET(request: NextRequest) {
           english_name: enr.campus_students?.english_name ?? null,
           override: false,
           location,
+          dayLocs,
           days: assignedDays,
           pickup_time: resolvedTime,
           is_bangwaHu: !!(session_name?.includes('방과후') && !session_name?.includes('유치부') && direction === 'dep'),
