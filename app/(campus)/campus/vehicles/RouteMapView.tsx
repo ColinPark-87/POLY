@@ -3415,32 +3415,33 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
               <div className="flex-1 min-h-0 overflow-y-auto space-y-2">
 
                 {sidebarPage === 4 && (<>
-                {/* 캠퍼스 좌표 지정 — 최상단 */}
-                {effectiveSchoolName !== null && (
-                  <div className={`rounded-2xl border overflow-hidden bg-white ${expandedStop === effectiveSchoolName ? 'border-[#004EA2] shadow-md' : 'border-[#E2E8F0]'}`}>
-                    <button
-                      onClick={() => openStop(effectiveSchoolName)}
-                      className="w-full flex items-center gap-2 px-2.5 py-2 hover:bg-[#F7F8FA] transition-colors"
-                    >
-                      <div className="w-6 h-6 rounded-lg flex items-center justify-center text-[11px] font-black text-white shrink-0 bg-[#004EA2]">P</div>
-                      <div className="flex-1 text-left min-w-0">
-                        <span className="text-[12px] font-black text-[#004EA2]">캠퍼스(학원) 좌표</span>
-                        <p className="text-[11px] text-[#64748B] mt-0.5 truncate">{effectiveSchoolName} · 등원 도착지 · 하원 출발지</p>
-                      </div>
-                      {coords[effectiveSchoolName]
-                        ? <span className="text-[11px] text-[#10B981] font-black shrink-0">설정됨</span>
-                        : <span className="text-[11px] text-[#EF4444] bg-[#FEF2F2] px-2 py-0.5 rounded-full font-black shrink-0">미설정</span>
-                      }
-                      <svg className={`w-4 h-4 text-[#CBD5E1] transition-transform shrink-0 ${expandedStop === effectiveSchoolName ? 'rotate-180' : ''}`}
-                        fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                      </svg>
+                {/* 상단 3개 병렬: 학원좌표 · 자동검색 · 좌표 일괄입력 */}
+                <div className="grid grid-cols-3 gap-1.5">
+                  {effectiveSchoolName !== null && (
+                    <button onClick={() => openStop(effectiveSchoolName)}
+                      className={`flex flex-col items-center justify-center gap-0.5 rounded-xl border py-2 px-1 transition-colors ${expandedStop === effectiveSchoolName ? 'border-[#1A73E8] bg-[#E8F0FE]' : 'border-[#DADCE0] bg-white hover:bg-[#F8F9FA]'}`}>
+                      <span className="text-[15px] leading-none">🏫</span>
+                      <span className="text-[10px] font-bold text-[#202124]">학원 좌표</span>
+                      <span className={`text-[8px] font-black ${coords[effectiveSchoolName] ? 'text-[#1E8E3E]' : 'text-[#D93025]'}`}>{coords[effectiveSchoolName] ? '설정됨' : '미설정'}</span>
                     </button>
-                    {expandedStop === effectiveSchoolName && (
-                      <div className="max-h-[52vh] overflow-y-auto">
-                        {renderStopExpanded(effectiveSchoolName)}
-                      </div>
-                    )}
+                  )}
+                  <button onClick={runBatchSearch} disabled={batchLoading || allStops.filter(s => !coords[s.name]).length === 0}
+                    className="flex flex-col items-center justify-center gap-0.5 rounded-xl border border-[#DADCE0] bg-white py-2 px-1 hover:bg-[#F8F9FA] disabled:opacity-50 transition-colors">
+                    <span className="text-[15px] leading-none">🔍</span>
+                    <span className="text-[10px] font-bold text-[#202124]">자동검색</span>
+                    <span className="text-[8px] font-black text-[#5F6368]">{batchLoading ? `${batchProgress}%` : `미설정 ${allStops.filter(s => !coords[s.name]).length}`}</span>
+                  </button>
+                  <button onClick={() => setUploadPanelOpen(p => !p)}
+                    className={`flex flex-col items-center justify-center gap-0.5 rounded-xl border py-2 px-1 transition-colors ${uploadPanelOpen ? 'border-[#1A73E8] bg-[#E8F0FE]' : 'border-[#DADCE0] bg-white hover:bg-[#F8F9FA]'}`}>
+                    <span className="text-[15px] leading-none">📥</span>
+                    <span className="text-[10px] font-bold text-[#202124]">일괄입력</span>
+                    <span className="text-[8px] font-black text-[#5F6368]">{uploadMsg ? '완료' : 'Excel'}</span>
+                  </button>
+                </div>
+                {/* 학원 좌표 펼침 */}
+                {effectiveSchoolName !== null && expandedStop === effectiveSchoolName && (
+                  <div className="rounded-2xl border border-[#1A73E8] overflow-hidden bg-white max-h-[52vh] overflow-y-auto">
+                    {renderStopExpanded(effectiveSchoolName)}
                   </div>
                 )}
                 </>)}
@@ -3538,59 +3539,26 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
                 )}
 
                 {sidebarPage === 4 && (<>
-                {allStops.filter(s => !coords[s.name]).length > 0 && (
-                  <button onClick={runBatchSearch} disabled={batchLoading}
-                    className="w-full py-2.5 rounded-xl text-xs font-bold bg-[#004EA2] text-white hover:bg-[#003580] disabled:opacity-60 flex items-center justify-center gap-2">
-                    {batchLoading
-                      ? <><div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />자동 검색 중... {batchProgress}%</>
-                      : <>🔍 미설정 {allStops.filter(s => !coords[s.name]).length}개 자동 검색</>}
-                  </button>
+                {/* 좌표 일괄입력 펼침 (상단 카드 토글) */}
+                {uploadPanelOpen && (
+                  <div className="bg-white rounded-2xl border border-[#DADCE0] px-3 pb-3 space-y-2">
+                    <p className="text-[10px] text-[#5F6368] pt-2.5 leading-relaxed">주소 입력 시 위도/경도 자동 변환 · 좌표 직접 입력도 가능</p>
+                    <button onClick={downloadTemplate}
+                      className="w-full py-2 rounded-xl text-[11px] font-bold bg-white border border-[#DADCE0] text-[#1A73E8] hover:bg-[#E8F0FE] transition-colors">
+                      📥 양식 다운로드 ({allStops.length}개)
+                    </button>
+                    <button onClick={() => uploadRef.current?.click()} disabled={uploadGeocoding}
+                      className="w-full py-2 rounded-xl text-[11px] font-bold bg-[#1A73E8] text-white hover:bg-[#1666c1] disabled:opacity-50 flex items-center justify-center gap-2 transition-colors">
+                      {uploadGeocoding ? <><div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />주소 변환 중...</> : '📤 좌표 파일 업로드'}
+                    </button>
+                    <input ref={uploadRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleUpload} />
+                    {uploadMsg && <div className="border border-[#86EFAC] bg-[#DCFCE7] rounded-xl px-3 py-2 text-[11px] font-semibold text-[#166534] text-center">{uploadMsg}</div>}
+                    {setStopsCount > 0 && (
+                      <button onClick={async () => { if (confirm(`설정된 좌표 ${setStopsCount}개를 모두 초기화할까요?`)) { await fetch('/api/campus/stop-coords', { method: 'DELETE' }); updateCoords({}) } }}
+                        className="w-full py-1.5 rounded-xl text-[10px] text-[#D93025] border border-[#FECACA] hover:bg-[#FEF2F2]">좌표 전체 초기화</button>
+                    )}
+                  </div>
                 )}
-                <div className="bg-white rounded-2xl border border-[#E2E8F0] overflow-hidden">
-                  <button
-                    onClick={() => setUploadPanelOpen(p => !p)}
-                    className="w-full flex items-center justify-between px-4 py-3 hover:bg-[#F7F8FA] transition-colors">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-[#1E293B]">좌표 일괄 입력</span>
-                      {uploadMsg && !uploadPanelOpen && (
-                        <span className="text-[10px] text-[#10B981] font-semibold">{uploadMsg}</span>
-                      )}
-                    </div>
-                    <svg className={`w-3.5 h-3.5 text-[#94A3B8] transition-transform ${uploadPanelOpen ? 'rotate-180' : ''}`}
-                      fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </button>
-                  {uploadPanelOpen && (
-                    <div className="px-4 pb-4 space-y-2 border-t border-[#F1F5F9]">
-                      <p className="text-[10px] text-[#64748B] pt-3 leading-relaxed">
-                        주소 입력 시 위도/경도 자동 변환 · 좌표 직접 입력도 가능
-                      </p>
-                      <button onClick={downloadTemplate}
-                        className="w-full py-2.5 rounded-xl text-xs font-bold bg-white border border-[#E2E8F0] text-[#004EA2] hover:bg-[#EAF2FB] transition-colors">
-                        📥 양식 다운로드 ({allStops.length}개 정류장)
-                      </button>
-                      <button onClick={() => uploadRef.current?.click()} disabled={uploadGeocoding}
-                        className="w-full py-2.5 rounded-xl text-xs font-bold bg-[#004EA2] text-white hover:bg-[#003580] disabled:opacity-50 flex items-center justify-center gap-2 transition-colors">
-                        {uploadGeocoding
-                          ? <><div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />주소 변환 중...</>
-                          : '📤 좌표 파일 업로드'}
-                      </button>
-                      <input ref={uploadRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleUpload} />
-                      {uploadMsg && (
-                        <div className="border border-[#86EFAC] bg-[#DCFCE7] rounded-xl px-3 py-2 text-xs font-semibold text-[#166534] text-center">
-                          {uploadMsg}
-                        </div>
-                      )}
-                      {setStopsCount > 0 && (
-                        <button onClick={async () => { if (confirm(`설정된 좌표 ${setStopsCount}개를 모두 초기화할까요?`)) { await fetch('/api/campus/stop-coords', { method: 'DELETE' }); updateCoords({}) } }}
-                          className="w-full py-2 rounded-xl text-[10px] text-[#EF4444] border border-[#FECACA] hover:bg-[#FEF2F2]">
-                          좌표 전체 초기화
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
                 {/* 검색 + 보기 모드 (전체 / 호차별 / 미설정) */}
                 <div className="space-y-2">
                   <div className="relative">
