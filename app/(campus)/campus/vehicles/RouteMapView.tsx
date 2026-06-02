@@ -230,7 +230,6 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
 
   // 사이드바 페이지 (1=노선지도, 2=오늘등하원, 3=변경승인)
   const [sidebarPage, setSidebarPage] = useState<1 | 2 | 3 | 4 | 5>(1)
-  const [sidebarExpanded, setSidebarExpanded] = useState(false)
   // 리모컨 플로팅 위치 (지도 컨테이너 기준 px). null = 기본(우상단). 드래그로 이동, localStorage 기억
   const [remotePos, setRemotePos] = useState<{ x: number; y: number } | null>(null)
   const vehRootRef = useRef<HTMLDivElement>(null)
@@ -758,7 +757,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
       if (center) mapRef.current?.setCenter?.(center) // 리레이아웃 후 중심 유지
     }, 260)
     return () => clearTimeout(t)
-  }, [sidebarExpanded, fullscreen, mapReady])
+  }, [fullscreen, mapReady])
 
   // 지도 클릭
   useEffect(() => {
@@ -3292,22 +3291,11 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
 
       </div>
 
-      {/* 플로팅 리모컨 클러스터 (폴드 핸들 + 패널) — 지도 위에 떠서 드래그 이동 */}
+      {/* 플로팅 리모컨 — 지도 위에 떠서 드래그 이동 */}
       <div ref={remoteWrapRef} className="absolute flex z-[1100]"
-        style={{ gap: 4, ...(remotePos ? { left: remotePos.x, top: remotePos.y } : { right: 8, top: 8 }), maxHeight: 'calc(100% - 16px)' }}>
-      {/* ── 우측 fold 핸들 (책 척추 스타일) */}
-      <div
-        onClick={() => setSidebarExpanded(e => !e)}
-        title={sidebarExpanded ? '패널 접기' : '패널 펼치기'}
-        className="shrink-0 flex flex-col items-center justify-center cursor-pointer rounded-lg hover:brightness-95 transition-all"
-        style={{ width: 12, background: '#D1D5DB' }}>
-        <div style={{ width: 12, height: 48, background: '#6B7280', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 10, fontWeight: 'bold' }}>
-          {sidebarExpanded ? '›' : '‹'}
-        </div>
-      </div>
-
+        style={{ ...(remotePos ? { left: remotePos.x, top: remotePos.y } : { right: 8, top: 8 }), maxHeight: 'calc(100% - 16px)' }}>
       {/* ── 우측 리모컨 (다크 셸 — 모드 탭 + 본문 한 덩어리) */}
-      <div className="flex flex-col gap-2 shrink-0 overflow-hidden rounded-2xl shadow-xl" style={{ width: sidebarExpanded ? (sidebarPage === 4 ? 468 : sidebarPage === 5 ? 420 : sidebarPage === 1 ? 300 : 384) : 160, transition: 'width 250ms ease', background: '#0B1220', padding: 6 }}>
+      <div className="flex flex-col gap-2 shrink-0 overflow-hidden rounded-2xl shadow-xl" style={{ width: sidebarPage === 4 ? 468 : sidebarPage === 5 ? 420 : sidebarPage === 1 ? 300 : 384, transition: 'width 250ms ease', background: '#0B1220', padding: 6 }}>
 
         {/* 드래그 그립 — 리모컨 이동 손잡이 */}
         <div onPointerDown={startRemoteDrag} className="flex items-center justify-center gap-1.5 py-0.5 cursor-grab active:cursor-grabbing select-none shrink-0" style={{ touchAction: 'none' }}>
@@ -3324,7 +3312,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
             { n: 4 as const, label: '탑승장소설정', icon: '📍' },
             { n: 5 as const, label: '호차설정', icon: '🚌' },
           ]).map(t => (
-            <button key={t.n} onClick={() => { setSidebarPage(t.n); if (t.n === 4 || t.n === 5) setSidebarExpanded(true); if (t.n === 5) setBusSettingsOpen(true) }}
+            <button key={t.n} onClick={() => { setSidebarPage(t.n); if (t.n === 5) setBusSettingsOpen(true) }}
               className={`relative flex-1 flex flex-col items-center justify-center gap-0.5 py-1.5 rounded-lg transition-all ${sidebarPage === t.n ? 'bg-[#2563EB] text-white shadow-sm' : 'text-[#94A3B8] hover:bg-white/10'}`}>
               <span className="text-[13px] leading-none">{t.icon}</span>
               <span className="text-[9px] font-black leading-tight text-center break-keep">{t.label}</span>
@@ -3336,7 +3324,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
         </div>
 
         {/* ─ Page 1: 컴팩트 다크 리모컨 (노선 조작) ─ */}
-        {sidebarExpanded && sidebarPage === 1 && (
+        {sidebarPage === 1 && (
           <>
             <div className="space-y-2 shrink-0">
               {/* 상태 화면 */}
@@ -3422,7 +3410,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
         )}
 
         {/* ─ Page 4: 탑승장소설정 / Page 5: 호차설정 (같은 스크롤 컨테이너 공유) ─ */}
-        {sidebarExpanded && (sidebarPage === 4 || sidebarPage === 5) && (
+        {(sidebarPage === 4 || sidebarPage === 5) && (
           <>
               <div className="flex-1 min-h-0 overflow-y-auto space-y-2">
 
@@ -3753,73 +3741,6 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
               </div>
 
           </>
-        )}
-
-        {/* ─ Page 1: 등하원 → 차량설정 → 호차 (축소 상태) ─ */}
-        {sidebarPage === 1 && !sidebarExpanded && (
-          <div className="flex flex-col flex-1 min-h-0 overflow-y-auto gap-1.5 bg-white rounded-2xl border border-[#E2E8F0] p-2">
-
-            {/* 1. 등 · 하원 — 최상단 */}
-            <p className="text-[8px] font-bold text-[#94A3B8] uppercase tracking-wider text-center mb-0.5">등 · 하원</p>
-            {sessionDirOptions.filter(opt => !opt.label.includes('결석')).map(opt => (
-              <div key={opt.label} className="space-y-0.5">
-                <span className="text-[9px] font-bold block text-center truncate px-1" style={{ color: opt.color }}>{opt.label}</span>
-                <div className="grid grid-cols-2 gap-0.5">
-                  {opt.arr ? (
-                    <button
-                      onClick={() => { setDir('arr'); setSelectedSession(opt.label) }}
-                      className={`py-1.5 rounded-lg text-[9px] font-bold transition-colors border ${
-                        dir === 'arr' && selectedSession === opt.label
-                          ? 'text-white border-transparent'
-                          : 'bg-white border-[#E2E8F0] text-[#64748B]'
-                      }`}
-                      style={dir === 'arr' && selectedSession === opt.label ? { background: opt.color } : {}}>
-                      등원
-                    </button>
-                  ) : <div />}
-                  {opt.dep ? (
-                    <button
-                      onClick={() => { setDir('dep'); setSelectedSession(opt.label) }}
-                      className={`py-1.5 rounded-lg text-[9px] font-bold transition-colors border ${
-                        dir === 'dep' && selectedSession === opt.label
-                          ? 'text-white border-transparent'
-                          : 'bg-white border-[#E2E8F0] text-[#64748B]'
-                      }`}
-                      style={dir === 'dep' && selectedSession === opt.label ? { background: opt.color } : {}}>
-                      하원
-                    </button>
-                  ) : <div />}
-                </div>
-              </div>
-            ))}
-
-            {/* 호차 선택 — 하단 (마미버스 제외) */}
-            {(() => {
-              const selectable = buses.filter(b => !isIndividualBus(b.name) && !b.name.includes('결석'))
-              return (
-                <>
-                  <p className="text-[8px] font-bold text-[#94A3B8] uppercase tracking-wider text-center mt-0.5">호차 선택</p>
-                  <div className={selectable.length >= 8 ? 'grid grid-cols-2 gap-1' : 'flex flex-col gap-1'}>
-                    {selectable.map((bus) => {
-                      const bi = buses.findIndex(b => b.id === bus.id)
-                      const color = getBusColor(bus.name, bi)
-                      const active = selectedBuses.includes(bus.name)
-                      return (
-                        <button key={bus.name} onClick={() => toggleBus(bus.name)}
-                          className="w-full py-1.5 rounded-xl text-[10px] font-bold border transition-colors flex items-center justify-center gap-1"
-                          style={active
-                            ? { background: color + '20', borderColor: color, color }
-                            : { background: '#F8FAFC', borderColor: '#E2E8F0', color: '#94A3B8' }}>
-                          <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: active ? color : '#CBD5E1' }} />
-                          {bus.name}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </>
-              )
-            })()}
-          </div>
         )}
 
         {/* ─ Page 2: 오늘 등하원 ─ */}
