@@ -468,6 +468,7 @@ export default function VehiclesPage() {
         direction: masterDir,
         days: editSchedDays,
         bus_name: editSchedBus || undefined,
+        old_bus_name: editSchedModal.currentBus || undefined,  // 원래 호차 — 호차 이동+요일제거 시 옛 호차의 빠진 요일 정리
         location: editSchedLoc,
         pickup_time: finalPickupTime,
       }),
@@ -492,6 +493,7 @@ export default function VehiclesPage() {
         direction: todayDir,
         days: permDays,
         bus_name: overrideBus,
+        old_bus_name: overrideModal.bus || undefined,  // 원래 호차 — 이동+요일제거 시 옛 호차 정리
         location: finalLoc,
         pickup_time: overrideTime,
       }),

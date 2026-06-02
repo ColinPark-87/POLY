@@ -651,10 +651,12 @@ export async function POST(request: NextRequest) {
     const dayList: string[] = Array.isArray(days) ? days : []
     const allDays = ['월', '화', '수', '목', '금']
 
-    // old_bus_name이 있으면 해당 버스로 배정된 요일 중 새 dayList에 없는 것 제거
-    if (old_bus_name) {
+    // 대상 버스(이동이면 이동 전 버스, 아니면 현재 버스)로 배정된 요일 중 새 dayList에 없는 것 제거.
+    // (기존엔 old_bus_name 없으면 제거가 안 돼, 같은 버스에서 요일만 빼면 저장돼도 안 빠지는 버그)
+    const targetOldBus = old_bus_name ?? bus_name
+    if (targetOldBus) {
       for (const d of allDays) {
-        if (sched[d] === old_bus_name && !dayList.includes(d)) {
+        if (sched[d] === targetOldBus && !dayList.includes(d)) {
           delete sched[d]
           delete sched[d + '_loc']
         }
