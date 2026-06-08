@@ -337,25 +337,28 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
   const [p3Loading, setP3Loading] = useState(false)
   const [p3ActionLoading, setP3ActionLoading] = useState<string | null>(null)
 
-  // 호차 명단 카드: 열려 있으면 현재 보고 있는 화면의 선택(방향/세션/호차)을 자동으로 따라간다.
-  //  - 노선(Page1): 우측 리모컨의 dir/selectedSession/selectedBuses 매칭
-  //  - 그 외(정류장학생 등): p2Dir/p2SessionFilter/p2SelectedBus 매칭
-  // 카드 자체 셀렉터로 언제든 변경 가능(아래 셀렉터가 rosterBus/Session/Dir 직접 set).
+  // 호차 명단 카드: 현재 보고 있는 화면의 선택(방향/세션/호차)을 "처음 뜰 때 기본값"으로 매칭.
+  //  - 노선(Page1): 우측 리모컨의 dir/selectedSession/selectedBuses
+  //  - 그 외(정류장학생 등): p2Dir/p2SessionFilter/p2SelectedBus
+  // ※ 매칭은 기본값일 뿐 — 카드 셀렉터로 옆 호차·다른 세션 자유 이동 가능(못 가게 막지 않음).
+  //   리모컨 선택이 "실제로" 바뀐 경우(시그니처 변경)에만 재매칭해, 카드 수동 변경을 되돌리지 않는다.
+  const rosterSyncRef = useRef('')
   useEffect(() => {
-    if (!rosterOpen) return
-    if (sidebarPage === 1) {
-      setRosterDir(dir)
-      if (selectedSession) setRosterSession(selectedSession)
-      setRosterBus(prev => {
-        if (selectedBuses.length === 0) return prev
-        if (prev && selectedBuses.includes(prev)) return prev
-        return selectedBuses[0]
-      })
-    } else {
-      setRosterDir(p2Dir)
-      setRosterSession(p2SessionFilter)
-      if (p2SelectedBus) setRosterBus(p2SelectedBus)
-    }
+    if (!rosterOpen) { rosterSyncRef.current = ''; return } // 닫으면 리셋 → 다시 열 때 재매칭
+    const src = sidebarPage === 1
+      ? { d: dir, session: selectedSession ?? '', buses: selectedBuses }
+      : { d: p2Dir, session: p2SessionFilter, buses: p2SelectedBus ? [p2SelectedBus] : [] }
+    const sig = `${sidebarPage}|${src.d}|${src.session}|${src.buses.join(',')}`
+    if (sig === rosterSyncRef.current) return // 리모컨 선택 그대로 → 카드 수동 변경 보존
+    rosterSyncRef.current = sig
+    setRosterDir(src.d)
+    if (src.session) setRosterSession(src.session)
+    setRosterBus(prev => {
+      const first = src.buses[0]
+      if (!first) return prev
+      if (prev && src.buses.includes(prev)) return prev
+      return first
+    })
   }, [rosterOpen, sidebarPage, dir, selectedSession, selectedBuses, p2Dir, p2SessionFilter, p2SelectedBus])
 
   useEffect(() => {
