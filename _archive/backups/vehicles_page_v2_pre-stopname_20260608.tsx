@@ -3,7 +3,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import RouteMapView from './RouteMapView'
-import { sameStop } from '@/lib/utils/stop-name'
 
 const DAYS = ['월', '화', '수', '목', '금'] as const
 const DAY_DOT_COLOR = ['#2196F3','#9C27B0','#4CAF50','#FF9800','#E91E63']
@@ -705,10 +704,10 @@ export default function VehiclesPage() {
     if (reg) return normalizeTime(reg)
     for (const g of masterGroups) {
       for (const s of (g.busMap[bus] ?? [])) {
-        if (sameStop(s.location, loc) && s.pickup_time) return normalizeTime(s.pickup_time)
+        if ((s.location ?? '').trim() === loc.trim() && s.pickup_time) return normalizeTime(s.pickup_time)
         if (s.dayLocs) {
           for (const [d, l] of Object.entries(s.dayLocs)) {
-            if (sameStop(l, loc) && s.dayTimes?.[d]) return normalizeTime(s.dayTimes[d])
+            if ((l ?? '').trim() === loc.trim() && s.dayTimes?.[d]) return normalizeTime(s.dayTimes[d])
           }
         }
       }
@@ -1444,7 +1443,7 @@ export default function VehiclesPage() {
                       const isSelected = editSchedLoc === loc && !editLocIsNew
                       // 해당 위치의 대표 시간 계산
                       const locTimes = masterGroups.flatMap(g =>
-                        (g.busMap[editSchedBus] ?? []).filter(s => sameStop(s.location, loc) && s.pickup_time).map(s => s.pickup_time as string)
+                        (g.busMap[editSchedBus] ?? []).filter(s => s.location === loc && s.pickup_time).map(s => s.pickup_time as string)
                       )
                       const locFreq: Record<string,number> = {}
                       locTimes.forEach(t => { locFreq[t] = (locFreq[t]??0) + 1 })
@@ -1625,7 +1624,7 @@ export default function VehiclesPage() {
         // 같은 세션 그룹에서 그 호차·정류장의 대표 시간 (세션 혼재 방지 — 유치부 하원이면 유치부 시간만)
         const timeFor = (bus: string, loc: string) => {
           if (!bus || !loc || !myGroup) return ''
-          const times = (myGroup.busMap[bus] ?? []).filter(s => sameStop(s.location, loc) && s.pickup_time).map(s => s.pickup_time as string)
+          const times = (myGroup.busMap[bus] ?? []).filter(s => s.location === loc && s.pickup_time).map(s => s.pickup_time as string)
           if (!times.length) return ''
           const freq: Record<string, number> = {}
           times.forEach(t => { freq[t] = (freq[t] ?? 0) + 1 })
