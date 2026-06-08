@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { resolvePermissions } from '@/lib/permissions'
+import { selectOrphanOverrides, buildSynthEntry } from '@/lib/utils/today-overrides'
 
 const DAYS = ['월', '화', '수', '목', '금'] as const
 type Day = typeof DAYS[number]
@@ -377,6 +378,48 @@ export async function GET(request: NextRequest) {
   for (const tg of Object.values(timeGroupRaw)) {
     for (const busName of Object.keys(tg.busMap)) {
       tg.busMap[busName] = dedupStudents(tg.busMap[busName])
+    }
+  }
+
+  // ── 오늘 모드: enrollment 없이 override만으로 '오늘만 탑승추가'된 학생 합성 ──
+  // 위 루프는 현재월 비대기 class_enrollments만 순회하므로, 버스세션 미등록/다른월/대기
+  // 학생을 '오늘만 탑승추가'하면 pickup_overrides에 저장돼도 안 보였다(결석은 별도 패스가
+  // 있는데 비결석 신규 탑승은 빠져 있던 비대칭). 이미 그려진 학생은 건드리지 않고,
+  // 아직 어떤 호차에도 안 나타난 비결석 override만 합성 entry로 추가한다.
+  if (!master) {
+    const renderedIds = new Set<string>()
+    for (const arr of Object.values(busMap)) for (const s of arr) renderedIds.add(s.student_id)
+    const orphanOvs = selectOrphanOverrides(overrides ?? [], renderedIds)
+    if (orphanOvs.length) {
+      const ids = [...new Set(orphanOvs.map(o => o.student_id))]
+      const { data: stuRows } = await service.from('campus_students')
+        .select('id, name, english_name').in('id', ids)
+      const stuMap: Record<string, { name: string; english_name: string | null }> = {}
+      for (const s of stuRows ?? []) stuMap[s.id] = { name: s.name, english_name: s.english_name }
+      for (const ov of orphanOvs) {
+        const busName = ov.bus_name as string
+        const sm = stuMap[ov.student_id]
+        if (!sm) continue // 이 캠퍼스 활성 학생이 아니면 스킵
+        const entry: StudentEntry = buildSynthEntry(ov, sm, dayKey)
+        if (!busMap[busName]) busMap[busName] = []
+        busMap[busName].push(entry)
+        // 이 호차가 이미 등장하는 timeGroup에 배치(없으면 '오늘 임시 탑승' 합성 그룹 생성)
+        let placed = false
+        for (const tg of Object.values(timeGroupRaw)) {
+          if (busName in tg.busMap) { tg.busMap[busName].push(entry); placed = true; break }
+        }
+        if (!placed) {
+          const key = '오늘 임시 탑승|'
+          if (!timeGroupRaw[key]) timeGroupRaw[key] = { session_name: '오늘 임시 탑승', time_range: '', busMap: {}, busLocationSets: {} }
+          const tg = timeGroupRaw[key]
+          if (!tg.busMap[busName]) tg.busMap[busName] = []
+          tg.busMap[busName].push(entry)
+        }
+        if (ov.location) {
+          if (!busLocationSets[busName]) busLocationSets[busName] = new Set()
+          busLocationSets[busName].add(ov.location)
+        }
+      }
     }
   }
 

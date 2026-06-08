@@ -907,6 +907,7 @@ export default function VehiclesPage() {
         body: JSON.stringify({
           action: 'set_override', student_id: riderSelected.id,
           date: selectedDate, direction: todayDir, bus_name: addRiderModal.bus, is_absent: false,
+          location: riderLocation || undefined, pickup_time: riderTime || undefined,
         }),
       })
       const d = await res.json().catch(() => ({}))
@@ -2033,9 +2034,26 @@ export default function VehiclesPage() {
                 )
               })()}
               {addRiderMode === 'today' && (
-                <div className="bg-[#FFF7ED] border border-[#FED7AA] rounded-xl px-3 py-2 text-xs text-[#92400E]">
-                  오늘({selectedDate}) {todayDir==='arr'?'등원':'하원'}에만 임시 배정됩니다. 기존 스케줄은 변경되지 않습니다.
-                </div>
+                <>
+                  <div className="flex gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[11px] font-bold text-[#64748B] mb-1">정류장 <span className="font-normal text-[#94A3B8]">(선택)</span></p>
+                      <input list="addrider-today-stops" value={riderLocation} onChange={e => setRiderLocation(e.target.value)} placeholder="정류장 입력/선택"
+                        className="w-full border border-[#E2E8F0] rounded-lg px-2.5 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#004EA2]" />
+                      <datalist id="addrider-today-stops">
+                        {[...new Set(addRiderModal?.sessionLocs ?? [])].map(l => <option key={l} value={l} />)}
+                      </datalist>
+                    </div>
+                    <div className="w-24 shrink-0">
+                      <p className="text-[11px] font-bold text-[#64748B] mb-1">시간 <span className="font-normal text-[#94A3B8]">(선택)</span></p>
+                      <input value={riderTime} onChange={e => setRiderTime(e.target.value)} onBlur={e => setRiderTime(e.target.value ? normalizeTime(e.target.value) : '')} placeholder="17:10"
+                        className="w-full border border-[#E2E8F0] rounded-lg px-2.5 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#004EA2]" />
+                    </div>
+                  </div>
+                  <div className="bg-[#FFF7ED] border border-[#FED7AA] rounded-xl px-3 py-2 text-xs text-[#92400E]">
+                    오늘({selectedDate}) {todayDir==='arr'?'등원':'하원'}에만 임시 배정됩니다. 기존 스케줄은 변경되지 않습니다.
+                  </div>
+                </>
               )}
               <div className="flex gap-2 pt-1">
                 {formError && (
