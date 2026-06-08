@@ -337,13 +337,26 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
   const [p3Loading, setP3Loading] = useState(false)
   const [p3ActionLoading, setP3ActionLoading] = useState<string | null>(null)
 
-  // 호차 명단 카드: 열려 있으면 정류장 패널 선택(방향/세션/호차)을 따라간다 (양방향 연동)
+  // 호차 명단 카드: 열려 있으면 현재 보고 있는 화면의 선택(방향/세션/호차)을 자동으로 따라간다.
+  //  - 노선(Page1): 우측 리모컨의 dir/selectedSession/selectedBuses 매칭
+  //  - 그 외(정류장학생 등): p2Dir/p2SessionFilter/p2SelectedBus 매칭
+  // 카드 자체 셀렉터로 언제든 변경 가능(아래 셀렉터가 rosterBus/Session/Dir 직접 set).
   useEffect(() => {
     if (!rosterOpen) return
-    setRosterDir(p2Dir)
-    setRosterSession(p2SessionFilter)
-    if (p2SelectedBus) setRosterBus(p2SelectedBus)
-  }, [rosterOpen, p2Dir, p2SessionFilter, p2SelectedBus])
+    if (sidebarPage === 1) {
+      setRosterDir(dir)
+      if (selectedSession) setRosterSession(selectedSession)
+      setRosterBus(prev => {
+        if (selectedBuses.length === 0) return prev
+        if (prev && selectedBuses.includes(prev)) return prev
+        return selectedBuses[0]
+      })
+    } else {
+      setRosterDir(p2Dir)
+      setRosterSession(p2SessionFilter)
+      if (p2SelectedBus) setRosterBus(p2SelectedBus)
+    }
+  }, [rosterOpen, sidebarPage, dir, selectedSession, selectedBuses, p2Dir, p2SessionFilter, p2SelectedBus])
 
   useEffect(() => {
     const now = Date.now(), TTL = 300000, cx = campusId ?? ''
@@ -3833,6 +3846,18 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
 
         {/* ── 지도 FAB 컨트롤 (좌하단 세로 스택 — 우측 플로팅 패널과 겹치지 않게) */}
         <div className="absolute z-[1000] flex flex-col gap-2 pointer-events-auto items-start" style={{ bottom: 12, left: 12 }}>
+          {/* 호차 명단 (보라) — 선택 호차 전체 탑승생 학생설정 카드 토글 */}
+          <div className="group relative flex items-center">
+            <span className="absolute left-full ml-2 whitespace-nowrap rounded-lg bg-[#0B1220]/90 px-2.5 py-1 text-[11px] font-bold text-white opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-lg">호차 명단 (학생설정)</span>
+            <button onClick={() => setRosterOpen(v => !v)}
+              title="호차 명단 — 선택 호차 전체 탑승생 학생설정 보기·수정"
+              className="w-11 h-11 rounded-2xl shadow-lg flex items-center justify-center transition-all active:scale-95 text-[18px]"
+              style={rosterOpen
+                ? { background: '#4338CA', color: '#fff', boxShadow: '0 6px 18px rgba(67,56,202,0.5)' }
+                : { background: '#fff', color: '#4338CA', boxShadow: '0 4px 12px rgba(0,0,0,0.12)', outline: '1px solid #C7D2FE' }}>
+              📋
+            </button>
+          </div>
           {/* 정류장 추가 (파랑) — 정류장 이동(초록)과 색으로 구분 */}
           <div className="group relative flex items-center">
             <span className="absolute left-full ml-2 whitespace-nowrap rounded-lg bg-[#0B1220]/90 px-2.5 py-1 text-[11px] font-bold text-white opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-lg">정류장 추가</span>
@@ -3922,10 +3947,6 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
             <span className="text-[#475569] text-[12px] leading-none tracking-widest">⠿⠿</span>
             <span className="text-[#64748B] text-[9px] font-bold">드래그로 이동</span>
           </div>
-          <button onPointerDown={e => e.stopPropagation()} onClick={() => setRosterOpen(v => !v)}
-            title="호차 명단 (학생설정)"
-            className="shrink-0 w-6 h-6 flex items-center justify-center rounded-lg text-[14px] leading-none transition-colors"
-            style={rosterOpen ? { background: '#E8F0FE', color: '#1A73E8' } : { color: '#5F6368' }}>📋</button>
           <button onPointerDown={e => e.stopPropagation()} onClick={() => setRemoteMinimized(true)}
             title="최소화"
             className="shrink-0 w-6 h-6 flex items-center justify-center rounded-lg text-[#5F6368] hover:bg-black/5 text-[15px] leading-none">−</button>
