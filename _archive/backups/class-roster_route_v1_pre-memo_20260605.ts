@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { resolvePermissions } from '@/lib/permissions'
-import { partitionBulkMove, type BulkCandidate } from '@/lib/utils/roster-multimove'
 
 // GET: 세션 목록 + 반 + 수강생 (월별)
 export async function GET(request: NextRequest) {
@@ -58,26 +57,15 @@ export async function GET(request: NextRequest) {
 
   const classIds = (classes ?? []).map(c => c.id)
 
-  // 수강생 (메모 컬럼 포함 시도 → 컬럼 미생성 시 메모 없이 폴백: 명단 로딩 자체는 절대 깨지지 않게)
+  // 수강생
   let enrollments: unknown[] = []
   if (classIds.length) {
-    const withMemo = '*, campus_students(id, name, english_name, grade, school, apartment, is_active, memo, memo_updated_by, memo_updated_at)'
-    const noMemo = '*, campus_students(id, name, english_name, grade, school, apartment, is_active)'
-    let { data, error: enrErr } = await service
+    const { data, error: enrErr } = await service
       .from('class_enrollments')
-      .select(withMemo)
+      .select('*, campus_students(id, name, english_name, grade, school, apartment, is_active)')
       .in('class_id', classIds)
       .order('sort_order')
-    if (enrErr) {
-      // memo 컬럼 미생성(또는 기타 select 오류) → 메모 없이 재조회
-      const fb = await service
-        .from('class_enrollments')
-        .select(noMemo)
-        .in('class_id', classIds)
-        .order('sort_order')
-      if (fb.error) return NextResponse.json({ error: fb.error.message }, { status: 500 })
-      data = fb.data
-    }
+    if (enrErr) return NextResponse.json({ error: enrErr.message }, { status: 500 })
     enrollments = data ?? []
   }
 
@@ -384,78 +372,6 @@ export async function POST(request: NextRequest) {
     })
 
     return NextResponse.json({ enrollment: newEnr })
-  }
-
-  if (action === 'bulk_move_students') {
-    const { enrollment_ids, to_class_id } = body as { enrollment_ids?: unknown; to_class_id?: string }
-    if (!Array.isArray(enrollment_ids) || enrollment_ids.length === 0) {
-      return NextResponse.json({ error: '선택된 학생 없음' }, { status: 400 })
-    }
-    const ids = [...new Set(enrollment_ids.filter((v): v is string => typeof v === 'string'))]
-    if (ids.length === 0) return NextResponse.json({ error: '선택된 학생 없음' }, { status: 400 })
-
-    // 대상 반 소유권 + 이름 (1회)
-    const { data: toClass } = await service
-      .from('classes').select('id, level, session_id, class_sessions(name)')
-      .eq('id', to_class_id).eq('campus_id', campusId).maybeSingle()
-    if (!toClass) return NextResponse.json({ error: '권한 없음' }, { status: 403 })
-
-    // 후보 enrollment (자기 캠퍼스만) + 대상 반 기존 학생
-    const { data: candEnrs } = await service
-      .from('class_enrollments')
-      .select('id, student_id, class_id, arr_schedule, dep_schedule, highlight_color, campus_students(name)')
-      .in('id', ids).eq('campus_id', campusId)
-    const { data: targetExisting } = await service
-      .from('class_enrollments').select('student_id').eq('class_id', to_class_id).eq('campus_id', campusId)
-
-    type CandRow = {
-      id: string; student_id: string; class_id: string
-      arr_schedule: Record<string, string>; dep_schedule: Record<string, string>
-      highlight_color: string | null
-      campus_students: { name: string } | null
-    }
-    const rows = (candEnrs ?? []) as unknown as CandRow[]
-    const rowById = new Map(rows.map(r => [r.id, r]))
-    const candidates: BulkCandidate[] = rows.map(r => ({
-      id: r.id, student_id: r.student_id, class_id: r.class_id, name: r.campus_students?.name,
-    }))
-    const targetStudentIds = (targetExisting ?? []).map(r => r.student_id)
-    const { movable, skipped } = partitionBulkMove(candidates, ids, to_class_id!, targetStudentIds)
-
-    // from-class 이름 맵 (이력 기록용)
-    const fromClassIds = [...new Set(movable.map(m => rowById.get(m.id)!.class_id))]
-    const { data: fromClasses } = fromClassIds.length
-      ? await service.from('classes').select('id, level, session_id, class_sessions(name)').in('id', fromClassIds)
-      : { data: [] as unknown[] }
-    const fromNameById = new Map(
-      ((fromClasses ?? []) as unknown as { id: string; level: string; class_sessions?: { name: string } }[])
-        .map(c => [c.id, `${c.class_sessions?.name ?? ''} ${c.level ?? ''}`.trim()]),
-    )
-    const toName = `${(toClass as unknown as { class_sessions?: { name: string } }).class_sessions?.name ?? ''} ${(toClass as unknown as { level: string }).level ?? ''}`.trim()
-    const today = new Date().toISOString().slice(0, 10)
-
-    let moved = 0
-    const failed: { id: string; name?: string; reason: string }[] = []
-    for (const m of movable) {
-      const row = rowById.get(m.id)!
-      const { error: delErr } = await service.from('class_enrollments').delete().eq('id', m.id).eq('campus_id', campusId)
-      if (delErr) { failed.push({ id: m.id, name: m.name, reason: delErr.message }); continue }
-      const { error: insErr } = await service.from('class_enrollments').insert({
-        class_id: to_class_id, student_id: row.student_id, campus_id: campusId,
-        arr_schedule: row.arr_schedule, dep_schedule: row.dep_schedule, highlight_color: row.highlight_color,
-      })
-      if (insErr) { failed.push({ id: m.id, name: m.name, reason: insErr.message }); continue }
-      await service.from('enrollment_history').insert({
-        campus_id: campusId, student_id: row.student_id, student_name: m.name ?? '',
-        type: 'transferred', class_id: to_class_id,
-        class_name: `${fromNameById.get(row.class_id) ?? ''} → ${toName}`,
-        effective_date: today, note: null,
-        changed_by_id: user.id, changed_by_name: changedByName,
-      })
-      moved++
-    }
-
-    return NextResponse.json({ moved, skipped: [...skipped, ...failed] })
   }
 
   if (action === 'update_bus_schedule') {

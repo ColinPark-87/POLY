@@ -3,8 +3,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import Script from 'next/script'
 import { buildStopSearchResults, type StopSearchRow, type RegisteredStop } from '@/lib/utils/stop-search'
-import { cleanRoutePolyline, type LatLng } from '@/lib/utils/route-geometry'
-import { buildScheduleUpdate, detectPerDay } from '@/lib/utils/vehicle-schedule'
 
 const COORDS_KEY = 'shuttle-stop-coords'
 const SCHOOL_STOP = { name: '중계폴리어학원', lat: 37.6556, lng: 127.0686 }
@@ -83,7 +81,6 @@ interface StudentEntry {
   location: string | null; pickup_time: string | null; days: string[]
   dayLocs?: Record<string, string>  // 요일별 탑승 장소
   dayTimes?: Record<string, string>  // 요일별 탑승 시간 (정류장 자동 매칭)
-  busByDay?: Record<string, string>  // 요일별 호차 (요일별 다른 호차 편집용)
   override?: boolean
 }
 interface TimeGroup {
@@ -131,8 +128,6 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
   const [groups, setGroups] = useState<TimeGroup[]>([])
   const [buses, setBuses] = useState<Bus[]>([])
   const [coords, setCoords] = useState<Record<string, { lat: number; lng: number }>>({})
-  // 현재 좌표(coords)가 어느 캠퍼스(coordsKey)의 것인지 추적 — 캠퍼스 전환 중 옛 좌표로 잘못 센터링되는 것 방지
-  const [coordsLoadedKey, setCoordsLoadedKey] = useState('')
   const [mapReady, setMapReady] = useState(false)
   const [coordsSaving, setCoordsSaving] = useState(false)
   const [schoolSpots, setSchoolSpots] = useState<Record<string, { lat: number; lng: number; count: number }>>({})
@@ -280,49 +275,6 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
     }
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', end)
   }
-  // ── 호차 명단 카드(학생설정 풀편집) 상태 — 리모컨 스타일 플로팅, 페이지와 무관하게 토글 ──
-  const [rosterOpen, setRosterOpen] = useState(false)
-  const [rosterMin, setRosterMin] = useState(false)
-  const [rosterPos, setRosterPos] = useState<{ x: number; y: number } | null>(null)
-  const rosterWrapRef = useRef<HTMLDivElement>(null)
-  const [rosterBus, setRosterBus] = useState<string | null>(null)
-  const [rosterSession, setRosterSession] = useState('')
-  const [rosterDir, setRosterDir] = useState<'arr' | 'dep'>('dep')
-  // 호차 명단 풀편집 인라인 에디터 상태 (요일별 호차/장소/시간)
-  const [rEditModal, setREditModal] = useState<{ student: StudentEntry; busName: string; dir: 'arr' | 'dep'; sessionName: string } | null>(null)
-  const [rEditBus, setREditBus] = useState('')
-  const [rEditLoc, setREditLoc] = useState('')
-  const [rEditTime, setREditTime] = useState('')
-  const [rEditDays, setREditDays] = useState<string[]>([])
-  const [rEditPerDay, setREditPerDay] = useState(false)
-  const [rEditDayBus, setREditDayBus] = useState<Record<string, string>>({})
-  const [rEditDayLoc, setREditDayLoc] = useState<Record<string, string>>({})
-  const [rEditDayTime, setREditDayTime] = useState<Record<string, string>>({})
-  const [rEditSaving, setREditSaving] = useState(false)
-  useEffect(() => { try { const s = localStorage.getItem('veh-roster-pos'); if (s) setRosterPos(JSON.parse(s)) } catch {} }, [])
-  useEffect(() => { try { setRosterOpen(localStorage.getItem(`veh-roster-open-${campusId ?? 'default'}`) === '1') } catch {} }, [campusId])
-  useEffect(() => { try { localStorage.setItem(`veh-roster-open-${campusId ?? 'default'}`, rosterOpen ? '1' : '0') } catch {} }, [rosterOpen, campusId])
-  useEffect(() => { try { setRosterMin(localStorage.getItem(`veh-roster-min-${campusId ?? 'default'}`) === '1') } catch {} }, [campusId])
-  useEffect(() => { try { localStorage.setItem(`veh-roster-min-${campusId ?? 'default'}`, rosterMin ? '1' : '0') } catch {} }, [rosterMin, campusId])
-  function startFloatDrag(e: React.PointerEvent, wrapRef: React.RefObject<HTMLDivElement | null>, setPos: (p: { x: number; y: number }) => void, storageKey: string) {
-    const cont = vehRootRef.current, wrap = wrapRef.current
-    if (!cont || !wrap) return
-    const cr = cont.getBoundingClientRect(), wr = wrap.getBoundingClientRect()
-    const offX = e.clientX - wr.left, offY = e.clientY - wr.top
-    const w = wrap.offsetWidth, h = wrap.offsetHeight
-    let last: { x: number; y: number } | null = null
-    const move = (ev: PointerEvent) => {
-      let x = ev.clientX - cr.left - offX, y = ev.clientY - cr.top - offY
-      x = Math.max(0, Math.min(x, cr.width - w)); y = Math.max(0, Math.min(y, cr.height - h))
-      last = { x, y }; setPos(last)
-    }
-    const end = () => {
-      window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', end)
-      try { if (last) localStorage.setItem(storageKey, JSON.stringify(last)) } catch {}
-    }
-    window.addEventListener('pointermove', move); window.addEventListener('pointerup', end)
-  }
-  function startRosterDrag(e: React.PointerEvent) { startFloatDrag(e, rosterWrapRef, setRosterPos, 'veh-roster-pos') }
   // Hero 정원 배지 클릭 시 호차별 현황 팝업
   const [capPopup, setCapPopup] = useState<{ name: string; count: number; cap: number }[] | null>(null)
   // 좌측 호차 카드 클릭 시 확장 팝업 (호차명)
@@ -336,14 +288,6 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
   const [changeRequests, setChangeRequests] = useState<ChangeRequest[]>([])
   const [p3Loading, setP3Loading] = useState(false)
   const [p3ActionLoading, setP3ActionLoading] = useState<string | null>(null)
-
-  // 호차 명단 카드: 열려 있으면 정류장 패널 선택(방향/세션/호차)을 따라간다 (양방향 연동)
-  useEffect(() => {
-    if (!rosterOpen) return
-    setRosterDir(p2Dir)
-    setRosterSession(p2SessionFilter)
-    if (p2SelectedBus) setRosterBus(p2SelectedBus)
-  }, [rosterOpen, p2Dir, p2SessionFilter, p2SelectedBus])
 
   useEffect(() => {
     const now = Date.now(), TTL = 300000, cx = campusId ?? ''
@@ -382,13 +326,12 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
   useEffect(() => {
     // 중계 캠퍼스: DB에 학원 좌표 없으면 하드코딩 기본값 사용 (DB 값이 있으면 DB 우선)
     const schoolFallback = campusId ? {} : { [SCHOOL_STOP.name]: { lat: SCHOOL_STOP.lat, lng: SCHOOL_STOP.lng } }
-    // 먼저 localStorage로 빠르게 표시 (이 캠퍼스(coordsKey)의 좌표로 교체 → 옛 캠퍼스 좌표 제거)
+    // 먼저 localStorage로 빠르게 표시
     try {
       const s = localStorage.getItem(coordsKey)
       if (s) setCoords({ ...schoolFallback, ...JSON.parse(s) })
       else setCoords(schoolFallback)
     } catch { setCoords(schoolFallback) }
-    setCoordsLoadedKey(coordsKey)
     // DB에서 최신 데이터 가져와 덮어쓰기 (DB 값이 있으면 하드코딩보다 우선)
     fetch(`/api/campus/stop-coords${campusId ? `?campus_id=${campusId}` : ''}`)
       .then(r => r.ok ? r.json() : null)
@@ -396,7 +339,6 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
         if (!d?.coords) return
         const merged = { ...schoolFallback, ...d.coords }
         setCoords(merged)
-        setCoordsLoadedKey(coordsKey)
         localStorage.setItem(coordsKey, JSON.stringify(merged))
       })
       .catch(() => {})
@@ -506,31 +448,14 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
     localStorage.setItem(coordsKey, JSON.stringify(c))
     setCoordsSaving(true)
     try {
-      const res = await fetch(`/api/campus/stop-coords${campusId ? `?campus_id=${campusId}` : ''}`, {
+      await fetch(`/api/campus/stop-coords${campusId ? `?campus_id=${campusId}` : ''}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ coords: c }),
       })
-      if (!res.ok) {
-        const b = await res.json().catch(() => ({}))
-        alert(`좌표 저장 실패: ${b?.error ?? res.status}\n변경이 저장되지 않았습니다. 다시 시도해주세요.`)
-        // 서버(DB) 기준으로 복원 — '저장된 것처럼' 보이는 오해 방지
-        try {
-          const rr = await fetch(`/api/campus/stop-coords${campusId ? `?campus_id=${campusId}` : ''}`)
-          const dd = rr.ok ? await rr.json() : null
-          if (dd?.coords) {
-            const schoolFallback = campusId ? {} : { [SCHOOL_STOP.name]: { lat: SCHOOL_STOP.lat, lng: SCHOOL_STOP.lng } }
-            const restored = { ...schoolFallback, ...dd.coords }
-            setCoords(restored)
-            localStorage.setItem(coordsKey, JSON.stringify(restored))
-          }
-        } catch {}
-      }
-    } catch {
-      alert('좌표 저장 중 네트워크 오류가 발생했습니다. 다시 시도해주세요.')
-    }
+    } catch {}
     setCoordsSaving(false)
-  }, [campusId, coordsKey])
+  }, [campusId])
 
   // p2DayFilter 오늘 요일 기본 설정
   useEffect(() => {
@@ -861,32 +786,12 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
   // 학원 좌표 로드 후 지도 중심 이동 (캠퍼스 좌표 준비되면 1회)
   useEffect(() => {
     if (!mapReady || !mapRef.current || centeredRef.current) return
-    // 현재 coords가 지금 캠퍼스(coordsKey)의 것으로 로드된 뒤에만 센터링
-    // (campusId 도착 전 잠깐 로드되는 옛/중계 좌표로 잘못 묶이는 레이스 방지)
-    if (coordsLoadedKey !== coordsKey) return
-    const kakao = (window as any).kakao
     const schoolName = effectiveSchoolName ?? SCHOOL_STOP.name
-    // 1순위: 캠퍼스(학원) 좌표 — 이름이 정확히 일치할 때
-    const school = coords[schoolName] ?? (campusId ? undefined : { lat: SCHOOL_STOP.lat, lng: SCHOOL_STOP.lng })
-    if (school) {
-      centeredRef.current = true
-      mapRef.current.setCenter(new kakao.maps.LatLng(school.lat, school.lng))
-      return
-    }
-    // 2순위(폴백): 학원 좌표가 없거나 이름이 안 맞으면 이 캠퍼스 정류장 전체 범위로 맞춤
-    // → 캠퍼스명-좌표 매칭이 없어도 항상 올바른 지역에 위치 (중계 기본값에 묶이는 문제 해결)
-    const all = Object.values(coords)
-    if (all.length >= 2) {
-      const bounds = new kakao.maps.LatLngBounds()
-      for (const p of all) bounds.extend(new kakao.maps.LatLng(p.lat, p.lng))
-      centeredRef.current = true
-      mapRef.current.setBounds(bounds)
-    } else if (all.length === 1) {
-      centeredRef.current = true
-      mapRef.current.setCenter(new kakao.maps.LatLng(all[0].lat, all[0].lng))
-    }
-    // 좌표가 하나도 없으면 센터링하지 않고 다음 로드를 대기 (기본 위치 유지)
-  }, [mapReady, coords, campusId, effectiveSchoolName, coordsLoadedKey, coordsKey])
+    const c = coords[schoolName] ?? (campusId ? null : { lat: SCHOOL_STOP.lat, lng: SCHOOL_STOP.lng })
+    if (!c) return
+    centeredRef.current = true
+    mapRef.current.setCenter(new (window as any).kakao.maps.LatLng(c.lat, c.lng))
+  }, [mapReady, coords, campusId, effectiveSchoolName])
 
   // 패널 접기/펼치기 · 전체화면 토글 시 지도 리레이아웃 (CSS transition 완료 후)
   useEffect(() => {
@@ -945,9 +850,40 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
     candidateMarkerRef.current = marker
   }, [mapReady, candidateCoord, candidateStop])
 
-  // 노선 폴리라인 후처리(트림 + 정류장 보호 루프 접기)는 순수 함수로 분리:
-  // `@/lib/utils/route-geometry`의 cleanRoutePolyline 사용. 정류장을 지나는 하차
-  // 진입 구간을 루프로 오인해 접어버리던 버그(우리은행 미통과)를 막는다.
+  // TMAP 좌표열에서 도착지와 가장 가까운 지점 이후를 잘라냄
+  // 도착지를 지나쳐서 되돌아오는 선을 제거
+  function trimRouteToDestination(pts: [number, number][], dest: [number, number]): [number, number][] {
+    if (pts.length < 2) return pts
+    let minDist = Infinity, minIdx = pts.length - 1
+    for (let i = 0; i < pts.length; i++) {
+      const d = Math.hypot(pts[i][0] - dest[0], pts[i][1] - dest[1])
+      if (d < minDist) { minDist = d; minIdx = i }
+    }
+    return pts.slice(0, minIdx + 1)
+  }
+
+  // 노선 폴리라인에서 '루프(되돌아오는 구간)' 제거 — 도로 경로가 블록을 돌아 네모처럼 보이는 구간을 접음.
+  // 어떤 지점 i 이후에 i 근처(≈30m)로 되돌아오는 가장 먼 지점 j가 있으면 i+1..j 를 잘라 한 점으로 합침.
+  function removeRouteLoops(pts: [number, number][]): [number, number][] {
+    if (pts.length < 4) return pts
+    const EPS = 0.0003 // ≈ 30m. 이 안으로 되돌아오면 루프로 보고 접음
+    const near = (a: [number, number], b: [number, number]) => {
+      const dLat = a[0] - b[0]
+      const dLng = (a[1] - b[1]) * Math.cos((a[0] * Math.PI) / 180)
+      return Math.hypot(dLat, dLng) < EPS
+    }
+    const result = [...pts]
+    let i = 0
+    while (i < result.length - 2) {
+      let jFar = -1
+      for (let j = result.length - 1; j >= i + 2; j--) {
+        if (near(result[i], result[j])) { jFar = j; break }
+      }
+      if (jFar >= i + 2) result.splice(i + 1, jFar - i) // i+1..jFar 제거 (루프 접기)
+      else i++
+    }
+    return result
+  }
 
   // T맵 스타일 진행방향 화살표 — 폴리라인 위 일정 간격으로 배치 (북쪽 기준 회전)
   function addDirectionArrows(kakao: any, map: any, pts: any[], color: string, sink: any[]) {
@@ -1028,10 +964,8 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
         if (data.time != null) newSummaries[busName] = { time: data.time, distance: data.distance ?? 0 }
         const pts: [number, number][] = data.coordinates ?? []
         if (pts.length > 1) {
-          const destCoord: LatLng = [coords[end.name].lat, coords[end.name].lng]
-          // 실제 정류장 좌표를 넘겨, 하차 진입 구간을 루프로 오인해 접지 않도록 보호
-          const stopCoords: LatLng[] = stops.map(s => [coords[s.name].lat, coords[s.name].lng])
-          const trimmed = cleanRoutePolyline(pts, destCoord, stopCoords)
+          const destCoord: [number, number] = [coords[end.name].lat, coords[end.name].lng]
+          const trimmed = removeRouteLoops(trimRouteToDestination(pts, destCoord))
           newRoutes[busName] = trimmed
           setTmapDebug(`✅ ${busName}: ${pts.length}개 → ${trimmed.length}개 좌표`)
         } else setTmapDebug(`⚠️ 도로 좌표 없음`)
@@ -1074,9 +1008,8 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
         let data: any; try { data = await r.json() } catch { return }
         const pts: [number, number][] = data.coordinates ?? []
         if (pts.length > 1) {
-          const dest: LatLng = [coords[end.name].lat, coords[end.name].lng]
-          const stopCoords: LatLng[] = stops.map(s => [coords[s.name].lat, coords[s.name].lng])
-          newRoutes[targetDir][busName] = cleanRoutePolyline(pts, dest, stopCoords)
+          const dest: [number, number] = [coords[end.name].lat, coords[end.name].lng]
+          newRoutes[targetDir][busName] = removeRouteLoops(trimRouteToDestination(pts, dest))
         }
       }).catch(() => {}).finally(() => {
         pending--
@@ -1340,12 +1273,10 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
   }, [mapReady, sidebarPage, p2SelectedBus, p2VisibleStudents, coords, buses, p2Dir, effectiveSchoolName, adjustMode])
 
   // Page 2: 선택된 버스 노선 거리/시간 fetch
-  // 서버 프록시(/api/tmap-route) 경유 — 브라우저→TMAP 직접 호출은 CORS+한국 IP 제약으로
-  // 실패해 거리/시간이 안 뜨던 문제, 그리고 경유지 5개 초과 시 잘려 거리/시간이 과소
-  // 계산되던 문제를 함께 해결(서버가 7개 단위로 분할 호출·합산).
   useEffect(() => {
     setP2RouteSummary(null)
-    if (!p2SelectedBus || p2VisibleStudents.length === 0) return
+    const appKey = process.env.NEXT_PUBLIC_TMAP_APP_KEY
+    if (!appKey || !p2SelectedBus || p2VisibleStudents.length === 0) return
     const seen = new Set<string>()
     const stopOrder: { name: string; coord: { lat: number; lng: number } }[] = []
     for (const s of p2VisibleStudents) {
@@ -1359,27 +1290,23 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
       ? [...(schoolCoord ? [{ name: schoolName, coord: schoolCoord }] : []), ...stopOrder.slice().reverse()]
       : [...stopOrder, ...(schoolCoord ? [{ name: schoolName, coord: schoolCoord }] : [])]
     if (allPts.length < 2) return
-    // 동일 좌표 경유지 중복 제거 (TMAP 경로 실패 방지) — 메인 경로 fetch와 동일 규칙
-    const _seen = new Set<string>()
-    const stopsPayload = allPts
-      .filter(p => {
-        const k = `${p.coord.lat.toFixed(5)},${p.coord.lng.toFixed(5)}`
-        if (_seen.has(k)) return false
-        _seen.add(k); return true
-      })
-      .map(p => ({ name: p.name, lat: p.coord.lat, lng: p.coord.lng }))
-    if (stopsPayload.length < 2) return
-    let cancelled = false
-    fetch('/api/tmap-route', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stops: stopsPayload }),
+    const start = allPts[0], end = allPts[allPts.length - 1], waypoints = allPts.slice(1, -1)
+    const body: Record<string, string> = {
+      startX: String(start.coord.lng), startY: String(start.coord.lat), startName: start.name,
+      endX: String(end.coord.lng), endY: String(end.coord.lat), endName: end.name,
+      reqCoordType: 'WGS84GEO', resCoordType: 'WGS84GEO', searchOption: '0',
+    }
+    if (waypoints.length > 0) body.passList = waypoints.slice(0, 5).map(w => `${w.coord.lng},${w.coord.lat}`).join('_')
+    fetch(`https://apis.openapi.sk.com/tmap/routes?version=1&format=json&appKey=${encodeURIComponent(appKey)}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(body).toString(),
     }).then(async r => {
       if (!r.ok) return
       let data: any; try { data = await r.json() } catch { return }
-      if (!cancelled && data.time != null)
-        setP2RouteSummary({ time: data.time, distance: data.distance ?? 0 })
+      for (const f of data.features ?? [])
+        if (f.geometry?.type === 'Point' && f.properties?.totalTime != null)
+          setP2RouteSummary({ time: f.properties.totalTime, distance: f.properties.totalDistance ?? 0 })
     }).catch(() => {})
-    return () => { cancelled = true }
   }, [p2SelectedBus, p2VisibleStudents, coords, p2Dir, effectiveSchoolName, campusId])
 
   // ── 좌측 패널 편집 함수들
@@ -1626,94 +1553,6 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
     setLeftEditSaving(false)
     setLeftEditModal(null)
     refreshBothDirGroups()
-  }
-
-  // ── 호차 명단 카드: 학생설정 풀편집 (요일별 호차/장소/시간) ──
-  const RDAYS = ['월', '화', '수', '목', '금'] as const
-  function openRosterEdit(student: StudentEntry, busName: string, dir: 'arr' | 'dep', sessionName: string) {
-    const dayBus = { ...(student.busByDay ?? {}) }
-    const dayLoc = { ...(student.dayLocs ?? {}) }
-    const dayTime = { ...(student.dayTimes ?? {}) }
-    // 이 학생이 (어떤 호차로든) 타는 전체 요일 — 요일별 모드는 전 요일을 다룬다
-    const rideDays = RDAYS.filter(d => (dayBus[d] ?? '').trim())
-    const distinctBus = new Set(rideDays.map(d => dayBus[d]))
-    const baseLoc = student.location ?? '', baseTime = student.pickup_time ?? ''
-    // 요일별로 다른 호차/장소/시간이면 요일별 모드로 자동 진입
-    const perDay = distinctBus.size > 1 || detectPerDay({
-      days: student.days, baseBus: busName, baseLoc, baseTime, dayBus: {}, dayLoc, dayTime,
-    })
-    setREditModal({ student, busName, dir, sessionName })
-    setREditBus(busName)
-    setREditLoc(baseLoc)
-    setREditTime(baseTime)
-    setREditDays(perDay && rideDays.length > 0 ? rideDays : [...student.days])
-    setREditDayBus(dayBus)
-    setREditDayLoc(dayLoc)
-    setREditDayTime(dayTime)
-    setREditPerDay(perDay)
-  }
-  // 요일별 모드 탑승요일 토글 (rEditDayBus 동기화 — 해제=빈호차, 추가=기본호차)
-  function toggleREditDay(d: string) {
-    const isOn = rEditDays.includes(d)
-    setREditDays(isOn ? rEditDays.filter(x => x !== d) : [...rEditDays, d])
-    setREditDayBus(b => ({ ...b, [d]: isOn ? '' : (b[d] || rEditBus) }))
-  }
-
-  async function handleRosterEditSave() {
-    if (!rEditModal) return
-    if (!rEditModal.student.class_id) { alert('class_id 누락 — 새로고침 후 다시 시도해주세요.'); return }
-    if (rEditDays.length === 0) { alert('요일을 1개 이상 선택해주세요.'); return }
-    setREditSaving(true)
-    const reqBody = buildScheduleUpdate({
-      studentId: rEditModal.student.student_id,
-      classId: rEditModal.student.class_id,
-      direction: rEditModal.dir,
-      perDay: rEditPerDay,
-      bus: rEditBus,
-      oldBus: rEditModal.busName,
-      location: rEditLoc,
-      time: rEditTime,
-      days: rEditDays,
-      dayBus: rEditDayBus,
-      dayLoc: rEditDayLoc,
-      dayTime: rEditDayTime,
-      orig: {
-        dayBus: rEditModal.student.busByDay ?? {},
-        dayLoc: rEditModal.student.dayLocs ?? {},
-        dayTime: rEditModal.student.dayTimes ?? {},
-      },
-    })
-    const res = await fetch(`/api/campus/vehicles${cqs ? `?${cqs.slice(1)}` : ''}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(reqBody),
-    })
-    if (!res.ok) {
-      const b = await res.json().catch(() => ({}))
-      setREditSaving(false)
-      alert(`저장 실패: ${b?.error ?? res.status}`)
-      return
-    }
-    setREditModal(null)
-    setREditSaving(false)
-    await Promise.all([refreshBothDirGroups(), loadData()])
-  }
-
-  async function handleRosterEditDelete() {
-    if (!rEditModal) return
-    if (!confirm(`${rEditModal.student.name}의 ${rEditModal.dir === 'arr' ? '등원' : '하원'} 배정을 삭제하시겠습니까?`)) return
-    setREditSaving(true)
-    await fetch('/api/campus/vehicles', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'remove_rider',
-        student_id: rEditModal.student.student_id,
-        class_id: rEditModal.student.class_id,
-        direction: rEditModal.dir,
-      }),
-    })
-    setREditSaving(false)
-    setREditModal(null)
-    await Promise.all([refreshBothDirGroups(), loadData()])
   }
 
   // ── 좌측 패널 탑승자 추가 함수들
@@ -2751,116 +2590,6 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
     )
   }
 
-  // 호차 명단 카드의 학생설정 풀편집 인라인 에디터 (요일별 호차/장소/시간 지원)
-  function renderRosterEditInline() {
-    if (!rEditModal) return null
-    const stu = rEditModal.student
-    const busColor = getBusColor(rEditBus, buses.findIndex(b => b.name === rEditBus))
-    const selBuses = buses.filter(b => !b.name.includes('결석') && !isIndividualBus(b.name))
-    return (
-      <div className="mt-1.5 rounded-xl border border-[#4338CA]/30 bg-[#F8FAFC] p-2.5 space-y-2">
-        <div className="flex items-center justify-between">
-          <p className="text-[12px] font-extrabold text-[#1E293B]">✏ {stu.name} <span className="text-[#94A3B8] font-bold">학생설정 수정</span></p>
-          <button onClick={() => setREditModal(null)} className="text-[#94A3B8] hover:text-[#475569] text-base leading-none">×</button>
-        </div>
-
-        <button onClick={() => setREditPerDay(v => !v)}
-          className="w-full flex items-center justify-between px-2 py-1 rounded-lg text-[11px] font-bold border transition-colors"
-          style={rEditPerDay ? { background: '#EEF2FF', color: '#4338CA', borderColor: '#C7D2FE' } : { background: '#fff', color: '#64748B', borderColor: '#E2E8F0' }}>
-          <span>🗓️ 요일별 다른 호차·장소·시간</span>
-          <span>{rEditPerDay ? 'ON' : 'OFF'}</span>
-        </button>
-
-        {!rEditPerDay ? (
-          <>
-            <div>
-              <p className="text-[9px] font-bold text-[#94A3B8] mb-1">호차</p>
-              <div className="flex flex-wrap gap-1">
-                {selBuses.map((b, bi) => {
-                  const bc = getBusColor(b.name, bi); const isOn = rEditBus === b.name
-                  return (
-                    <button key={b.name} onClick={() => setREditBus(b.name)}
-                      className="px-2 py-0.5 rounded-lg text-[11px] font-bold border transition-colors"
-                      style={isOn ? { background: bc, color: '#fff', borderColor: bc } : { background: '#fff', color: '#475569', borderColor: '#E2E8F0' }}>{b.name}</button>
-                  )
-                })}
-                <button onClick={() => setREditBus('')}
-                  className={`px-2 py-0.5 rounded-lg text-[11px] font-bold border ${rEditBus === '' ? 'bg-[#EF4444] text-white border-[#EF4444]' : 'bg-white text-[#94A3B8] border-[#E2E8F0]'}`}>미배정</button>
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <div className="flex-1 min-w-0">
-                <p className="text-[9px] font-bold text-[#94A3B8] mb-1">정류장</p>
-                <input value={rEditLoc} onChange={e => setREditLoc(e.target.value)} placeholder="정류장"
-                  className="w-full border border-[#E2E8F0] rounded-lg px-2 py-1 text-[12px] focus:outline-none focus:ring-1 focus:ring-[#4338CA]" />
-              </div>
-              <div className="w-20 shrink-0">
-                <p className="text-[9px] font-bold text-[#94A3B8] mb-1">시간</p>
-                <input value={rEditTime} onChange={e => setREditTime(e.target.value)} placeholder="17:10"
-                  className="w-full border border-[#E2E8F0] rounded-lg px-2 py-1 text-[12px] focus:outline-none focus:ring-1 focus:ring-[#4338CA]" />
-              </div>
-            </div>
-            <div>
-              <p className="text-[9px] font-bold text-[#94A3B8] mb-1">요일</p>
-              <div className="flex gap-1">
-                {(['월','화','수','목','금'] as const).map((d, di) => {
-                  const isOn = rEditDays.includes(d)
-                  return (
-                    <button key={d} onClick={() => setREditDays(prev => isOn ? prev.filter(x => x !== d) : [...prev, d])}
-                      className="flex-1 h-7 rounded-lg text-[11px] font-bold border transition-colors"
-                      style={isOn ? { background: DAY_DOT_COLOR[di], color: '#fff', borderColor: DAY_DOT_COLOR[di] } : { background: '#fff', color: '#94A3B8', borderColor: '#E2E8F0' }}>{d}</button>
-                  )
-                })}
-              </div>
-            </div>
-          </>
-        ) : (
-          <>
-            <div>
-              <p className="text-[9px] font-bold text-[#94A3B8] mb-1">탑승 요일</p>
-              <div className="flex gap-1">
-                {(['월','화','수','목','금'] as const).map((d, di) => {
-                  const isOn = rEditDays.includes(d)
-                  return (
-                    <button key={d} onClick={() => toggleREditDay(d)}
-                      className="flex-1 h-7 rounded-lg text-[11px] font-bold border transition-colors"
-                      style={isOn ? { background: DAY_DOT_COLOR[di], color: '#fff', borderColor: DAY_DOT_COLOR[di] } : { background: '#fff', color: '#94A3B8', borderColor: '#E2E8F0' }}>{d}</button>
-                  )
-                })}
-              </div>
-            </div>
-            <div className="space-y-1">
-              {rEditDays.length === 0
-                ? <p className="text-[10px] text-[#94A3B8]">탑승 요일을 선택하세요</p>
-                : (['월','화','수','목','금'] as const).filter(d => rEditDays.includes(d)).map(d => (
-                  <div key={d} className="flex items-center gap-1">
-                    <span className="w-4 text-[11px] font-bold text-[#475569] shrink-0">{d}</span>
-                    <select value={rEditDayBus[d] ?? rEditBus} onChange={e => setREditDayBus(prev => ({ ...prev, [d]: e.target.value }))}
-                      className="w-16 shrink-0 border border-[#E2E8F0] rounded-lg px-1 py-1 text-[11px] bg-white">
-                      {selBuses.map(b => <option key={b.name} value={b.name}>{b.name}</option>)}
-                    </select>
-                    <input value={rEditDayLoc[d] ?? ''} onChange={e => setREditDayLoc(prev => ({ ...prev, [d]: e.target.value }))} placeholder={rEditLoc || '정류장'}
-                      className="flex-1 min-w-0 border border-[#E2E8F0] rounded-lg px-1.5 py-1 text-[11px]" />
-                    <input value={rEditDayTime[d] ?? ''} onChange={e => setREditDayTime(prev => ({ ...prev, [d]: e.target.value }))} placeholder={rEditTime || '시간'}
-                      className="w-14 shrink-0 border border-[#E2E8F0] rounded-lg px-1 py-1 text-[11px]" />
-                  </div>
-                ))}
-            </div>
-          </>
-        )}
-
-        <div className="flex gap-2 pt-0.5">
-          <button onClick={handleRosterEditDelete} disabled={rEditSaving}
-            className="px-3 py-1.5 rounded-lg text-[12px] font-bold text-[#EF4444] border border-[#FECACA] hover:bg-[#FEF2F2] disabled:opacity-40">배정 삭제</button>
-          <div className="flex-1" />
-          <button onClick={handleRosterEditSave} disabled={rEditSaving}
-            className="px-4 py-1.5 rounded-lg text-[12px] font-bold text-white disabled:opacity-40" style={{ background: busColor }}>
-            {rEditSaving ? '저장…' : '저장'}</button>
-        </div>
-      </div>
-    )
-  }
-
   // 정류장 정렬: 시간 있는 정류장은 시간순, 시간 미입력은 좌표상 가장 가까운 정류장 뒤에 배치
   function orderStopNodes<T extends { name: string; time: string | null }>(nodes: T[]): T[] {
     const hasTime = (n: T) => n.time != null && parseTimeMin(n.time) < 9999
@@ -3495,107 +3224,6 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
           )
         })()}
 
-        {/* 호차 명단 카드 — 선택 호차 전체 탑승생(학생설정) 풀편집, 리모컨 스타일 플로팅. 페이지 무관 토글 */}
-        {rosterOpen && (
-          <div ref={rosterWrapRef} className="absolute z-[1050] pointer-events-auto flex"
-            style={{ ...(rosterPos ? { left: rosterPos.x, top: rosterPos.y } : { left: 12, top: 324 }) }}>
-            {rosterMin ? (
-              <div className="flex items-center gap-2 rounded-full border border-[#DADCE0] bg-white pl-3 pr-1.5 py-1.5 shrink-0"
-                style={{ boxShadow: '0 1px 3px rgba(60,64,67,.3), 0 4px 8px rgba(60,64,67,.15)' }}>
-                <div onPointerDown={startRosterDrag} className="flex items-center gap-1.5 cursor-grab active:cursor-grabbing select-none" style={{ touchAction: 'none' }}>
-                  <span className="text-[#475569] text-[11px] leading-none tracking-widest">⠿</span>
-                  <span className="text-[12px] font-black text-[#202124] whitespace-nowrap">📋 {rosterBus ?? '호차 명단'}</span>
-                </div>
-                <button onClick={() => setRosterMin(false)} title="펼치기" className="shrink-0 w-7 h-7 flex items-center justify-center rounded-full text-[#1A73E8] hover:bg-[#E8F0FE] text-[13px] leading-none">▢</button>
-              </div>
-            ) : (() => {
-              const sessionOpts = Array.from(new Set(p2MasterGroups[rosterDir].map(g => getRunLabel(g.session_name, rosterDir)))).filter(Boolean)
-              const rosterBusList = buses.filter(b => !b.name.includes('결석') && !isIndividualBus(b.name) && getP2BusStudents(b.name, rosterDir, rosterSession).length > 0)
-              const rosterStudents = rosterBus
-                ? [...getP2BusStudents(rosterBus, rosterDir, rosterSession)].sort((a, b) => parseTimeMin(a.pickup_time) - parseTimeMin(b.pickup_time))
-                : []
-              const busIdx = rosterBus ? buses.findIndex(b => b.name === rosterBus) : -1
-              const headColor = rosterBus ? getBusColor(rosterBus, busIdx) : '#475569'
-              return (
-                <div className="flex flex-col overflow-hidden rounded-2xl border border-[#DADCE0] bg-white"
-                  style={{ width: 300, maxHeight: 'min(64vh, calc(100vh - 200px))', boxShadow: '0 1px 3px rgba(60,64,67,.3), 0 4px 8px rgba(60,64,67,.15)' }}>
-                  <div className="flex items-center px-2 pt-1.5 shrink-0">
-                    <div onPointerDown={startRosterDrag} className="flex-1 flex items-center justify-center gap-1.5 py-0.5 cursor-grab active:cursor-grabbing select-none" style={{ touchAction: 'none' }}>
-                      <span className="text-[#475569] text-[12px] leading-none tracking-widest">⠿⠿</span>
-                      <span className="text-[#64748B] text-[9px] font-bold">호차 명단 · 학생설정</span>
-                    </div>
-                    <button onClick={() => setRosterMin(true)} title="최소화" className="shrink-0 w-6 h-6 flex items-center justify-center rounded-lg text-[#5F6368] hover:bg-black/5 text-[15px] leading-none">−</button>
-                    <button onClick={() => setRosterOpen(false)} title="닫기" className="shrink-0 w-6 h-6 flex items-center justify-center rounded-lg text-[#5F6368] hover:bg-black/5 text-[15px] leading-none">×</button>
-                  </div>
-                  <div className="px-2 pb-1.5 flex items-center gap-1 shrink-0 flex-wrap">
-                    {(['arr','dep'] as const).map(d => (
-                      <button key={d} onClick={() => { setRosterDir(d); setP2Dir(d) }}
-                        className="px-2 py-0.5 rounded-lg text-[10px] font-bold transition-colors"
-                        style={rosterDir === d ? { background: d === 'arr' ? '#1A73E8' : '#D93025', color: '#fff' } : { background: '#F1F3F4', color: '#5F6368' }}>
-                        {d === 'arr' ? '등원' : '하원'}</button>
-                    ))}
-                    <select value={rosterSession} onChange={e => { setRosterSession(e.target.value); setP2SessionFilter(e.target.value); setP2SelectedBus(null) }}
-                      className="text-[10px] font-bold border border-[#E2E8F0] rounded-lg px-1.5 py-1 bg-white">
-                      <option value="">전체 세션</option>
-                      {sessionOpts.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </div>
-                  <div className="px-2 pb-1.5 flex flex-wrap gap-1 shrink-0">
-                    {rosterBusList.length === 0
-                      ? <span className="text-[10px] text-[#94A3B8]">해당 세션 호차 없음</span>
-                      : rosterBusList.map(b => {
-                          const bc = getBusColor(b.name, buses.findIndex(x => x.id === b.id)); const isOn = rosterBus === b.name
-                          const cnt = getP2BusStudents(b.name, rosterDir, rosterSession).length
-                          return (
-                            <button key={b.name} onClick={() => { setRosterBus(b.name); setP2SelectedBus(b.name); setREditModal(null) }}
-                              className="px-2 py-0.5 rounded-lg text-[11px] font-bold border transition-colors"
-                              style={isOn ? { background: bc, color: '#fff', borderColor: bc } : { background: '#fff', color: '#475569', borderColor: '#E2E8F0' }}>
-                              {b.name}<span className="opacity-70 ml-0.5 text-[9px]">{cnt}</span></button>
-                          )
-                        })}
-                  </div>
-                  {rosterBus && (
-                    <div className="px-3 py-1.5 shrink-0 flex items-center gap-2" style={{ background: headColor }}>
-                      <span className="text-xs font-extrabold text-white">{rosterBus}</span>
-                      <span className="text-[10px] font-bold text-white opacity-80">{rosterStudents.length}명</span>
-                      <span className="text-[9px] font-bold text-white opacity-70">{rosterDir === 'arr' ? '등원' : '하원'}{rosterSession ? ` · ${rosterSession}` : ''}</span>
-                    </div>
-                  )}
-                  {rosterBus && (
-                    <div className="grid text-[9px] text-[#94A3B8] font-semibold px-2 pt-1.5 pb-0.5 border-b border-[#F1F5F9] shrink-0" style={{ gridTemplateColumns: '14px 36px 1fr 1fr 38px' }}>
-                      <span>#</span><span className="text-center">시간</span><span>이름</span><span>장소</span><span className="text-center">요일</span>
-                    </div>
-                  )}
-                  <div className="overflow-y-auto flex-1">
-                    {!rosterBus ? (
-                      <p className="text-center text-[12px] text-[#CBD5E1] py-8">위에서 호차를 선택하세요</p>
-                    ) : rosterStudents.length === 0 ? (
-                      <p className="text-center text-[12px] text-[#CBD5E1] py-8">해당 호차 탑승생 없음</p>
-                    ) : rosterStudents.map((s, idx) => {
-                      const perDay = detectPerDay({ days: s.days, baseBus: rosterBus!, baseLoc: s.location ?? '', baseTime: s.pickup_time ?? '', dayBus: s.busByDay ?? {}, dayLoc: s.dayLocs ?? {}, dayTime: s.dayTimes ?? {} })
-                      const isEditing = rEditModal?.student.student_id === s.student_id && rEditModal?.busName === rosterBus
-                      return (
-                        <div key={s.student_id}>
-                          <div onClick={() => isEditing ? setREditModal(null) : openRosterEdit(s, rosterBus!, rosterDir, rosterSession)} title="클릭하여 학생설정 수정"
-                            className={`grid items-center gap-x-1 px-2 py-1.5 border-b border-[#f5f5f5] cursor-pointer hover:bg-indigo-50 transition-colors ${idx % 2 === 0 ? 'bg-[#fafafa]' : 'bg-white'}`}
-                            style={{ gridTemplateColumns: '14px 36px 1fr 1fr 38px' }}>
-                            <span className="text-[9px] text-[#ccc]">{idx + 1}</span>
-                            <div className="text-center">{s.pickup_time ? <span className="text-[9px] font-bold text-[#1E293B]">{normalizeTime(s.pickup_time)}</span> : <span className="text-[9px] text-[#CBD5E1]">-</span>}</div>
-                            <div className="min-w-0"><div className="flex items-center gap-1"><span className="text-[11px] font-semibold text-[#1a1a1a] truncate">{s.name}</span>{perDay && <span className="text-[8px] font-bold px-1 rounded shrink-0 text-[#4338CA] bg-[#EEF2FF]">요일별</span>}</div></div>
-                            <div className="min-w-0">{s.location ? <span className="text-[9px] text-[#475569] line-clamp-2">📍 {s.location}</span> : <span className="text-[9px] text-[#CBD5E1]">-</span>}</div>
-                            <DayDots days={s.days} />
-                          </div>
-                          {isEditing && <div className="px-2 pb-2 bg-white">{renderRosterEditInline()}</div>}
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              )
-            })()}
-          </div>
-        )}
-
         {/* 호차별 노선 카드 (컴팩트) — 2대 이상 선택 시 요약만 표시해 지도 확보 */}
         {sidebarPage === 1 && selectedSession && selectedBuses.length >= 2 && !bothDir && !loading && (
           <div className="absolute top-3 left-3 z-[1000] flex flex-col gap-1.5 pointer-events-auto overflow-y-auto"
@@ -3922,10 +3550,6 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
             <span className="text-[#475569] text-[12px] leading-none tracking-widest">⠿⠿</span>
             <span className="text-[#64748B] text-[9px] font-bold">드래그로 이동</span>
           </div>
-          <button onPointerDown={e => e.stopPropagation()} onClick={() => setRosterOpen(v => !v)}
-            title="호차 명단 (학생설정)"
-            className="shrink-0 w-6 h-6 flex items-center justify-center rounded-lg text-[14px] leading-none transition-colors"
-            style={rosterOpen ? { background: '#E8F0FE', color: '#1A73E8' } : { color: '#5F6368' }}>📋</button>
           <button onPointerDown={e => e.stopPropagation()} onClick={() => setRemoteMinimized(true)}
             title="최소화"
             className="shrink-0 w-6 h-6 flex items-center justify-center rounded-lg text-[#5F6368] hover:bg-black/5 text-[15px] leading-none">−</button>

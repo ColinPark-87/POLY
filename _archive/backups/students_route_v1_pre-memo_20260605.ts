@@ -164,24 +164,13 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: '권한 없음' }, { status: 403 })
 
   const body = await request.json()
-  const { id, name, english_name, school, apartment, memo } = body
+  const { id, name, english_name, school, apartment } = body
   if (!id) return NextResponse.json({ error: 'id 필수' }, { status: 400 })
-  // 메모만 수정하는 경우(이름 미전달)는 이름 필수 검사를 건너뜀
-  const memoOnly = memo !== undefined && name === undefined
-  if (!memoOnly && !name?.trim()) return NextResponse.json({ error: '이름 필수' }, { status: 400 })
+  if (!name?.trim()) return NextResponse.json({ error: '이름 필수' }, { status: 400 })
 
-  const updateData: Record<string, unknown> = {}
-  if (!memoOnly) {
-    updateData.name = name.trim()
-    updateData.english_name = english_name?.trim() || null
-    if (school !== undefined) updateData.school = school?.trim() || null
-    if (apartment !== undefined) updateData.apartment = apartment?.trim() || null
-  }
-  if (memo !== undefined) {
-    updateData.memo = (typeof memo === 'string' && memo.trim()) ? memo.trim() : null
-    updateData.memo_updated_by = profile?.name ?? null
-    updateData.memo_updated_at = new Date().toISOString()
-  }
+  const updateData: Record<string, unknown> = { name: name.trim(), english_name: english_name?.trim() || null }
+  if (school !== undefined) updateData.school = school?.trim() || null
+  if (apartment !== undefined) updateData.apartment = apartment?.trim() || null
 
   const { data, error } = await service.from('campus_students')
     .update(updateData)

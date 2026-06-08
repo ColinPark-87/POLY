@@ -1,7 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
-import { toggleSelection, applyRange } from '@/lib/utils/roster-multimove'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import type { RegisteredStop } from '@/lib/utils/stop-search'
 
 const DAYS = ['월', '화', '수', '목', '금'] as const
@@ -52,7 +51,7 @@ function getBusStyle(name: string) {
 
 const BUS_COLORS = ['#F9A825','#E53935','#1565C0','#2E7D32','#6A1B9A','#D84315','#00838F','#37474F']
 
-interface Student { id: string; name: string; english_name: string | null; grade: string | null; school: string | null; apartment: string | null; is_active: boolean; memo?: string | null; memo_updated_by?: string | null; memo_updated_at?: string | null }
+interface Student { id: string; name: string; english_name: string | null; grade: string | null; school: string | null; apartment: string | null; is_active: boolean }
 interface Enrollment {
   id: string; class_id: string; student_id: string; sort_order: number
   arr_schedule: Record<string, string>; dep_schedule: Record<string, string>
@@ -177,27 +176,6 @@ export default function ClassRosterPage() {
   const [editClassModal, setEditClassModal] = useState<ClassItem | null>(null)
   const [enrollModal, setEnrollModal] = useState<string | null>(null)
   const [studentDetailModal, setStudentDetailModal] = useState<{ enrollment: Enrollment; student: Student } | null>(null)
-  // 학생 메모 (개설반 카드 우클릭)
-  const [memoMenu, setMemoMenu] = useState<{ stu: Student; x: number; y: number } | null>(null)
-  const [memoEditor, setMemoEditor] = useState<{ stu: Student } | null>(null)
-  const [memoDraft, setMemoDraft] = useState('')
-  const [memoSaving, setMemoSaving] = useState(false)
-  // 메뉴 열린 동안 바깥 클릭/스크롤/타 위치 우클릭 시 닫기 (칩 우클릭은 stopPropagation이라 새 위치로 이동)
-  useEffect(() => {
-    if (!memoMenu) return
-    const close = () => setMemoMenu(null)
-    const t = setTimeout(() => {
-      window.addEventListener('click', close)
-      window.addEventListener('contextmenu', close)
-      window.addEventListener('scroll', close, true)
-    }, 0)
-    return () => {
-      clearTimeout(t)
-      window.removeEventListener('click', close)
-      window.removeEventListener('contextmenu', close)
-      window.removeEventListener('scroll', close, true)
-    }
-  }, [memoMenu])
   const [waitlistAddModal, setWaitlistAddModal] = useState<{ classId: string; classLevel: string } | null>(null)
   const [newStudentModal, setNewStudentModal] = useState<{ classId: string; classLevel: string } | null>(null)
   const [addStudentModal, setAddStudentModal] = useState(false)
@@ -395,14 +373,6 @@ export default function ClassRosterPage() {
     setDragEnrId(null); setDragOverClassId(null)
     await post({ action: 'move_student', enrollment_id: enrollmentId, to_class_id: toClassId })
     load()
-  }
-
-  // 다중 선택 일괄 이동 — 결과 요약을 RosterTab에 돌려줘 토스트로 알린다.
-  async function handleBulkDrop(enrollmentIds: string[], toClassId: string) {
-    setDragEnrId(null); setDragOverClassId(null)
-    const d = await post({ action: 'bulk_move_students', enrollment_ids: enrollmentIds, to_class_id: toClassId })
-    await load()
-    return (d as { moved: number; skipped: { id: string; name?: string; reason: string }[] } | null)
   }
 
   async function handleReorderClasses(sessionId: string, orderedIds: string[]) {
@@ -818,56 +788,6 @@ export default function ClassRosterPage() {
     setKtColorModal(null)
   }
 
-  // ── 학생 메모 ─────────────────────────────────────────────
-  function openMemoMenu(e: React.MouseEvent, stu: Student) {
-    e.preventDefault(); e.stopPropagation()
-    setMemoMenu({ stu, x: e.clientX, y: e.clientY })
-  }
-  function openMemoEditor(stu: Student) {
-    setMemoDraft(stu.memo ?? '')
-    setMemoEditor({ stu })
-    setMemoMenu(null)
-  }
-  // 같은 학생을 참조하는 모든 enrollment에 메모 반영 (낙관적)
-  function applyMemoLocal(studentId: string, memo: string | null, by: string | null, at: string | null) {
-    setEnrollments(prev => prev.map(e => e.campus_students.id === studentId
-      ? { ...e, campus_students: { ...e.campus_students, memo, memo_updated_by: by, memo_updated_at: at } }
-      : e))
-  }
-  async function saveMemo() {
-    if (!memoEditor) return
-    const stu = memoEditor.stu
-    setMemoSaving(true)
-    const res = await fetch('/api/campus/students', {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: stu.id, memo: memoDraft }),
-    }).catch(() => null)
-    setMemoSaving(false)
-    if (!res || !res.ok) {
-      const d = res ? await res.json().catch(() => ({})) : {}
-      alert(`메모 저장 실패: ${(d as { error?: string }).error ?? '네트워크 오류'}\nDB에 memo 컬럼이 없으면 안내된 SQL을 먼저 실행해주세요.`)
-      return
-    }
-    const d = await res.json().catch(() => ({})) as { student?: Student }
-    const saved = d.student
-    applyMemoLocal(stu.id, saved?.memo ?? (memoDraft.trim() || null), saved?.memo_updated_by ?? null, saved?.memo_updated_at ?? null)
-    setMemoEditor(null)
-  }
-  async function deleteMemo(stu: Student) {
-    setMemoMenu(null)
-    if (!confirm(`${stu.name} 학생의 메모를 삭제할까요?`)) return
-    const res = await fetch('/api/campus/students', {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: stu.id, memo: '' }),
-    }).catch(() => null)
-    if (!res || !res.ok) {
-      const d = res ? await res.json().catch(() => ({})) : {}
-      alert(`메모 삭제 실패: ${(d as { error?: string }).error ?? '네트워크 오류'}`)
-      return
-    }
-    applyMemoLocal(stu.id, null, null, null)
-  }
-
   async function handleKtReassign(e: React.FormEvent) {
     e.preventDefault()
     if (!ktReassignModal) return
@@ -972,12 +892,10 @@ export default function ClassRosterPage() {
           search={search} setSearch={setSearch} searchLower={searchLower}
           matchEnrollments={matchEnrollments} classVisible={classVisible} getEnrollments={getEnrollments} getWaitlist={getWaitlist}
           dragEnrId={dragEnrId} dragOverClassId={dragOverClassId}
-          setDragEnrId={setDragEnrId} setDragOverClassId={setDragOverClassId} onDrop={handleDrop} onBulkDrop={handleBulkDrop}
+          setDragEnrId={setDragEnrId} setDragOverClassId={setDragOverClassId} onDrop={handleDrop}
           onAddClass={setAddClassModal} onEditClass={openEditClass}
           onEnroll={setEnrollModal} onUnenroll={handleUnenroll}
           onStudentClick={(enr, stu) => setStudentDetailModal({ enrollment: enr, student: stu })}
-          onStudentMemoMenu={openMemoMenu}
-          onStudentMemoIcon={openMemoEditor}
           onWaitlistAdd={(classId, classLevel) => setWaitlistAddModal({ classId, classLevel })}
           onNewStudent={(classId, classLevel) => setNewStudentModal({ classId, classLevel })}
           onReorderClasses={handleReorderClasses}
@@ -1417,60 +1335,6 @@ export default function ClassRosterPage() {
         />
       )}
 
-      {/* ── 학생 메모: 우클릭 컨텍스트 메뉴 (바깥 클릭/스크롤/타 위치 우클릭 시 자동 닫힘) ── */}
-      {memoMenu && (
-        <div className="fixed z-[141] bg-white rounded-xl shadow-2xl ring-1 ring-black/10 py-1 text-sm min-w-[150px]"
-          onClick={e => e.stopPropagation()}
-          style={{ left: Math.min(memoMenu.x, (typeof window !== 'undefined' ? window.innerWidth : 9999) - 170), top: Math.min(memoMenu.y, (typeof window !== 'undefined' ? window.innerHeight : 9999) - 110) }}>
-          <div className="px-3 py-1.5 text-[11px] font-bold text-[#94A3B8] border-b border-[#F1F5F9] truncate">{memoMenu.stu.name}</div>
-          <button onClick={() => openMemoEditor(memoMenu.stu)}
-            className="w-full text-left px-3 py-2 hover:bg-[#F1F5F9] flex items-center gap-2">
-            <span>📝</span>{memoMenu.stu.memo ? '메모 편집' : '메모 추가'}
-          </button>
-          {memoMenu.stu.memo && (
-            <button onClick={() => deleteMemo(memoMenu.stu)}
-              className="w-full text-left px-3 py-2 hover:bg-[#FEF2F2] text-[#DC2626] flex items-center gap-2">
-              <span>🗑</span>메모 삭제
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* ── 학생 메모: 편집 팝업 ── */}
-      {memoEditor && (
-        <div className="fixed inset-0 z-[142] flex items-center justify-center bg-black/40 p-4" onClick={() => !memoSaving && setMemoEditor(null)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-4 py-3 border-b border-[#E2E8F0]">
-              <h3 className="font-bold text-[#1E293B] text-sm">📝 {memoEditor.stu.name} 메모</h3>
-              <button onClick={() => setMemoEditor(null)} className="text-[#94A3B8] hover:text-[#1E293B] text-lg leading-none">✕</button>
-            </div>
-            <div className="p-4 space-y-2">
-              <textarea
-                value={memoDraft} onChange={e => setMemoDraft(e.target.value)} autoFocus rows={5}
-                placeholder="예) 알러지: 견과류 / 하원 시 할머니 인계 / 상담 메모 등"
-                className="w-full border border-[#E2E8F0] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1e3a5f] resize-none" />
-              {memoEditor.stu.memo_updated_by && (
-                <p className="text-[11px] text-[#94A3B8]">최근 수정: {memoEditor.stu.memo_updated_by}{memoEditor.stu.memo_updated_at ? ` · ${memoEditor.stu.memo_updated_at.slice(0, 10)}` : ''}</p>
-              )}
-            </div>
-            <div className="px-4 py-3 border-t border-[#E2E8F0] flex items-center justify-between">
-              {memoEditor.stu.memo
-                ? <button onClick={() => { const s = memoEditor.stu; setMemoEditor(null); deleteMemo(s) }} disabled={memoSaving}
-                    className="text-sm font-semibold text-[#DC2626] hover:bg-[#FEF2F2] px-3 py-2 rounded-lg disabled:opacity-40">삭제</button>
-                : <span />}
-              <div className="flex gap-2">
-                <button onClick={() => setMemoEditor(null)} disabled={memoSaving}
-                  className="px-4 py-2 rounded-lg text-sm font-semibold border border-[#E2E8F0] text-[#334155] hover:bg-[#F7F8FA] disabled:opacity-40">취소</button>
-                <button onClick={saveMemo} disabled={memoSaving}
-                  className="px-5 py-2 rounded-lg text-sm font-bold bg-[#1e3a5f] text-white hover:bg-[#2c5f8a] disabled:opacity-40">
-                  {memoSaving ? '저장 중…' : '저장'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {waitlistAddModal && (
         <WaitlistAddModal
           classId={waitlistAddModal.classId} classLevel={waitlistAddModal.classLevel}
@@ -1587,8 +1451,8 @@ export default function ClassRosterPage() {
 function RosterTab({
   sessions, classes, enrollments, buses, search, setSearch, searchLower,
   matchEnrollments, classVisible, getEnrollments, getWaitlist,
-  dragEnrId, dragOverClassId, setDragEnrId, setDragOverClassId, onDrop, onBulkDrop,
-  onAddClass, onEditClass, onEnroll, onUnenroll, onStudentClick, onStudentMemoMenu, onStudentMemoIcon, onWaitlistAdd, onNewStudent,
+  dragEnrId, dragOverClassId, setDragEnrId, setDragOverClassId, onDrop,
+  onAddClass, onEditClass, onEnroll, onUnenroll, onStudentClick, onWaitlistAdd, onNewStudent,
   onReorderClasses, onDeleteSession, onReorderSessions,
 }: {
   sessions: Session[]; classes: ClassItem[]; enrollments: Enrollment[]; buses: Bus[]
@@ -1598,12 +1462,9 @@ function RosterTab({
   dragEnrId: string | null; dragOverClassId: string | null
   setDragEnrId: (id: string | null) => void; setDragOverClassId: (id: string | null) => void
   onDrop: (enrollmentId: string, toClassId: string) => void
-  onBulkDrop: (enrollmentIds: string[], toClassId: string) => Promise<{ moved: number; skipped: { id: string; name?: string; reason: string }[] } | null>
   onAddClass: (sessId: string) => void; onEditClass: (cls: ClassItem) => void
   onEnroll: (classId: string) => void; onUnenroll: (enrollId: string) => void
   onStudentClick: (enr: Enrollment, stu: Student) => void
-  onStudentMemoMenu: (e: React.MouseEvent, stu: Student) => void
-  onStudentMemoIcon: (stu: Student) => void
   onWaitlistAdd: (classId: string, classLevel: string) => void
   onNewStudent: (classId: string, classLevel: string) => void
   onReorderClasses: (sessionId: string, orderedIds: string[]) => void
@@ -1612,83 +1473,6 @@ function RosterTab({
 }) {
   const [dragClsId, setDragClsId] = useState<string | null>(null)
   const [dragOverClsId, setDragOverClsId] = useState<string | null>(null)
-
-  // ── 다중 선택(학생 일괄 이동) ──
-  // Ctrl/Cmd+클릭=토글, Shift+클릭=범위(같은 반 카드 순서). 평클릭=상세(기존), 우클릭=메모(기존).
-  const [selectedEnrIds, setSelectedEnrIds] = useState<Set<string>>(new Set())
-  const [anchorEnrId, setAnchorEnrId] = useState<string | null>(null)
-  const dragIdsRef = useRef<string[]>([])           // 드래그 중인 enrollment id들(드롭에서 읽음)
-  const [bulkMsg, setBulkMsg] = useState<string | null>(null)
-  const clearSelection = useCallback(() => { setSelectedEnrIds(new Set()); setAnchorEnrId(null) }, [])
-  // Esc로 선택 해제
-  useEffect(() => {
-    if (selectedEnrIds.size === 0) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') clearSelection() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [selectedEnrIds.size, clearSelection])
-  // 검색어 변경 시(보이는 칩 집합이 달라짐) 선택 해제 — 안 보이는 학생이 선택에 남는 혼란 방지
-  useEffect(() => { clearSelection() }, [searchLower, clearSelection])
-  // 토스트 자동 사라짐
-  useEffect(() => {
-    if (!bulkMsg) return
-    const t = setTimeout(() => setBulkMsg(null), 4000)
-    return () => clearTimeout(t)
-  }, [bulkMsg])
-
-  // 학생 칩 클릭: Ctrl/Cmd=토글, Shift=범위, 평클릭=상세(+선택 해제)
-  function handleStudentChipClick(e: React.MouseEvent, enr: Enrollment, orderedIdsInCard: string[]) {
-    if (e.metaKey || e.ctrlKey) {
-      e.stopPropagation()
-      setSelectedEnrIds(prev => toggleSelection(prev, enr.id))
-      setAnchorEnrId(enr.id)
-      return
-    }
-    if (e.shiftKey) {
-      e.stopPropagation()
-      setSelectedEnrIds(prev => applyRange(prev, orderedIdsInCard, anchorEnrId, enr.id))
-      if (!anchorEnrId) setAnchorEnrId(enr.id)
-      return
-    }
-    clearSelection()
-    onStudentClick(enr, enr.campus_students)
-  }
-
-  // 드래그 시작: 선택에 포함된 칩이면 선택 전체, 아니면 그 한 명만(단일 드래그 기존 동작 유지)
-  function startStudentDrag(e: React.DragEvent, enr: Enrollment) {
-    e.stopPropagation()
-    const ids = (selectedEnrIds.has(enr.id) && selectedEnrIds.size > 1) ? [...selectedEnrIds] : [enr.id]
-    dragIdsRef.current = ids
-    setDragEnrId(enr.id)
-    e.dataTransfer.effectAllowed = 'move'
-    if (ids.length > 1) {
-      // 여러 명 드래그 고스트 — "👥 N명 이동"
-      const ghost = document.createElement('div')
-      ghost.textContent = `👥 ${ids.length}명 이동`
-      ghost.style.cssText = 'position:absolute;top:-1000px;left:-1000px;padding:5px 10px;background:#1e3a5f;color:#fff;font-size:12px;font-weight:700;border-radius:8px;box-shadow:0 3px 10px rgba(0,0,0,.3)'
-      document.body.appendChild(ghost)
-      try { e.dataTransfer.setDragImage(ghost, 0, 0) } catch {}
-      setTimeout(() => { try { document.body.removeChild(ghost) } catch {} }, 0)
-    }
-  }
-
-  // 반 카드에 드롭 — 드래그한 id가 여럿이면 일괄 이동, 하나면 기존 단일 이동
-  async function dropStudents(toClassId: string) {
-    const ids = dragIdsRef.current.length ? dragIdsRef.current : (dragEnrId ? [dragEnrId] : [])
-    dragIdsRef.current = []
-    setDragOverClassId(null)
-    if (ids.length === 0) return
-    if (ids.length === 1) { clearSelection(); onDrop(ids[0], toClassId); return }
-    const res = await onBulkDrop(ids, toClassId)
-    clearSelection()
-    if (res) {
-      const skip = res.skipped?.length
-        ? ` · ${res.skipped.length}명 건너뜀(${[...new Set(res.skipped.map(s => s.reason))].join(', ')})`
-        : ''
-      setBulkMsg(`${res.moved}명 이동 완료${skip}`)
-    }
-  }
-
   // 세션 접기 + 접은 상태에서 세션 순서 드래그
   const [collapsedSessions, setCollapsedSessions] = useState<Set<string>>(new Set())
   const [dragSessId, setDragSessId] = useState<string | null>(null)
@@ -1740,20 +1524,6 @@ function RosterTab({
 
   return (
     <div className="space-y-5">
-      {/* 다중 선택 안내 바 — 선택된 학생이 있을 때만 */}
-      {selectedEnrIds.size > 0 && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[120] bg-[#1e3a5f] text-white rounded-full shadow-lg px-4 py-2 flex items-center gap-3 text-sm">
-          <span className="font-bold">👥 {selectedEnrIds.size}명 선택</span>
-          <span className="opacity-80 text-xs hidden sm:inline">반 카드로 드래그해 이동 · Ctrl/Shift+클릭으로 추가</span>
-          <button onClick={clearSelection} className="text-xs font-semibold bg-white/20 hover:bg-white/30 rounded-full px-2.5 py-1">해제 (Esc)</button>
-        </div>
-      )}
-      {/* 일괄 이동 결과 토스트 */}
-      {bulkMsg && (
-        <div className="fixed bottom-16 left-1/2 -translate-x-1/2 z-[120] bg-[#0f5132] text-white rounded-lg shadow-lg px-4 py-2 text-sm font-semibold">
-          ✓ {bulkMsg}
-        </div>
-      )}
       {/* Stats + search */}
       <div className="flex flex-wrap items-center gap-2">
         {/* 총수강 (방과후 제외) */}
@@ -1895,8 +1665,8 @@ function RosterTab({
                             onReorderClasses(sess.id, newIds)
                           }
                           setDragClsId(null); setDragOverClsId(null)
-                        } else if (dragEnrId || dragIdsRef.current.length) {
-                          dropStudents(cls.id)
+                        } else if (dragEnrId) {
+                          onDrop(dragEnrId, cls.id); setDragOverClassId(null)
                         }
                       }}
                     >
@@ -1930,34 +1700,23 @@ function RosterTab({
                             ?? Object.entries(enr.dep_schedule).find(([k]) => DAY_KEYS.has(k))?.[1]
                             ?? null
                           const isDragging = dragEnrId === enr.id
-                          const isSelected = selectedEnrIds.has(enr.id)
-                          const hlBg = isSelected ? '#dbeafe' : (enr.highlight_color ? enr.highlight_color + '55' : (i % 2 === 0 ? '#fafafa' : '#ffffff'))
+                          const hlBg = enr.highlight_color ? enr.highlight_color + '55' : (i % 2 === 0 ? '#fafafa' : '#ffffff')
                           const busStyle = busName ? getBusStyle(busName) : null
                           const hasEng = !!enr.campus_students.english_name
                           return (
                             <div key={enr.id}
                               draggable
-                              onDragStart={e => startStudentDrag(e, enr)}
-                              onDragEnd={() => { setDragEnrId(null); setDragOverClassId(null); dragIdsRef.current = [] }}
-                              onClick={e => handleStudentChipClick(e, enr, enrs.map(x => x.id))}
-                              onContextMenu={e => onStudentMemoMenu(e, enr.campus_students)}
-                              className={`flex items-center gap-0.5 px-1 border-b border-[#f0f0f0] cursor-pointer ${isDragging ? 'opacity-40' : ''} ${isSelected ? 'ring-1 ring-inset ring-[#1e3a5f]' : ''} hover:brightness-95`}
+                              onDragStart={e => { e.stopPropagation(); setDragEnrId(enr.id); e.dataTransfer.effectAllowed = 'move' }}
+                              onDragEnd={() => { setDragEnrId(null); setDragOverClassId(null) }}
+                              onClick={() => onStudentClick(enr, enr.campus_students)}
+                              className={`flex items-center gap-0.5 px-1 border-b border-[#f0f0f0] cursor-pointer ${isDragging ? 'opacity-40' : ''} hover:brightness-95`}
                               style={{ backgroundColor: hlBg, minHeight: hasEng ? '26px' : '18px' }}
                             >
-                              <span className="text-[8px] text-[#ccc] w-2.5 text-right flex-shrink-0 self-center">{isSelected ? '✓' : i + 1}</span>
+                              <span className="text-[8px] text-[#ccc] w-2.5 text-right flex-shrink-0 self-center">{i + 1}</span>
                               <div className="flex-1 min-w-0 overflow-hidden">
                                 <div className="text-[10px] font-semibold text-[#1a1a1a] truncate leading-tight">{enr.campus_students.name}</div>
                                 {hasEng && <div className="text-[8px] text-[#aaa] truncate leading-tight">{enr.campus_students.english_name}</div>}
                               </div>
-                              {/* 항상 보이는 메모 버튼 — 클릭하면 메모창 (우클릭 불필요) */}
-                              <button
-                                onClick={e => { e.stopPropagation(); onStudentMemoIcon(enr.campus_students) }}
-                                title={enr.campus_students.memo
-                                  ? `📝 ${enr.campus_students.memo}${enr.campus_students.memo_updated_by ? `\n— ${enr.campus_students.memo_updated_by}${enr.campus_students.memo_updated_at ? ' · ' + enr.campus_students.memo_updated_at.slice(0, 10) : ''}` : ''}`
-                                  : '메모 추가'}
-                                className="shrink-0 self-center text-[10px] leading-none px-0.5 hover:scale-125 transition-transform"
-                                style={{ opacity: enr.campus_students.memo ? 1 : 0.3 }}
-                              >{enr.campus_students.memo ? '📝' : '🖊'}</button>
                               {busStyle && (
                                 <span className="text-[8px] font-bold px-0.5 rounded border flex-shrink-0 truncate max-w-[26px] self-center"
                                   style={{ background: busStyle.bg, borderColor: busStyle.bd, color: busStyle.tx }}>

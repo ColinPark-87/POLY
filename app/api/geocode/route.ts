@@ -19,7 +19,12 @@ export async function GET(req: NextRequest) {
 
   try {
     let kakaoUrl = `https://dapi.kakao.com/v2/local/search/keyword.json?query=${encodeURIComponent(q)}&size=5`
-    if (x && y) kakaoUrl += `&x=${x}&y=${y}&radius=${radius}&sort=distance`
+    if (x && y) {
+      // 숫자만 허용 — 쿼리 파라미터 주입 방지
+      const nx = Number(x), ny = Number(y), nr = Number(radius)
+      if (Number.isFinite(nx) && Number.isFinite(ny) && Number.isFinite(nr))
+        kakaoUrl += `&x=${nx}&y=${ny}&radius=${nr}&sort=distance`
+    }
     const res = await fetch(kakaoUrl, { headers: { Authorization: `KakaoAK ${apiKey}` } })
     if (!res.ok) return NextResponse.json({ error: 'kakao error', status: res.status }, { status: 502 })
 

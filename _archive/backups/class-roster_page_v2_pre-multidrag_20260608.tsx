@@ -1,7 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
-import { toggleSelection, applyRange } from '@/lib/utils/roster-multimove'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import type { RegisteredStop } from '@/lib/utils/stop-search'
 
 const DAYS = ['월', '화', '수', '목', '금'] as const
@@ -395,14 +394,6 @@ export default function ClassRosterPage() {
     setDragEnrId(null); setDragOverClassId(null)
     await post({ action: 'move_student', enrollment_id: enrollmentId, to_class_id: toClassId })
     load()
-  }
-
-  // 다중 선택 일괄 이동 — 결과 요약을 RosterTab에 돌려줘 토스트로 알린다.
-  async function handleBulkDrop(enrollmentIds: string[], toClassId: string) {
-    setDragEnrId(null); setDragOverClassId(null)
-    const d = await post({ action: 'bulk_move_students', enrollment_ids: enrollmentIds, to_class_id: toClassId })
-    await load()
-    return (d as { moved: number; skipped: { id: string; name?: string; reason: string }[] } | null)
   }
 
   async function handleReorderClasses(sessionId: string, orderedIds: string[]) {
@@ -972,7 +963,7 @@ export default function ClassRosterPage() {
           search={search} setSearch={setSearch} searchLower={searchLower}
           matchEnrollments={matchEnrollments} classVisible={classVisible} getEnrollments={getEnrollments} getWaitlist={getWaitlist}
           dragEnrId={dragEnrId} dragOverClassId={dragOverClassId}
-          setDragEnrId={setDragEnrId} setDragOverClassId={setDragOverClassId} onDrop={handleDrop} onBulkDrop={handleBulkDrop}
+          setDragEnrId={setDragEnrId} setDragOverClassId={setDragOverClassId} onDrop={handleDrop}
           onAddClass={setAddClassModal} onEditClass={openEditClass}
           onEnroll={setEnrollModal} onUnenroll={handleUnenroll}
           onStudentClick={(enr, stu) => setStudentDetailModal({ enrollment: enr, student: stu })}
@@ -1587,7 +1578,7 @@ export default function ClassRosterPage() {
 function RosterTab({
   sessions, classes, enrollments, buses, search, setSearch, searchLower,
   matchEnrollments, classVisible, getEnrollments, getWaitlist,
-  dragEnrId, dragOverClassId, setDragEnrId, setDragOverClassId, onDrop, onBulkDrop,
+  dragEnrId, dragOverClassId, setDragEnrId, setDragOverClassId, onDrop,
   onAddClass, onEditClass, onEnroll, onUnenroll, onStudentClick, onStudentMemoMenu, onStudentMemoIcon, onWaitlistAdd, onNewStudent,
   onReorderClasses, onDeleteSession, onReorderSessions,
 }: {
@@ -1598,7 +1589,6 @@ function RosterTab({
   dragEnrId: string | null; dragOverClassId: string | null
   setDragEnrId: (id: string | null) => void; setDragOverClassId: (id: string | null) => void
   onDrop: (enrollmentId: string, toClassId: string) => void
-  onBulkDrop: (enrollmentIds: string[], toClassId: string) => Promise<{ moved: number; skipped: { id: string; name?: string; reason: string }[] } | null>
   onAddClass: (sessId: string) => void; onEditClass: (cls: ClassItem) => void
   onEnroll: (classId: string) => void; onUnenroll: (enrollId: string) => void
   onStudentClick: (enr: Enrollment, stu: Student) => void
@@ -1612,83 +1602,6 @@ function RosterTab({
 }) {
   const [dragClsId, setDragClsId] = useState<string | null>(null)
   const [dragOverClsId, setDragOverClsId] = useState<string | null>(null)
-
-  // ── 다중 선택(학생 일괄 이동) ──
-  // Ctrl/Cmd+클릭=토글, Shift+클릭=범위(같은 반 카드 순서). 평클릭=상세(기존), 우클릭=메모(기존).
-  const [selectedEnrIds, setSelectedEnrIds] = useState<Set<string>>(new Set())
-  const [anchorEnrId, setAnchorEnrId] = useState<string | null>(null)
-  const dragIdsRef = useRef<string[]>([])           // 드래그 중인 enrollment id들(드롭에서 읽음)
-  const [bulkMsg, setBulkMsg] = useState<string | null>(null)
-  const clearSelection = useCallback(() => { setSelectedEnrIds(new Set()); setAnchorEnrId(null) }, [])
-  // Esc로 선택 해제
-  useEffect(() => {
-    if (selectedEnrIds.size === 0) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') clearSelection() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [selectedEnrIds.size, clearSelection])
-  // 검색어 변경 시(보이는 칩 집합이 달라짐) 선택 해제 — 안 보이는 학생이 선택에 남는 혼란 방지
-  useEffect(() => { clearSelection() }, [searchLower, clearSelection])
-  // 토스트 자동 사라짐
-  useEffect(() => {
-    if (!bulkMsg) return
-    const t = setTimeout(() => setBulkMsg(null), 4000)
-    return () => clearTimeout(t)
-  }, [bulkMsg])
-
-  // 학생 칩 클릭: Ctrl/Cmd=토글, Shift=범위, 평클릭=상세(+선택 해제)
-  function handleStudentChipClick(e: React.MouseEvent, enr: Enrollment, orderedIdsInCard: string[]) {
-    if (e.metaKey || e.ctrlKey) {
-      e.stopPropagation()
-      setSelectedEnrIds(prev => toggleSelection(prev, enr.id))
-      setAnchorEnrId(enr.id)
-      return
-    }
-    if (e.shiftKey) {
-      e.stopPropagation()
-      setSelectedEnrIds(prev => applyRange(prev, orderedIdsInCard, anchorEnrId, enr.id))
-      if (!anchorEnrId) setAnchorEnrId(enr.id)
-      return
-    }
-    clearSelection()
-    onStudentClick(enr, enr.campus_students)
-  }
-
-  // 드래그 시작: 선택에 포함된 칩이면 선택 전체, 아니면 그 한 명만(단일 드래그 기존 동작 유지)
-  function startStudentDrag(e: React.DragEvent, enr: Enrollment) {
-    e.stopPropagation()
-    const ids = (selectedEnrIds.has(enr.id) && selectedEnrIds.size > 1) ? [...selectedEnrIds] : [enr.id]
-    dragIdsRef.current = ids
-    setDragEnrId(enr.id)
-    e.dataTransfer.effectAllowed = 'move'
-    if (ids.length > 1) {
-      // 여러 명 드래그 고스트 — "👥 N명 이동"
-      const ghost = document.createElement('div')
-      ghost.textContent = `👥 ${ids.length}명 이동`
-      ghost.style.cssText = 'position:absolute;top:-1000px;left:-1000px;padding:5px 10px;background:#1e3a5f;color:#fff;font-size:12px;font-weight:700;border-radius:8px;box-shadow:0 3px 10px rgba(0,0,0,.3)'
-      document.body.appendChild(ghost)
-      try { e.dataTransfer.setDragImage(ghost, 0, 0) } catch {}
-      setTimeout(() => { try { document.body.removeChild(ghost) } catch {} }, 0)
-    }
-  }
-
-  // 반 카드에 드롭 — 드래그한 id가 여럿이면 일괄 이동, 하나면 기존 단일 이동
-  async function dropStudents(toClassId: string) {
-    const ids = dragIdsRef.current.length ? dragIdsRef.current : (dragEnrId ? [dragEnrId] : [])
-    dragIdsRef.current = []
-    setDragOverClassId(null)
-    if (ids.length === 0) return
-    if (ids.length === 1) { clearSelection(); onDrop(ids[0], toClassId); return }
-    const res = await onBulkDrop(ids, toClassId)
-    clearSelection()
-    if (res) {
-      const skip = res.skipped?.length
-        ? ` · ${res.skipped.length}명 건너뜀(${[...new Set(res.skipped.map(s => s.reason))].join(', ')})`
-        : ''
-      setBulkMsg(`${res.moved}명 이동 완료${skip}`)
-    }
-  }
-
   // 세션 접기 + 접은 상태에서 세션 순서 드래그
   const [collapsedSessions, setCollapsedSessions] = useState<Set<string>>(new Set())
   const [dragSessId, setDragSessId] = useState<string | null>(null)
@@ -1740,20 +1653,6 @@ function RosterTab({
 
   return (
     <div className="space-y-5">
-      {/* 다중 선택 안내 바 — 선택된 학생이 있을 때만 */}
-      {selectedEnrIds.size > 0 && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[120] bg-[#1e3a5f] text-white rounded-full shadow-lg px-4 py-2 flex items-center gap-3 text-sm">
-          <span className="font-bold">👥 {selectedEnrIds.size}명 선택</span>
-          <span className="opacity-80 text-xs hidden sm:inline">반 카드로 드래그해 이동 · Ctrl/Shift+클릭으로 추가</span>
-          <button onClick={clearSelection} className="text-xs font-semibold bg-white/20 hover:bg-white/30 rounded-full px-2.5 py-1">해제 (Esc)</button>
-        </div>
-      )}
-      {/* 일괄 이동 결과 토스트 */}
-      {bulkMsg && (
-        <div className="fixed bottom-16 left-1/2 -translate-x-1/2 z-[120] bg-[#0f5132] text-white rounded-lg shadow-lg px-4 py-2 text-sm font-semibold">
-          ✓ {bulkMsg}
-        </div>
-      )}
       {/* Stats + search */}
       <div className="flex flex-wrap items-center gap-2">
         {/* 총수강 (방과후 제외) */}
@@ -1895,8 +1794,8 @@ function RosterTab({
                             onReorderClasses(sess.id, newIds)
                           }
                           setDragClsId(null); setDragOverClsId(null)
-                        } else if (dragEnrId || dragIdsRef.current.length) {
-                          dropStudents(cls.id)
+                        } else if (dragEnrId) {
+                          onDrop(dragEnrId, cls.id); setDragOverClassId(null)
                         }
                       }}
                     >
@@ -1930,21 +1829,20 @@ function RosterTab({
                             ?? Object.entries(enr.dep_schedule).find(([k]) => DAY_KEYS.has(k))?.[1]
                             ?? null
                           const isDragging = dragEnrId === enr.id
-                          const isSelected = selectedEnrIds.has(enr.id)
-                          const hlBg = isSelected ? '#dbeafe' : (enr.highlight_color ? enr.highlight_color + '55' : (i % 2 === 0 ? '#fafafa' : '#ffffff'))
+                          const hlBg = enr.highlight_color ? enr.highlight_color + '55' : (i % 2 === 0 ? '#fafafa' : '#ffffff')
                           const busStyle = busName ? getBusStyle(busName) : null
                           const hasEng = !!enr.campus_students.english_name
                           return (
                             <div key={enr.id}
                               draggable
-                              onDragStart={e => startStudentDrag(e, enr)}
-                              onDragEnd={() => { setDragEnrId(null); setDragOverClassId(null); dragIdsRef.current = [] }}
-                              onClick={e => handleStudentChipClick(e, enr, enrs.map(x => x.id))}
+                              onDragStart={e => { e.stopPropagation(); setDragEnrId(enr.id); e.dataTransfer.effectAllowed = 'move' }}
+                              onDragEnd={() => { setDragEnrId(null); setDragOverClassId(null) }}
+                              onClick={() => onStudentClick(enr, enr.campus_students)}
                               onContextMenu={e => onStudentMemoMenu(e, enr.campus_students)}
-                              className={`flex items-center gap-0.5 px-1 border-b border-[#f0f0f0] cursor-pointer ${isDragging ? 'opacity-40' : ''} ${isSelected ? 'ring-1 ring-inset ring-[#1e3a5f]' : ''} hover:brightness-95`}
+                              className={`flex items-center gap-0.5 px-1 border-b border-[#f0f0f0] cursor-pointer ${isDragging ? 'opacity-40' : ''} hover:brightness-95`}
                               style={{ backgroundColor: hlBg, minHeight: hasEng ? '26px' : '18px' }}
                             >
-                              <span className="text-[8px] text-[#ccc] w-2.5 text-right flex-shrink-0 self-center">{isSelected ? '✓' : i + 1}</span>
+                              <span className="text-[8px] text-[#ccc] w-2.5 text-right flex-shrink-0 self-center">{i + 1}</span>
                               <div className="flex-1 min-w-0 overflow-hidden">
                                 <div className="text-[10px] font-semibold text-[#1a1a1a] truncate leading-tight">{enr.campus_students.name}</div>
                                 {hasEng && <div className="text-[8px] text-[#aaa] truncate leading-tight">{enr.campus_students.english_name}</div>}

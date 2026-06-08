@@ -180,6 +180,7 @@ export async function GET(request: NextRequest) {
     dayLocs?: Record<string, string>  // 요일별 탑승 장소 (같은 호차·요일별 다른 지점)
     dayTimes?: Record<string, string>  // 요일별 탑승 시간 (정류장에 맞는 시간)
     days: string[]  // 해당 방향으로 탑승하는 요일 목록
+    busByDay?: Record<string, string>  // 요일별 호차 (요일별 다른 호차 편집용)
     pickup_time: string | null  // arr_schedule["_time"] / dep_schedule["_time"]
     is_bangwaHu?: boolean  // 방과후 세션 + 하원 여부 (매일반 탭 내 유치 배지용)
   }
@@ -305,10 +306,17 @@ export async function GET(request: NextRequest) {
       const resolvedTime2 = pickup_time || dayTime2 || null
       const location = cleanLoc2
       const allDays = ['월', '화', '수', '목', '금'] as const
-      const scheduleDays = allDays.filter(day => {
-        const v = sched?.[day]
-        return v && typeof v === 'string' && !v.endsWith('_loc')
-      })
+      // 이 호차(busName)로 타는 요일만 켜기 — 8호차 카드엔 8호차 요일만, 2호차 카드엔 2호차 요일만.
+      // (요일별로 다른 호차를 타는 학생을 master 모드처럼 호차별 요일로 분리. 기존엔 모든 요일을 켜
+      //  8호차 카드에 수요일까지 불이 들어오는 버그가 있었음)
+      const scheduleDays = allDays.filter(day => sched?.[day] === busName)
+      // 요일별 호차·위치 맵 (요일별 다른 호차 편집기에서 현재 상태 표시·수정용)
+      const busByDay: Record<string, string> = {}
+      const dayLocsAll: Record<string, string> = {}
+      for (const day of allDays) {
+        const b = sched?.[day]; if (b && typeof b === 'string') busByDay[day] = b
+        const { cleanLoc: dl } = parseLocTime(sched?.[day + '_loc'] ?? null); if (dl) dayLocsAll[day] = dl
+      }
 
       // override에 location/pickup_time이 있으면 우선 적용
       const finalLocation = (ov !== undefined && ov.location !== undefined) ? (ov.location ?? location) : location
@@ -321,6 +329,8 @@ export async function GET(request: NextRequest) {
         override: ov !== undefined,
         location: finalLocation,
         days: scheduleDays,
+        busByDay,
+        dayLocs: dayLocsAll,
         pickup_time: finalTime,
         is_bangwaHu: !!(session_name?.includes('방과후') && !session_name?.includes('유치부') && direction === 'dep'),
       }
@@ -602,8 +612,10 @@ export async function POST(request: NextRequest) {
     const currentSched = { ...(enr[schedKey] ?? {}) } as Record<string, string>
     const dayList: string[] = Array.isArray(days) ? days : []
     for (const d of dayList) {
+      const busChanged = currentSched[d] !== bus_name
       currentSched[d] = bus_name
       if (pickup_location) currentSched[d + '_loc'] = pickup_location
+      else if (busChanged) delete currentSched[d + '_loc']  // 다른 호차로 옮기는데 위치 미지정 → 옛 호차 위치가 잔존하지 않도록 제거
     }
     if (pickup_time) { currentSched['_time'] = pickup_time; clearPerDayTimes(currentSched) }
     const { error: updateError } = await service.from('class_enrollments')
@@ -612,14 +624,19 @@ export async function POST(request: NextRequest) {
       .eq('class_id', enr.class_id)
     if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 })
 
-    // 오늘 날짜 override 생성 (버스 배정만, location/pickup_time은 enrollment에 저장됨)
-    const { data, error } = await service.from('pickup_overrides').upsert({
-      student_id, campus_id: campusId, date, direction: dir,
-      bus_name, is_absent: false,
-      created_by: user.id,
-    }, { onConflict: 'student_id,date,direction' }).select().single()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    return NextResponse.json({ override: data, enrollment_updated: true })
+    // 보고 있는 날짜의 요일이 추가한 요일(dayList)에 포함될 때만 즉시표시용 override 생성.
+    // (포함 안 되면 그 날짜에 엉뚱한 호차 override가 생겨 다른 요일이 잘못 표시됨 — 예: 수요일만 추가했는데 목요일에 2호차로 보임)
+    const ovDayMap: Record<number, string> = { 1: '월', 2: '화', 3: '수', 4: '목', 5: '금' }
+    const ovDay = ovDayMap[new Date(date).getDay()]
+    if (ovDay && dayList.includes(ovDay)) {
+      const { error } = await service.from('pickup_overrides').upsert({
+        student_id, campus_id: campusId, date, direction: dir,
+        bus_name, is_absent: false,
+        created_by: user.id,
+      }, { onConflict: 'student_id,date,direction' })
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+    return NextResponse.json({ ok: true, enrollment_updated: true })
   }
 
   if (action === 'add_bus') {
@@ -641,7 +658,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === 'update_enrollment_schedule') {
-    const { student_id, class_id, direction: dir, days, bus_name, old_bus_name, location, pickup_time, day_locations, day_times } = body
+    const { student_id, class_id, direction: dir, days, bus_name, old_bus_name, location, pickup_time, day_locations, day_times, day_buses } = body
     const campusErr = await assertClassInCampus(class_id)
     if (campusErr) return campusErr
     const { data: enr } = await service.from('class_enrollments')
@@ -671,28 +688,48 @@ export async function POST(request: NextRequest) {
 
     const schedKey = dir === 'arr' ? 'arr_schedule' : 'dep_schedule'
     const sched = { ...(enr[schedKey as keyof typeof enr] as Record<string,string> ?? {}) }
-    const dayList: string[] = Array.isArray(days) ? days : []
     const allDays = ['월', '화', '수', '목', '금']
+    const dayBusesMap = (day_buses && typeof day_buses === 'object') ? (day_buses as Record<string, string>) : null
+    const dayList: string[] = dayBusesMap
+      ? Object.keys(dayBusesMap).filter(d => allDays.includes(d))
+      : (Array.isArray(days) ? days : [])
 
-    // 대상 버스(이동이면 이동 전 버스, 아니면 현재 버스)로 배정된 요일 중 새 dayList에 없는 것 제거.
-    // (기존엔 old_bus_name 없으면 제거가 안 돼, 같은 버스에서 요일만 빼면 저장돼도 안 빠지는 버그)
-    const targetOldBus = old_bus_name ?? bus_name
-    if (targetOldBus) {
-      for (const d of allDays) {
-        if (sched[d] === targetOldBus && !dayList.includes(d)) {
-          delete sched[d]
+    if (dayBusesMap) {
+      // 요일별 호차 직접 지정 모드 — 지정한 요일만 반영, 나머지 요일은 그대로 둠(제거 로직 없음).
+      // 위치는 day_locations[d]가 있으면 적용, 없고 호차가 바뀌었으면 옛 위치 제거.
+      for (const d of dayList) {
+        const b = dayBusesMap[d]
+        const busChanged = sched[d] !== b
+        if (b) sched[d] = b
+        else { delete sched[d]; delete sched[d + '_loc']; delete sched[d + '_time']; continue }
+        if (day_locations && Object.prototype.hasOwnProperty.call(day_locations, d)) {
+          const dl = day_locations[d]
+          if (dl) sched[d + '_loc'] = dl; else delete sched[d + '_loc']
+        } else if (busChanged) {
           delete sched[d + '_loc']
         }
       }
-    }
-
-    for (const d of dayList) {
-      if (bus_name) sched[d] = bus_name
-      else delete sched[d]  // 미배정: 선택 요일의 버스 배정 제거
-      // 요일별 장소(day_locations)가 있으면 그 요일은 개별 장소, 없으면 단일 location 적용
-      const dloc = (day_locations && Object.prototype.hasOwnProperty.call(day_locations, d)) ? day_locations[d] : location
-      if (dloc === '' || dloc === null || dloc === undefined) delete sched[d + '_loc']
-      else sched[d + '_loc'] = dloc
+    } else {
+      // 같은 호차에서 요일을 줄일 때만 빠진 요일을 제거한다.
+      // 호차를 바꾸는(이동) 경우엔 선택하지 않은 요일은 기존 호차 배정을 그대로 둔다
+      // → 요일별로 다른 호차(예: 평소 8호차, 수요일만 2호차)를 지원. (선택 요일만 새 호차로 덮어씀)
+      const reducingSameBus = !!bus_name && (!old_bus_name || old_bus_name === bus_name)
+      if (reducingSameBus) {
+        for (const d of allDays) {
+          if (sched[d] === bus_name && !dayList.includes(d)) {
+            delete sched[d]
+            delete sched[d + '_loc']
+          }
+        }
+      }
+      for (const d of dayList) {
+        if (bus_name) sched[d] = bus_name
+        else delete sched[d]  // 미배정: 선택 요일의 버스 배정 제거
+        // 요일별 장소(day_locations)가 있으면 그 요일은 개별 장소, 없으면 단일 location 적용
+        const dloc = (day_locations && Object.prototype.hasOwnProperty.call(day_locations, d)) ? day_locations[d] : location
+        if (dloc === '' || dloc === null || dloc === undefined) delete sched[d + '_loc']
+        else sched[d + '_loc'] = dloc
+      }
     }
     if (day_times && Object.keys(day_times).length > 0) {
       // 요일별 시간 (요일별 정류장에 맞는 시간) — 각 요일 _time 설정, 단일 _time 제거
@@ -711,6 +748,30 @@ export async function POST(request: NextRequest) {
       .update({ [schedKey]: sched })
       .eq('student_id', student_id).eq('class_id', class_id)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    // 같은 학생이 여러 반(예: 유치부 정규 + 유치부 방과후)에 등록된 경우, 변경한 요일을
+    // 다른 enrollment에서 제거해 같은 요일에 두 호차로 중복 노출되는 것을 방지한다.
+    // (해당 요일의 탑승은 방금 갱신한 enrollment의 호차로 단일화)
+    if (dayList.length > 0) {
+      const { data: others } = await service.from('class_enrollments')
+        .select('class_id, arr_schedule, dep_schedule')
+        .eq('student_id', student_id).neq('class_id', class_id)
+      for (const o of others ?? []) {
+        const osched: Record<string, string> = { ...((o[schedKey as 'arr_schedule' | 'dep_schedule'] as Record<string, string>) ?? {}) }
+        let touched = false
+        for (const d of dayList) {
+          if (osched[d] !== undefined) {
+            delete osched[d]; delete osched[d + '_loc']; delete osched[d + '_time']
+            touched = true
+          }
+        }
+        if (touched) {
+          await service.from('class_enrollments')
+            .update({ [schedKey]: osched })
+            .eq('student_id', student_id).eq('class_id', o.class_id)
+        }
+      }
+    }
     return NextResponse.json({ ok: true })
   }
 
@@ -744,15 +805,42 @@ export async function POST(request: NextRequest) {
     if (enr) {
       const schedKey = req.direction === 'arr' ? 'arr_schedule' : 'dep_schedule'
       const sched = { ...(enr[schedKey] ?? {}) }
-      for (const d of req.days) {
+      const reqDays: string[] = Array.isArray(req.days) ? req.days : []
+      const allDays = ['월', '화', '수', '목', '금']
+      // 같은 호차에서 요일을 줄일 때만 제거. 호차 이동 시엔 선택 안 한 요일은 기존 호차 유지(요일별 다른 호차 지원).
+      const reducingSameBus = !!req.to_bus && (!req.from_bus || req.from_bus === req.to_bus)
+      if (reducingSameBus) {
+        for (const d of allDays) {
+          if (sched[d] === req.to_bus && !reqDays.includes(d)) { delete sched[d]; delete sched[d + '_loc'] }
+        }
+      }
+      for (const d of reqDays) {
         sched[d] = req.to_bus
         if (req.location) sched[d + '_loc'] = req.location
         else delete sched[d + '_loc']
       }
-      if (req.pickup_time) sched['_time'] = req.pickup_time
+      if (req.pickup_time) { sched['_time'] = req.pickup_time; clearPerDayTimes(sched) }
       await service.from('class_enrollments')
         .update({ [schedKey]: sched })
         .eq('student_id', req.student_id).eq('class_id', req.class_id)
+      // 복수 등록 학생: 변경 요일을 다른 enrollment에서 제거해 같은 요일 중복 호차 노출 방지
+      if (reqDays.length > 0) {
+        const { data: others } = await service.from('class_enrollments')
+          .select('class_id, arr_schedule, dep_schedule')
+          .eq('student_id', req.student_id).neq('class_id', req.class_id)
+        for (const o of others ?? []) {
+          const osched: Record<string, string> = { ...((o[schedKey as 'arr_schedule' | 'dep_schedule'] as Record<string, string>) ?? {}) }
+          let touched = false
+          for (const d of reqDays) {
+            if (osched[d] !== undefined) { delete osched[d]; delete osched[d + '_loc']; delete osched[d + '_time']; touched = true }
+          }
+          if (touched) {
+            await service.from('class_enrollments')
+              .update({ [schedKey]: osched })
+              .eq('student_id', req.student_id).eq('class_id', o.class_id)
+          }
+        }
+      }
     }
 
     const { data, error } = await service.from('bus_change_requests')
@@ -798,12 +886,14 @@ export async function POST(request: NextRequest) {
       clearPerDayTimes(sched)
       toUpdate.push({ student_id: enr.student_id, class_id: enr.class_id, sched })
     }
+    let failedLoc = 0
     for (const u of toUpdate) {
-      await service.from('class_enrollments')
+      const { error } = await service.from('class_enrollments')
         .update({ [schedKey]: u.sched })
         .eq('student_id', u.student_id).eq('class_id', u.class_id)
+      if (error) failedLoc++
     }
-    return NextResponse.json({ ok: true, updated: toUpdate.length })
+    return NextResponse.json({ ok: failedLoc === 0, updated: toUpdate.length - failedLoc, failed: failedLoc })
   }
 
   if (action === 'bulk_set_time') {
@@ -831,12 +921,14 @@ export async function POST(request: NextRequest) {
         toUpdate.push({ student_id: enr.student_id, class_id: enr.class_id, sched })
       }
     }
+    let failedTime = 0
     for (const u of toUpdate) {
-      await service.from('class_enrollments')
+      const { error } = await service.from('class_enrollments')
         .update({ [schedKey]: u.sched })
         .eq('student_id', u.student_id).eq('class_id', u.class_id)
+      if (error) failedTime++
     }
-    return NextResponse.json({ ok: true, updated: toUpdate.length })
+    return NextResponse.json({ ok: failedTime === 0, updated: toUpdate.length - failedTime, failed: failedTime })
   }
 
   if (action === 'update_bus') {

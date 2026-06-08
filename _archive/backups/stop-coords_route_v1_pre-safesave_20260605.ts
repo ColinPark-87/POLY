@@ -59,44 +59,31 @@ export async function POST(request: NextRequest) {
   const body = await request.json()
   const coords: Record<string, { lat: number; lng: number }> = body.coords ?? {}
 
-  // 유효한 좌표만 (NaN/null/무한대 제외) — 잘못된 행 하나로 저장 전체가 실패하는 것 방지
-  const rows = Object.entries(coords)
-    .filter(([stop_name, c]) => stop_name && c && Number.isFinite(c.lat) && Number.isFinite(c.lng))
-    .map(([stop_name, { lat, lng }]) => ({
-      campus_id: campusId,
-      stop_name,
-      lat,
-      lng,
-      updated_at: new Date().toISOString(),
-    }))
+  const rows = Object.entries(coords).map(([stop_name, { lat, lng }]) => ({
+    campus_id: campusId,
+    stop_name,
+    lat,
+    lng,
+    updated_at: new Date().toISOString(),
+  }))
 
-  // 빈 저장은 무시 (실수로 전체가 삭제되는 것 방지 — 전체 삭제는 DELETE로만)
   if (rows.length === 0) return NextResponse.json({ ok: true, saved: 0 })
 
-  // 1) 먼저 upsert — 실패해도 기존 데이터 보존 (옛 '삭제 후 삽입 실패 → 전체 유실' 위험 제거)
-  const { error: upErr } = await service
+  // 기존 데이터 삭제 후 삽입 (upsert unique constraint 문제 방지)
+  const { error: delErr } = await service
     .from('campus_stop_coords')
-    .upsert(rows, { onConflict: 'campus_id,stop_name' })
-
-  if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 })
-
-  // 2) 이번 저장에 없는(=삭제된) 정류장만 정리 (제거 시맨틱 보존)
-  const provided = new Set(rows.map(r => r.stop_name))
-  const { data: existing } = await service
-    .from('campus_stop_coords')
-    .select('stop_name')
+    .delete()
     .eq('campus_id', campusId)
-  const toDelete = (existing ?? []).map(r => r.stop_name).filter(n => !provided.has(n))
-  if (toDelete.length) {
-    const { error: delErr } = await service
-      .from('campus_stop_coords')
-      .delete()
-      .eq('campus_id', campusId)
-      .in('stop_name', toDelete)
-    if (delErr) return NextResponse.json({ error: delErr.message, saved: rows.length }, { status: 500 })
-  }
 
-  return NextResponse.json({ ok: true, saved: rows.length, removed: toDelete.length })
+  if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 })
+
+  const { error } = await service
+    .from('campus_stop_coords')
+    .insert(rows)
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  return NextResponse.json({ ok: true, saved: rows.length })
 }
 
 // PATCH: 정류장명 변경 (campus_stop_coords + class_enrollments location 동시 변경)

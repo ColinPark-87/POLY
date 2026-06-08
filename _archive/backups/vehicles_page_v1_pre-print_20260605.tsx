@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { createPortal } from 'react-dom'
 import RouteMapView from './RouteMapView'
 
 const DAYS = ['월', '화', '수', '목', '금'] as const
@@ -159,17 +158,6 @@ interface TimeGroup {
   busLocations: Record<string, string[]>
 }
 
-// ── 출력(인쇄)용 데이터 모델 ──────────────────────────────────────
-interface PrintRow { name: string; english: string | null; stop: string; time: string; days: string[]; level: string }
-interface PrintStopGroup { stop: string; time: string; rows: PrintRow[] }
-interface PrintSubGroup { label: string; color: string; stops: PrintStopGroup[]; count: number }
-interface PrintSection { title: string; subGroups: PrintSubGroup[]; count: number }
-
-// 세션 베이스 라벨(방향 제거) — 출력 세션 선택 체크박스용
-function sessBaseLabel(sessName: string, dir: 'arr'|'dep'): string {
-  return getRunLabel(sessName, dir).replace(/ ?(등원|하원)$/, '')
-}
-
 function Spinner() {
   return <div className="flex justify-center py-12"><div className="w-7 h-7 border-4 border-[#004EA2] border-t-transparent rounded-full animate-spin"/></div>
 }
@@ -205,17 +193,6 @@ export default function VehiclesPage() {
   const [backups, setBackups] = useState<{ id: string; label: string; created_at: string }[]>([])
   const [backupLoading, setBackupLoading] = useState(false)
   const [backupSaving, setBackupSaving] = useState(false)
-
-  // ── 출력(인쇄) ────────────────────────────────────────────────
-  const [printModal, setPrintModal] = useState(false)
-  const [printGroupBy, setPrintGroupBy] = useState<'bus'|'session'>('bus')
-  const [printDirs, setPrintDirs] = useState<('arr'|'dep')[]>(['arr','dep'])
-  const [printSessions, setPrintSessions] = useState<string[]>([])  // 선택된 세션 베이스 라벨(유치부/매일반/3일반/2일반…)
-  const [printSections, setPrintSections] = useState<PrintSection[] | null>(null)
-  const [printLoading, setPrintLoading] = useState(false)
-  const [printMeta, setPrintMeta] = useState<{ dirs: ('arr'|'dep')[]; sessions: string[]; groupBy: 'bus'|'session' }>({ dirs: [], sessions: [], groupBy: 'bus' })
-  const [mounted, setMounted] = useState(false)
-  useEffect(() => { setMounted(true) }, [])
 
   // ── 공통 ─────────────────────────────────────────────────────
   const [month, setMonth] = useState('')
@@ -333,184 +310,6 @@ export default function VehiclesPage() {
     setMonth(m => m || (d.month ?? ''))
     setTodayLoading(false)
   }, [selectedDate, todayDir, month])
-
-  // ── 출력(인쇄) ────────────────────────────────────────────────
-  function openPrintModal() {
-    const labels = [...new Set(
-      mergeGroupsByLabel(masterGroups, masterDir).map(g => sessBaseLabel(g.session_name, masterDir))
-    )]
-    setPrintSessions(prev => prev.length ? prev : labels)
-    setPrintSections(null)
-    setPrintModal(true)
-  }
-
-  async function buildPrintSections(): Promise<PrintSection[]> {
-    const dirs = printDirs.length ? printDirs : (['arr', 'dep'] as ('arr'|'dep')[])
-    // 1) 방향별 master 데이터 (현재 로드된 방향은 재사용, 나머지는 fetch)
-    const byDir: Record<'arr'|'dep', TimeGroup[]> = { arr: [], dep: [] }
-    for (const dir of dirs) {
-      if (dir === masterDir && masterGroups.length) { byDir[dir] = masterGroups; continue }
-      const params = new URLSearchParams({ direction: dir, master: 'true', ...(month ? { month } : {}) })
-      const res = await fetch(`/api/campus/vehicles?${params}`)
-      const d = await res.json().catch(() => ({}))
-      byDir[dir] = (d.timeGroups ?? []) as TimeGroup[]
-    }
-    // 2) 반/레벨 맵 (class_id → level)
-    const levelByClassId: Record<string, string> = {}
-    try {
-      const res = await fetch(`/api/campus/class-roster${month ? `?month=${encodeURIComponent(month)}` : ''}`)
-      const d = await res.json().catch(() => ({}))
-      for (const c of (d.classes ?? []) as { id: string; level?: string }[]) {
-        if (c.level) levelByClassId[c.id] = c.level
-      }
-    } catch {}
-
-    // 3) 평탄화
-    type Flat = { dir: 'arr'|'dep'; label: string; bus: string; s: StudentEntry }
-    const flats: Flat[] = []
-    for (const dir of dirs) {
-      const merged = mergeGroupsByLabel(byDir[dir], dir)
-        .filter(g => printSessions.includes(sessBaseLabel(g.session_name, dir)))
-      for (const g of merged) {
-        const label = getRunLabel(g.session_name, dir)
-        for (const [bus, students] of Object.entries(g.busMap)) {
-          for (const s of deduplicateStudents(students)) flats.push({ dir, label, bus, s })
-        }
-      }
-    }
-
-    const busOrder = (name: string) => {
-      const i = buses.findIndex(b => b.name === name)
-      return i < 0 ? 999 : (buses[i].sort_order ?? i)
-    }
-    const labelOrder = (label: string) => {
-      const dir: 'arr'|'dep' = label.includes('등원') ? 'arr' : 'dep'
-      const base = label.replace(/ ?(등원|하원)$/, '')
-      return getSessPriority(base, dir) * 10 + (dir === 'arr' ? 0 : 1)
-    }
-    const dirColor = (dir: 'arr'|'dep') => dir === 'arr' ? '#1D4ED8' : '#DC2626'
-    const toRow = (f: Flat): PrintRow => ({
-      name: f.s.name,
-      english: f.s.english_name,
-      stop: (f.s.location ?? '').trim() || '(미지정)',
-      time: f.s.pickup_time ? normalizeTime(f.s.pickup_time) : '',
-      days: f.s.days ?? [],
-      level: levelByClassId[f.s.class_id] ?? '',
-    })
-    const groupByStop = (rows: PrintRow[]): PrintStopGroup[] => {
-      const m = new Map<string, PrintStopGroup>()
-      for (const r of rows) {
-        if (!m.has(r.stop)) m.set(r.stop, { stop: r.stop, time: r.time, rows: [] })
-        const sg = m.get(r.stop)!
-        sg.rows.push(r)
-        if (r.time && (!sg.time || parseTimeMin(r.time) < parseTimeMin(sg.time))) sg.time = r.time
-      }
-      const arr = [...m.values()]
-      for (const sg of arr) sg.rows.sort((a, b) => a.name.localeCompare(b.name, 'ko'))
-      arr.sort((a, b) => (parseTimeMin(a.time) - parseTimeMin(b.time)) || a.stop.localeCompare(b.stop, 'ko'))
-      return arr
-    }
-
-    const sections: PrintSection[] = []
-    if (printGroupBy === 'bus') {
-      const busNames = [...new Set(flats.map(f => f.bus))].sort((a, b) => busOrder(a) - busOrder(b))
-      for (const bus of busNames) {
-        const inBus = flats.filter(f => f.bus === bus)
-        const labels = [...new Set(inBus.map(f => f.label))].sort((a, b) => labelOrder(a) - labelOrder(b))
-        const subGroups: PrintSubGroup[] = labels.map(label => {
-          const fs = inBus.filter(f => f.label === label)
-          return { label, color: dirColor(fs[0].dir), stops: groupByStop(fs.map(toRow)), count: fs.length }
-        })
-        sections.push({ title: bus, subGroups, count: inBus.length })
-      }
-    } else {
-      const labels = [...new Set(flats.map(f => f.label))].sort((a, b) => labelOrder(a) - labelOrder(b))
-      for (const label of labels) {
-        const inLabel = flats.filter(f => f.label === label)
-        const busNames = [...new Set(inLabel.map(f => f.bus))].sort((a, b) => busOrder(a) - busOrder(b))
-        const subGroups: PrintSubGroup[] = busNames.map(bus => {
-          const fs = inLabel.filter(f => f.bus === bus)
-          return { label: bus, color: dirColor(inLabel[0].dir), stops: groupByStop(fs.map(toRow)), count: fs.length }
-        })
-        sections.push({ title: label, subGroups, count: inLabel.length })
-      }
-    }
-    return sections
-  }
-
-  async function handlePrintPreview() {
-    setPrintLoading(true)
-    try {
-      const sections = await buildPrintSections()
-      setPrintSections(sections)
-      setPrintMeta({ dirs: [...printDirs], sessions: [...printSessions], groupBy: printGroupBy })
-    } finally { setPrintLoading(false) }
-  }
-
-  async function handlePrintNow() {
-    if (!printSections) {
-      setPrintLoading(true)
-      try {
-        const sections = await buildPrintSections()
-        setPrintSections(sections)
-        setPrintMeta({ dirs: [...printDirs], sessions: [...printSessions], groupBy: printGroupBy })
-      } finally { setPrintLoading(false) }
-    }
-    setTimeout(() => window.print(), 120)
-  }
-
-  function renderPrintContent(sections: PrintSection[]) {
-    const dirText = printMeta.dirs.map(d => d === 'arr' ? '등원' : '하원').join('·')
-    return (
-      <div className="vp-doc">
-        {sections.length === 0 && <p className="vp-empty">선택한 조건에 해당하는 학생이 없습니다.</p>}
-        {sections.map((sec, si) => (
-          <section key={si} className="vp-section">
-            <div className="vp-head">
-              <h2>{sec.title}</h2>
-              <span className="vp-meta">{(campusName ?? '')} · {month} · {dirText} · 총 {sec.count}명</span>
-            </div>
-            {sec.subGroups.map((sg, gi) => (
-              <div key={gi} className="vp-sub">
-                <div className="vp-sub-title" style={{ borderColor: sg.color, color: sg.color }}>
-                  {sg.label} <span className="vp-cnt">{sg.count}명</span>
-                </div>
-                <table className="vp-table">
-                  <colgroup>
-                    <col style={{ width: '26px' }} />
-                    <col style={{ width: '30%' }} />
-                    <col style={{ width: '34%' }} />
-                    <col style={{ width: '92px' }} />
-                    <col />
-                  </colgroup>
-                  <thead>
-                    <tr><th className="vp-no">#</th><th>이름</th><th>정류장 · 시간</th><th>요일</th><th>반/레벨</th></tr>
-                  </thead>
-                  <tbody>
-                    {(() => {
-                      let no = 0
-                      return sg.stops.flatMap((st, sti) => st.rows.map((r, ri) => {
-                        no++
-                        return (
-                          <tr key={`${sti}-${ri}`}>
-                            <td className="vp-no">{no}</td>
-                            <td className="vp-name">{r.name}{r.english ? <span className="vp-en"> ({r.english})</span> : null}</td>
-                            <td>{ri === 0 ? <><b>{st.stop}</b>{st.time ? ` · ${st.time}` : ''}</> : <span className="vp-dim">〃</span>}</td>
-                            <td className="vp-days">{DAYS.map(d => <span key={d} className={r.days.includes(d) ? 'on' : ''}>{d}</span>)}</td>
-                            <td className="vp-lv">{r.level}</td>
-                          </tr>
-                        )
-                      }))
-                    })()}
-                  </tbody>
-                </table>
-              </div>
-            ))}
-          </section>
-        ))}
-      </div>
-    )
-  }
 
   async function openBackupModal() {
     setBackupModal(true)
@@ -1251,10 +1050,7 @@ export default function VehiclesPage() {
                 {f}
               </button>
             ))}
-            <div className="ml-auto flex items-center gap-1.5">
-              <button onClick={openPrintModal} className="text-sm font-semibold bg-[#004EA2] text-white px-3 py-1.5 rounded-lg hover:bg-[#003E83] transition-colors">
-                🖨 출력
-              </button>
+            <div className="ml-auto">
               <button onClick={openBackupModal} className="text-sm bg-white border border-[#E2E8F0] text-[#64748B] px-3 py-1.5 rounded-lg hover:bg-[#F7F8FA] transition-colors">
                 💾 백업
               </button>
@@ -2052,134 +1848,6 @@ export default function VehiclesPage() {
           </div>
         </div>
       )}
-
-      {/* ── 출력(인쇄) 모달 ───────────────────────────────── */}
-      {printModal && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 p-4 print:hidden" onClick={() => setPrintModal(false)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#E2E8F0]">
-              <h2 className="font-bold text-[#1E293B]">🖨 명단 출력 (A4)</h2>
-              <button onClick={() => setPrintModal(false)} className="text-[#94A3B8] hover:text-[#1E293B] text-xl">✕</button>
-            </div>
-
-            {/* 설정 */}
-            <div className="px-5 py-3 border-b border-[#F1F5F9] space-y-3">
-              {/* 그룹 기준 */}
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-[#64748B] w-14 shrink-0">묶기</span>
-                <div className="inline-flex rounded-lg border border-[#E2E8F0] overflow-hidden">
-                  {([['bus','호차별'],['session','세션별']] as const).map(([k, lbl]) => (
-                    <button key={k} onClick={() => { setPrintGroupBy(k); setPrintSections(null) }}
-                      className={`px-4 py-1.5 text-sm font-semibold transition-colors ${printGroupBy === k ? 'bg-[#004EA2] text-white' : 'bg-white text-[#64748B] hover:bg-[#F7F8FA]'}`}>
-                      {lbl}
-                    </button>
-                  ))}
-                </div>
-                <span className="text-[11px] text-[#94A3B8]">
-                  {printGroupBy === 'bus' ? '호차당 1페이지' : '세션당 1페이지'}
-                </span>
-              </div>
-              {/* 방향 */}
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-[#64748B] w-14 shrink-0">방향</span>
-                {([['arr','🚌 등원'],['dep','🏠 하원']] as const).map(([k, lbl]) => {
-                  const on = printDirs.includes(k)
-                  return (
-                    <button key={k} onClick={() => { setPrintDirs(prev => on ? prev.filter(x => x !== k) : [...prev, k]); setPrintSections(null) }}
-                      className={`px-3.5 py-1.5 rounded-lg text-sm font-semibold border transition-colors ${on ? (k === 'arr' ? 'bg-[#3B82F6] text-white border-[#3B82F6]' : 'bg-[#DC2626] text-white border-[#DC2626]') : 'bg-white text-[#64748B] border-[#E2E8F0]'}`}>
-                      {on ? '☑' : '☐'} {lbl}
-                    </button>
-                  )
-                })}
-              </div>
-              {/* 세션 */}
-              <div className="flex items-start gap-2">
-                <span className="text-xs font-bold text-[#64748B] w-14 shrink-0 pt-1.5">세션</span>
-                <div className="flex flex-wrap gap-1.5">
-                  {(() => {
-                    const labels = [...new Set([
-                      ...mergeGroupsByLabel(masterGroups, masterDir).map(g => sessBaseLabel(g.session_name, masterDir)),
-                      ...printSessions,
-                    ])]
-                    if (labels.length === 0) return <span className="text-[11px] text-[#94A3B8] pt-1.5">세션 데이터 없음</span>
-                    return labels.map(lbl => {
-                      const on = printSessions.includes(lbl)
-                      return (
-                        <button key={lbl} onClick={() => { setPrintSessions(prev => on ? prev.filter(x => x !== lbl) : [...prev, lbl]); setPrintSections(null) }}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${on ? 'bg-[#004EA2] text-white border-[#004EA2]' : 'bg-white text-[#64748B] border-[#E2E8F0]'}`}>
-                          {on ? '☑' : '☐'} {lbl}
-                        </button>
-                      )
-                    })
-                  })()}
-                </div>
-              </div>
-              <p className="text-[11px] text-[#94A3B8]">표 항목: 이름(한글+영어) · 정류장·시간 · 요일 · 반/레벨. 현재 월: {month || '—'}</p>
-            </div>
-
-            {/* 미리보기 */}
-            <div className="flex-1 overflow-auto bg-[#F1F5F9] p-4">
-              {printLoading ? (
-                <div className="flex justify-center py-16"><div className="w-7 h-7 border-4 border-[#004EA2] border-t-transparent rounded-full animate-spin"/></div>
-              ) : printSections ? (
-                <div className="bg-white mx-auto shadow-sm p-6" style={{ maxWidth: 760 }}>
-                  {renderPrintContent(printSections)}
-                </div>
-              ) : (
-                <div className="text-center py-16 text-sm text-[#94A3B8]">
-                  방향·세션을 고른 뒤 <b>미리보기</b>를 누르세요.
-                </div>
-              )}
-            </div>
-
-            {/* 액션 */}
-            <div className="px-5 py-3 border-t border-[#E2E8F0] flex items-center justify-end gap-2">
-              <button onClick={handlePrintPreview} disabled={printLoading || printDirs.length === 0 || printSessions.length === 0}
-                className="px-4 py-2 rounded-lg text-sm font-semibold border border-[#E2E8F0] text-[#334155] hover:bg-[#F7F8FA] disabled:opacity-40 transition-colors">
-                미리보기
-              </button>
-              <button onClick={handlePrintNow} disabled={printLoading || printDirs.length === 0 || printSessions.length === 0}
-                className="px-5 py-2 rounded-lg text-sm font-bold bg-[#004EA2] text-white hover:bg-[#003E83] disabled:opacity-40 transition-colors">
-                🖨 인쇄
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 인쇄 전용 영역 (화면엔 숨김, 인쇄 시 A4) */}
-      {mounted && printSections && createPortal(
-        <div id="vehicle-print-portal">{renderPrintContent(printSections)}</div>,
-        document.body
-      )}
-      <style>{`
-        #vehicle-print-portal { display: none; }
-        @media print {
-          body > *:not(#vehicle-print-portal) { display: none !important; }
-          #vehicle-print-portal { display: block !important; }
-          @page { size: A4 portrait; margin: 12mm; }
-        }
-        .vp-doc { font-family: 'Noto Sans KR','Inter',sans-serif; color: #0f172a; }
-        .vp-empty { text-align:center; color:#94a3b8; padding:24px 0; font-size:13px; }
-        .vp-section { break-inside: avoid; page-break-inside: avoid; }
-        .vp-section + .vp-section { break-before: page; page-break-before: always; padding-top: 4px; }
-        .vp-head { display:flex; justify-content:space-between; align-items:baseline; gap:8px; border-bottom:2px solid #004EA2; padding-bottom:5px; margin-bottom:9px; }
-        .vp-head h2 { font-size:18px; font-weight:800; margin:0; }
-        .vp-meta { font-size:11px; color:#64748b; white-space:nowrap; }
-        .vp-sub { margin-bottom:11px; break-inside: avoid; page-break-inside: avoid; }
-        .vp-sub-title { font-size:13px; font-weight:800; border-left:4px solid; padding-left:7px; margin:9px 0 4px; }
-        .vp-cnt { font-size:11px; color:#64748b; font-weight:600; }
-        .vp-table { width:100%; border-collapse:collapse; font-size:11px; table-layout:fixed; }
-        .vp-table th, .vp-table td { border:1px solid #cbd5e1; padding:3px 6px; text-align:left; vertical-align:middle; overflow:hidden; text-overflow:ellipsis; }
-        .vp-table th { background:#F1F5F9; font-weight:700; font-size:10px; }
-        .vp-table th.vp-no, .vp-table td.vp-no { width:26px; text-align:center; color:#94a3b8; }
-        .vp-name { font-weight:700; }
-        .vp-en { font-weight:400; color:#64748b; font-size:10px; }
-        .vp-days span { display:inline-block; width:15px; text-align:center; color:#cbd5e1; font-size:10px; }
-        .vp-days span.on { color:#0f172a; font-weight:800; }
-        .vp-lv { white-space:nowrap; color:#334155; }
-        .vp-dim { color:#cbd5e1; }
-      `}</style>
 
       {/* ── 백업 모달 ────────────────────────────────────── */}
       {backupModal && (

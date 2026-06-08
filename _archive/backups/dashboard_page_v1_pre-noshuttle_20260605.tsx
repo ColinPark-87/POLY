@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { downloadLeaveForm, type LeaveFormData } from '@/lib/downloadLeaveForm'
-import { NO_SHUTTLE_BUS } from '@/lib/campus-dashboard-buses'
 
 // ── 공통 상수 ────────────────────────────────────────────
 const DAYS = ['월', '화', '수', '목', '금'] as const
@@ -166,13 +165,9 @@ function BusCapacityCards({ arrByGroup, depByGroup, buses, dir = 'arr' }: {
     if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order
     return (parseInt(a.name) || 9999) - (parseInt(b.name) || 9999)
   })
-  const isNoShuttle = (name: string) => name === NO_SHUTTLE_BUS
-  const busLabel = (name: string) => { if (isNoShuttle(name)) return '안탐'; const n = parseInt(name); return isNaN(n) ? name.slice(0,2) : `${n}호` }
-  const busColor = (name: string) => { if (isNoShuttle(name)) return '#94A3B8'; const i = buses.findIndex(b => b.name === name); return BUS_COLORS[(i >= 0 ? i : 0) % BUS_COLORS.length] }
-  // 차량안탐(미이용)은 정원 개념이 아니므로 초과/주의 경고 없이 회색으로만 표시
-  const cellStyle = (n: number, name?: string): React.CSSProperties => (name && isNoShuttle(name))
-    ? (n > 0 ? { color:'#64748B', fontWeight:700 } : { color:'#E2E8F0' })
-    : n > BUS_MAX
+  const busLabel = (name: string) => { const n = parseInt(name); return isNaN(n) ? name.slice(0,2) : `${n}호` }
+  const busColor = (name: string) => { const i = buses.findIndex(b => b.name === name); return BUS_COLORS[(i >= 0 ? i : 0) % BUS_COLORS.length] }
+  const cellStyle = (n: number): React.CSSProperties => n > BUS_MAX
     ? { color:'#EF4444', background:'#FEF2F2', fontWeight:900, borderRadius:3, padding:'1px 4px' }
     : n >= BUS_MAX - 2
       ? { color:'#D97706', background:'#FFFBEB', fontWeight:900, borderRadius:3, padding:'1px 4px' }
@@ -182,20 +177,15 @@ function BusCapacityCards({ arrByGroup, depByGroup, buses, dir = 'arr' }: {
   const groups: GEntry[] = GROUPS.flatMap<GEntry>(group => {
     const arrGrp = arrByGroup[group] ?? {}
     const depGrp = depByGroup[group] ?? {}
-    const realBuses = sortedBuses.filter(b => DAYS.some(d => (arrGrp[b.name]?.[d]??0) > 0 || (depGrp[b.name]?.[d]??0) > 0))
-    // 차량안탐(미이용) 합성 컬럼 — campus_buses에 없어도 표시 (맨 뒤)
-    const hasNoShuttle = DAYS.some(d => (arrGrp[NO_SHUTTLE_BUS]?.[d]??0) > 0 || (depGrp[NO_SHUTTLE_BUS]?.[d]??0) > 0)
-    const groupBuses = hasNoShuttle
-      ? [...realBuses, { id: '__noshuttle__', name: NO_SHUTTLE_BUS, sort_order: 99999 }]
-      : realBuses
+    const groupBuses = sortedBuses.filter(b => DAYS.some(d => (arrGrp[b.name]?.[d]??0) > 0 || (depGrp[b.name]?.[d]??0) > 0))
     if (groupBuses.length === 0) return []
     const activeDays = DAYS.filter(d => groupBuses.some(b => (arrGrp[b.name]?.[d]??0) > 0 || (depGrp[b.name]?.[d]??0) > 0))
     const dayTag = activeDays.length === 5 ? '' : activeDays.join('')
     let hasOver = false, hasWarn = false
-    for (const b of groupBuses) { if (b.name === NO_SHUTTLE_BUS) continue; for (const d of activeDays) {
+    for (const b of groupBuses) for (const d of activeDays) {
       const v = (dir==='arr' ? arrGrp : depGrp)[b.name]?.[d] ?? 0
       if (v > BUS_MAX) hasOver = true; else if (v >= BUS_MAX-2) hasWarn = true
-    } }
+    }
     return [{ group, arrGrp, depGrp, groupBuses, activeDays, dayTag, hasOver, hasWarn }]
   })
 
@@ -243,7 +233,7 @@ function BusCapacityCards({ arrByGroup, depByGroup, buses, dir = 'arr' }: {
                           const n = grpMap[b.name]?.[day] ?? 0
                           return (
                             <td key={b.name} className="text-center py-2 px-1">
-                              <span style={cellStyle(n, b.name)}>{n > 0 ? n : '·'}</span>
+                              <span style={cellStyle(n)}>{n > 0 ? n : '·'}</span>
                             </td>
                           )
                         })}

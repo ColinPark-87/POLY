@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { isCampusAdminLike } from '@/lib/auth/routing'
-import { computeNoShuttleByGroup, NO_SHUTTLE_BUS } from '@/lib/campus-dashboard-buses'
 
 const DAYS = ['월', '화', '수', '목', '금'] as const
 type Day = typeof DAYS[number]
@@ -155,29 +154,6 @@ export async function GET(request: NextRequest) {
           if (!depTotal[depBus]) depTotal[depBus] = { 월:0, 화:0, 수:0, 목:0, 금:0 }
           depTotal[depBus][day]++
         }
-      }
-    }
-  }
-
-  // 셔틀 미이용(빈값=없음) 학생을 "차량안탐" 버킷으로 함께 집계 → '차량안탐'/'없음' 표기 불일치 해소.
-  // (그룹 운행요일에 한해, 복수 enrollment 실탑승 제외. 명시적 '차량안탐' 버스 배정분은 위 루프에서
-  //  이미 집계되었고 실탑승으로 잡혀 여기서 중복되지 않으므로 += 로 합산)
-  {
-    const GROUP_KEYS = ['유치부', '매일반', '3일반', '2일반'] as const
-    const noShuttle = computeNoShuttleByGroup(
-      (enrFull ?? []).map(e => ({
-        student_id: e.student_id,
-        group: classGroup[e.class_id] ?? '매일반',
-        arr_schedule: e.arr_schedule,
-        dep_schedule: e.dep_schedule,
-      })),
-      GROUP_KEYS,
-    )
-    for (const g of GROUP_KEYS) {
-      for (const [src, dst] of [[noShuttle.arr[g], arrByGroup[g]], [noShuttle.dep[g], depByGroup[g]]] as const) {
-        if (!src) continue
-        if (!dst[NO_SHUTTLE_BUS]) dst[NO_SHUTTLE_BUS] = { 월: 0, 화: 0, 수: 0, 목: 0, 금: 0 }
-        for (const d of DAYS) dst[NO_SHUTTLE_BUS][d] += src[d]
       }
     }
   }
