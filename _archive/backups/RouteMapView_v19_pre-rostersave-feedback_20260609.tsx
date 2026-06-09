@@ -1749,17 +1749,9 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
       alert(`저장 실패: ${b?.error ?? res.status}`)
       return
     }
-    const stuName = rEditModal.student.name
-    const oldBus = rEditModal.busName
-    const busMoved = !rEditPerDay && !!rEditBus && rEditBus !== oldBus
     setREditModal(null)
     setREditSaving(false)
-    // 저장 직후 5분 TTL 캐시를 비워 stale 미반영을 막는다(master groups·노선 모두 새로고침)
-    try { const cx = campusId ?? ''; sessionStorage.removeItem(`vc-arr-${cx}`); sessionStorage.removeItem(`vc-dep-${cx}`) } catch {}
     await Promise.all([refreshBothDirGroups(), loadData()])
-    // 저장 성공 피드백 — 호차 이동 시 현재 호차 목록에서 학생이 빠져나가 '저장 안 됨'으로 오인되는 것 방지
-    setAdjustToast(`💾 ${stuName} 저장됨${busMoved ? ` · ${oldBus}→${rEditBus}로 이동` : ''}`)
-    setTimeout(() => setAdjustToast(''), 2600)
   }
 
   async function handleRosterEditDelete() {
