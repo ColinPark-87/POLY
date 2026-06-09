@@ -3819,6 +3819,15 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
           </div>
         )}
 
+        {/* 티맵 디버그 */}
+        {tmapDebug && sidebarPage === 1 && selectedBuses.length > 0 && (
+          <div className="absolute bottom-3 left-3 z-[1000] pointer-events-none">
+            <div className="bg-black/75 text-white text-[10px] font-mono px-2 py-1 rounded-lg max-w-xs break-all">
+              TMAP: {tmapDebug}
+            </div>
+          </div>
+        )}
+
         {/* DB 저장 중 표시 */}
         {coordsSaving && (
           <div className="absolute z-[1000] bg-white/95 rounded-xl shadow px-3 py-1.5 flex items-center gap-1.5 border border-[#E2E8F0] text-xs text-[#64748B]" style={{ bottom: 12, right: 64 }}>
@@ -3925,17 +3934,23 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
           </div>
         )}
 
-        {/* ── 지도 FAB 컨트롤 (좌하단 — 편집 도구 / 지도 컨트롤 2그룹 묶음) */}
-        <div className="absolute z-[1000] flex flex-col gap-2.5 pointer-events-auto items-start" style={{ bottom: 12, left: 12 }}>
-          {/* 편집 도구 그룹: 명단 · 추가 · 이동 (활성 시 색 채움) */}
-          <div className="flex flex-col rounded-2xl overflow-hidden shadow-lg ring-1 ring-[#E2E8F0] bg-white">
+        {/* ── 지도 FAB 컨트롤 (좌하단 세로 스택 — 우측 플로팅 패널과 겹치지 않게) */}
+        <div className="absolute z-[1000] flex flex-col gap-2 pointer-events-auto items-start" style={{ bottom: 12, left: 12 }}>
+          {/* 호차 명단 (보라) — 선택 호차 전체 탑승생 학생설정 카드 토글 */}
+          <div className="group relative flex items-center">
+            <span className="absolute left-full ml-2 whitespace-nowrap rounded-lg bg-[#0B1220]/90 px-2.5 py-1 text-[11px] font-bold text-white opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-lg">호차 명단 (학생설정)</span>
             <button onClick={() => setRosterOpen(v => !v)}
               title="호차 명단 — 선택 호차 전체 탑승생 학생설정 보기·수정"
-              className="w-11 h-11 flex items-center justify-center transition-colors active:scale-95 text-[18px]"
-              style={rosterOpen ? { background: '#4338CA', color: '#fff' } : { color: '#4338CA' }}>
+              className="w-11 h-11 rounded-2xl shadow-lg flex items-center justify-center transition-all active:scale-95 text-[18px]"
+              style={rosterOpen
+                ? { background: '#4338CA', color: '#fff', boxShadow: '0 6px 18px rgba(67,56,202,0.5)' }
+                : { background: '#fff', color: '#4338CA', boxShadow: '0 4px 12px rgba(0,0,0,0.12)', outline: '1px solid #C7D2FE' }}>
               📋
             </button>
-            <div className="h-px bg-[#E2E8F0]" />
+          </div>
+          {/* 정류장 추가 (파랑) — 정류장 이동(초록)과 색으로 구분 */}
+          <div className="group relative flex items-center">
+            <span className="absolute left-full ml-2 whitespace-nowrap rounded-lg bg-[#0B1220]/90 px-2.5 py-1 text-[11px] font-bold text-white opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-lg">정류장 추가</span>
             <button
               onClick={() => {
                 setAddStopModal({ bus: selectedBuses.length === 1 ? selectedBuses[0] : '', dir, sessionName: '' })
@@ -3943,38 +3958,41 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
                 setCandidateStop(null); setCandidateCoord(null)
               }}
               title="정류장 추가 — 지도에 빈 정류장 등록 (탑승장소·호차설정·학생 매칭에 자동 반영)"
-              className="w-11 h-11 flex items-center justify-center transition-colors active:scale-95 text-[#004EA2] hover:bg-[#EAF2FB]">
+              className="w-11 h-11 rounded-2xl shadow-lg flex items-center justify-center transition-all active:scale-95 bg-white text-[#004EA2]"
+              style={{ boxShadow: '0 4px 12px rgba(0,0,0,0.12)', outline: '1px solid #BFDBFE' }}>
               <svg className="w-[20px] h-[20px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 21s-7-6.3-7-11a7 7 0 0 1 14 0c0 4.7-7 11-7 11z" />
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 7v6M9 10h6" />
               </svg>
             </button>
-            <div className="h-px bg-[#E2E8F0]" />
+          </div>
+          {/* 정류장 이동 (초록) — 위치 조정 모드 */}
+          <div className="group relative flex items-center">
+            <span className="absolute left-full ml-2 whitespace-nowrap rounded-lg bg-[#0B1220]/90 px-2.5 py-1 text-[11px] font-bold text-white opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-lg">정류장 이동</span>
             <button onClick={() => { setAdjustMode(v => !v); setPendingMove(null); pendingMarkerRef.current = null }} title="정류장 이동 — 정류장 핀을 끌어 좌표 변경"
-              className="w-11 h-11 flex items-center justify-center transition-colors active:scale-95"
-              style={adjustMode ? { background: '#16A34A', color: '#fff' } : { color: '#16A34A' }}>
+              className="w-11 h-11 rounded-2xl shadow-lg flex items-center justify-center transition-all active:scale-95"
+              style={adjustMode
+                ? { background: '#16A34A', color: '#fff', boxShadow: '0 6px 18px rgba(22,163,74,0.5)' }
+                : { background: '#fff', color: '#16A34A', boxShadow: '0 4px 12px rgba(0,0,0,0.12)', outline: '1px solid #BBF7D0' }}>
               <svg className="w-[19px] h-[19px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 21s-7-6.3-7-11a7 7 0 1 1 14 0c0 4.7-7 11-7 11z" />
                 <circle cx="12" cy="10" r="2.4" />
               </svg>
             </button>
           </div>
-          {/* 지도 컨트롤 그룹: 전체보기 · 학원중심 · 줌 */}
+          <button onClick={fabFitRoute} title="노선 전체 보기"
+            className="w-11 h-11 rounded-2xl bg-white shadow-lg ring-1 ring-[#E2E8F0] flex items-center justify-center text-[#0F172A] hover:bg-[#F8FAFC] hover:ring-[#004EA2] transition-all active:scale-95">
+            <svg className="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2" />
+            </svg>
+          </button>
+          <button onClick={fabCenterSchool} title="학원 중심으로"
+            className="w-11 h-11 rounded-2xl bg-white shadow-lg ring-1 ring-[#E2E8F0] flex items-center justify-center text-[#004EA2] hover:bg-[#EAF2FB] hover:ring-[#004EA2] transition-all active:scale-95">
+            <svg className="w-[19px] h-[19px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 11l9-8 9 8M5 10v9a1 1 0 0 0 1 1h4v-5h4v5h4a1 1 0 0 0 1-1v-9" />
+            </svg>
+          </button>
           <div className="flex flex-col rounded-2xl overflow-hidden shadow-lg ring-1 ring-[#E2E8F0] bg-white">
-            <button onClick={fabFitRoute} title="노선 전체 보기"
-              className="w-11 h-11 flex items-center justify-center text-[#0F172A] hover:bg-[#F8FAFC] transition-colors active:scale-95">
-              <svg className="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2" />
-              </svg>
-            </button>
-            <div className="h-px bg-[#E2E8F0]" />
-            <button onClick={fabCenterSchool} title="학원 중심으로"
-              className="w-11 h-11 flex items-center justify-center text-[#004EA2] hover:bg-[#EAF2FB] transition-colors active:scale-95">
-              <svg className="w-[19px] h-[19px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 11l9-8 9 8M5 10v9a1 1 0 0 0 1 1h4v-5h4v5h4a1 1 0 0 0 1-1v-9" />
-              </svg>
-            </button>
-            <div className="h-px bg-[#E2E8F0]" />
             <button onClick={() => fabZoom(-1)} title="확대"
               className="w-11 h-9 flex items-center justify-center text-[#0F172A] hover:bg-[#F8FAFC] transition-colors text-xl font-bold leading-none active:scale-95">+</button>
             <div className="h-px bg-[#E2E8F0]" />
