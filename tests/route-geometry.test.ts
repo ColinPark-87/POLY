@@ -79,6 +79,23 @@ describe('trimRouteToDestination', () => {
     expect(last[1]).toBeCloseTo(dest[1], 9)
   })
 
+  it('TMAP passList 군더더기 꼬리(도착지 뒤 경유지로 점프하는 직선들)를 제거한다', () => {
+    // 실제 버그: 도로 경로가 도착지(dest)에 도달한 뒤, TMAP이 경유지 좌표들로 점프하는
+    // 직선 꼬리를 붙임 → 구간 이어붙이면 정류장 가로지르는 가짜 직선("6→1선")이 됨.
+    const dest: LatLng = off(0.005, 0.005)
+    // 실제 비율: 촘촘한 도로 점(30) + 도착 뒤 경유지로 점프하는 작은 군더더기 꼬리(3)
+    const approach: LatLng[] = Array.from({ length: 30 }, (_, i) =>
+      off((0.005 * i) / 29, (0.005 * i) / 29),
+    ) // approach[29] === dest
+    const pts: LatLng[] = [...approach, off(0, 0), off(0.003, 0.001), off(0.001, 0.004)] // 꼬리=경유지 직선 점프
+    const trimmed = trimRouteToDestination(pts, dest)
+    // 도착지에서 끝나야 하고, 군더더기 꼬리(멀리 점프)는 사라져야 한다
+    const last = trimmed[trimmed.length - 1]
+    expect(last[0]).toBeCloseTo(dest[0], 9)
+    expect(last[1]).toBeCloseTo(dest[1], 9)
+    expect(trimmed.length).toBe(approach.length) // 꼬리 3점 제거됨
+  })
+
   it('회귀: 경로 중간이 도착지 근처를 지나도 거기서 자르지 않는다', () => {
     // 도착지 좌표가 경로 초반(인덱스 1)에 우연히 근접 → 과거엔 거기서 잘려 경로가 사라짐.
     const dest: LatLng = off(0.005, 0.005)

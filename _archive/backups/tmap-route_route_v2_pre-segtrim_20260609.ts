@@ -1,19 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { chunkStops, type TmapStop } from '@/lib/utils/tmap-chunk'
-import { trimRouteToDestination } from '@/lib/utils/route-geometry'
 
 // TMAP은 한국 IP만 허용 → 이 함수를 Vercel 서울 리전에서 실행 (서버간 호출이라 CORS도 없음)
 export const runtime = 'nodejs'
 export const preferredRegion = 'icn1'
-
-// [노선 폴리라인 규칙/불변식]
-// TMAP routes 응답은 실제 도로 경로 뒤에 passList(경유지)들을 직선으로 잇는 '군더더기 꼬리'를
-// 덧붙이는 경우가 있다(도착지 다음에 경유지 좌표로 점프하는 직선들). 구간을 여러 개 이어붙이면
-// 이 꼬리가 경로 중간에 박혀 정류장을 가로지르는 가짜 직선("6번→1번 선" 등)으로 보인다.
-// → 규칙: "각 구간은 실제 도착지(end)에서 끝난다. 그 뒤 군더더기 꼬리는 버린다."
-//   구현은 공용 검증 함수 trimRouteToDestination(검증된 트림: 뒤쪽 15% 내 도착지 최근접점까지만)을
-//   '구간별'로 적용해 단일 로직으로 통일한다. (렌더 직전 클라이언트 cleanRoutePolyline도 동일 트림 사용)
 
 // 한 구간(시작+경유≤5+도착)에 대한 TMAP 도로경로 + ETA 조회
 async function routeSegment(
@@ -77,8 +68,7 @@ async function routeSegment(
       }
     }
   }
-  // 구간 도착지(end)까지만 남기고 군더더기 꼬리 제거 (공용 트림 단일 로직)
-  return { coordinates: trimRouteToDestination(coordinates, [end.lat, end.lng]), time, distance }
+  return { coordinates, time, distance }
 }
 
 // POST /api/tmap-route

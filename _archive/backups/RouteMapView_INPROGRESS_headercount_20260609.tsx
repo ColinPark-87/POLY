@@ -3067,7 +3067,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
                         </span>
                       )}
                       <span className="ml-auto flex items-baseline gap-1" style={{ fontVariantNumeric: 'tabular-nums' }}>
-                        {todayCount !== null ? (
+                        {todayCount !== null && (
                           <>
                             <span className="text-[9px] font-bold text-[#94A3B8]">오늘</span>
                             <span className="text-[16px] font-black text-[#0F172A]">{todayCount}</span>
@@ -3077,7 +3077,8 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
                             <span className="text-[14px] font-black text-[#475569]">{weekCount}</span>
                             <span className="text-[10px] font-bold text-[#94A3B8]">명</span>
                           </>
-                        ) : (
+                        )}
+                        {todayCount === null && (
                           <>
                             <span className="text-[16px] font-black text-[#0F172A]">{weekCount}</span>
                             <span className="text-[10px] font-bold text-[#94A3B8]">명</span>

@@ -294,8 +294,6 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
   const [routeDay, setRouteDay] = useState('')
   // 기본은 '주간 전체'(routeDay/rosterDay='') — 모든 요일 학생·정류장을 다 보여준다.
   // (오늘 자동필터로 강제하면 그날 안 타는 학생/정류장이 통째로 숨어 '엉망'으로 보여 되돌림.)
-  // 오늘 요일(월~금, 주말이면 ''). 카드 헤더 '오늘 N명' 표시 전용 — 목록/노선 필터엔 절대 사용 안 함.
-  const todayWeekday = useMemo(() => { const k = ['일','월','화','수','목','금','토'][new Date().getDay()]; return (['월','화','수','목','금'] as string[]).includes(k) ? k : '' }, [])
   // 호차 명단 풀편집 인라인 에디터 상태 (요일별 호차/장소/시간)
   const [rEditModal, setREditModal] = useState<{ student: StudentEntry; busName: string; dir: 'arr' | 'dep'; sessionName: string } | null>(null)
   const [rEditBus, setREditBus] = useState('')
@@ -3039,9 +3037,10 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
               {list.map(bus => {
                 const bColor = getBusColor(bus.name, buses.indexOf(bus))
                 const sts = [...(combined[bus.name] ?? [])].sort((a, b) => parseTimeMin(a.pickup_time) - parseTimeMin(b.pickup_time))
-                // 인원 표시(숫자만) — 주간 전체 distinct + 오늘 실탑승 distinct. 목록·노선은 필터 안 함(전부 표시).
-                const weekCount = new Set(sts.map(s => s.student_id)).size
-                const todayCount = todayWeekday ? new Set(sts.filter(s => s.days.includes(todayWeekday)).map(s => s.student_id)).size : null
+                // 당일(routeDay) 배차 인원 — 그날 타는 학생 distinct. routeDay='' (전체)면 주간 전체 인원.
+                const headCount = routeDay
+                  ? new Set(sts.filter(s => s.days.includes(routeDay)).map(s => s.student_id)).size
+                  : sts.length
                 const busSession = selectedSession || (() => {
                   for (const [lbl, grps] of byLabel.entries())
                     for (const g of grps)
@@ -3067,22 +3066,8 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
                         </span>
                       )}
                       <span className="ml-auto flex items-baseline gap-1" style={{ fontVariantNumeric: 'tabular-nums' }}>
-                        {todayCount !== null ? (
-                          <>
-                            <span className="text-[9px] font-bold text-[#94A3B8]">오늘</span>
-                            <span className="text-[16px] font-black text-[#0F172A]">{todayCount}</span>
-                            <span className="text-[10px] font-bold text-[#94A3B8]">명</span>
-                            <span className="text-[10px] text-[#CBD5E1] mx-1">·</span>
-                            <span className="text-[9px] font-bold text-[#94A3B8]">주간</span>
-                            <span className="text-[14px] font-black text-[#475569]">{weekCount}</span>
-                            <span className="text-[10px] font-bold text-[#94A3B8]">명</span>
-                          </>
-                        ) : (
-                          <>
-                            <span className="text-[16px] font-black text-[#0F172A]">{weekCount}</span>
-                            <span className="text-[10px] font-bold text-[#94A3B8]">명</span>
-                          </>
-                        )}
+                        <span className="text-[16px] font-black text-[#0F172A]">{headCount}</span>
+                        <span className="text-[10px] font-bold text-[#94A3B8]">{routeDay ? `명(${routeDay})` : '명'}</span>
                         <span className="text-[10px] text-[#CBD5E1] mx-1">·</span>
                         <span className="text-[16px] font-black text-[#0F172A]">{stopNodes.length}</span>
                         <span className="text-[10px] font-bold text-[#94A3B8]">정류장</span>
@@ -3090,8 +3075,8 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
                     </div>
                     {/* 여유(정원) + ETA(분·거리) + 게이지 — 컴팩트 카드 통합 */}
                     {(() => {
-                      // 정원 게이지는 요일별 최대 인원 기준(안전). 오늘 실탑승은 헤더 '오늘 N명'에서 별도 표시.
-                      const dayMax = busDayMaxCount[bus.name] ?? weekCount
+                      // 당일(routeDay) 보기면 그날 실제 배차 인원 / 전체 보기면 요일별 최대(정원 안전 기준)
+                      const dayMax = routeDay ? headCount : (busDayMaxCount[bus.name] ?? sts.length)
                       const st = capStatus(dayMax, busCapOf(bus.name))
                       const summary = tmapSummaries[bus.name]
                       const timeStr = summary ? (() => { const m = Math.floor(summary.time / 60); return m >= 60 ? `${Math.floor(m/60)}시간 ${m%60}분` : `${m}분` })() : null
