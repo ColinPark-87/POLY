@@ -370,22 +370,23 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
   }, [rosterOpen, sidebarPage, dir, selectedSession, selectedBuses, p2Dir, p2SessionFilter, p2SelectedBus])
 
   useEffect(() => {
-    const now = Date.now(), TTL = 300000, cx = campusId ?? ''
-    function vcGet(direction: string) {
-      try {
-        const c = sessionStorage.getItem(`vc-${direction}-${cx}`)
-        if (c) { const p = JSON.parse(c); if (now - p.t < TTL) return Promise.resolve(p.d) }
-      } catch {}
-      return fetch(`/api/campus/vehicles?direction=${direction}&master=true${cqs}`)
+    const cx = campusId ?? ''
+    // stale-while-revalidate: 캐시 즉시 표시 후 항상 최신 재조회 (외부 변경 stale 방지)
+    const apply = (a: { timeGroups?: TimeGroup[] }, d: { timeGroups?: TimeGroup[] }) => setBothDirGroups([
+      ...(a.timeGroups ?? []).map((g: TimeGroup) => ({ group: g, dir: 'arr' as const })),
+      ...(d.timeGroups ?? []).map((g: TimeGroup) => ({ group: g, dir: 'dep' as const })),
+    ])
+    // 1) 캐시가 둘 다 있으면 즉시 표시
+    try {
+      const ca = sessionStorage.getItem(`vc-arr-${cx}`), cd = sessionStorage.getItem(`vc-dep-${cx}`)
+      if (ca && cd) { const pa = JSON.parse(ca), pd = JSON.parse(cd); if (pa.d && pd.d) apply(pa.d, pd.d) }
+    } catch {}
+    // 2) 항상 최신 재조회 후 갱신
+    const fetchFresh = (direction: string) =>
+      fetch(`/api/campus/vehicles?direction=${direction}&master=true${cqs}`)
         .then(r => r.ok ? r.json() : { timeGroups: [] })
-        .then(d => { try { sessionStorage.setItem(`vc-${direction}-${cx}`, JSON.stringify({ d, t: now })) } catch {}; return d })
-    }
-    Promise.all([vcGet('arr'), vcGet('dep')]).then(([a, d]) => {
-      setBothDirGroups([
-        ...(a.timeGroups ?? []).map((g: TimeGroup) => ({ group: g, dir: 'arr' as const })),
-        ...(d.timeGroups ?? []).map((g: TimeGroup) => ({ group: g, dir: 'dep' as const })),
-      ])
-    })
+        .then(d => { try { sessionStorage.setItem(`vc-${direction}-${cx}`, JSON.stringify({ d, t: Date.now() })) } catch {}; return d })
+    Promise.all([fetchFresh('arr'), fetchFresh('dep')]).then(([a, d]) => apply(a, d))
   }, [campusId, cqs])
 
   // 옛 공유 캐시(캠퍼스 구분 이전 'shuttle-stop-coords') 제거 — 캠퍼스 간 정류장/좌표 오염 방지
@@ -575,13 +576,16 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
   }, [sidebarPage, cqs])
 
   const loadData = useCallback(async () => {
-    setLoading(true)
+    const cx = campusId ?? '', cKey = `vc-${dir}-${cx}`
+    // stale-while-revalidate: 캐시가 있으면 즉시 표시(로딩 깜빡임 없음), 그래도 '항상' 최신을 다시 받아 갱신.
+    // (예전엔 5분 TTL이면 재조회를 건너뛰어 개설반 등 외부 변경이 늦게 반영되는 stale 문제가 있었음 → 항상 재조회)
+    let hadCache = false
     try {
-      const cx = campusId ?? '', now = Date.now(), TTL = 300000, cKey = `vc-${dir}-${cx}`
-      try {
-        const cached = sessionStorage.getItem(cKey)
-        if (cached) { const { d, t } = JSON.parse(cached); if (now - t < TTL) { setGroups(d.timeGroups ?? []); setBuses(d.buses ?? []); return } }
-      } catch {}
+      const cached = sessionStorage.getItem(cKey)
+      if (cached) { const { d } = JSON.parse(cached); if (d) { setGroups(d.timeGroups ?? []); setBuses(d.buses ?? []); hadCache = true } }
+    } catch {}
+    if (!hadCache) setLoading(true)
+    try {
       const res = await fetch(`/api/campus/vehicles?direction=${dir}&master=true${cqs}`)
       if (res.ok) {
         const d = await res.json()

@@ -249,10 +249,6 @@ export default function ClassRosterPage() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    // 개설반에서 차량(호차/요일/정류장) 정보를 저장하면 차량관리 화면이 옛 데이터를 보이지 않도록
-    // 차량 마스터 캐시(sessionStorage 'vc-arr-*','vc-dep-*', 5분 TTL)를 무효화한다.
-    // (개설반·차량은 같은 class_enrollments를 쓰지만, 차량 페이지가 캐시 때문에 개설반 변경을 늦게 반영하던 문제)
-    try { Object.keys(sessionStorage).filter(k => k.startsWith('vc-')).forEach(k => sessionStorage.removeItem(k)) } catch {}
     const [rosterRes, studentsRes, regStopsRes] = await Promise.all([
       fetch(`/api/campus/class-roster?month=${encodeURIComponent(month)}`),
       fetch('/api/campus/students'),
