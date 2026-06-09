@@ -290,9 +290,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
   const [rosterSession, setRosterSession] = useState('')
   const [rosterDir, setRosterDir] = useState<'arr' | 'dep'>('dep')
   const [rosterDay, setRosterDay] = useState('') // '' = 주간 전체, 아니면 월~금 (정원은 하루 단위라 요일별로 봐야 정확)
-  // 노선(Page1) 요일 필터 — '' = 주간 전체, 아니면 월~금. 선택 요일에 타는 학생만으로 노선 그려 하루치 동선만 깔끔.
-  const [routeDay, setRouteDay] = useState('')
-  useEffect(() => { const k = ['일','월','화','수','목','금','토'][new Date().getDay()]; if (['월','화','수','목','금'].includes(k)) { setRosterDay(k); setRouteDay(k) } }, [])
+  useEffect(() => { const k = ['일','월','화','수','목','금','토'][new Date().getDay()]; if (['월','화','수','목','금'].includes(k)) setRosterDay(k) }, [])
   // 호차 명단 풀편집 인라인 에디터 상태 (요일별 호차/장소/시간)
   const [rEditModal, setREditModal] = useState<{ student: StudentEntry; busName: string; dir: 'arr' | 'dep'; sessionName: string } | null>(null)
   const [rEditBus, setREditBus] = useState('')
@@ -717,7 +715,6 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
         for (const s of (g.busMap[busName] ?? [])) {
           // 요일별로 펼침 — 각 요일의 장소/시간을 그 정류장에 반영 (같은 호차, 요일별 다른 지점)
           for (const day of s.days) {
-            if (routeDay && day !== routeDay) continue // 요일 필터: 선택 요일에 타는 정류장만
             const loc = (s.dayLocs?.[day] ?? s.location ?? '').trim()
             if (!loc) continue
             const t = s.dayTimes?.[day] ?? s.pickup_time
@@ -728,8 +725,8 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
           }
         }
       }
-      // 빈 정류장 마스터(학생 0명) 합집합 — 세션 무관, 해당 호차·방향만 (요일 필터 시엔 그날 타는 정류장만 보려 제외)
-      if (!routeDay) for (const rs of registeredStops) {
+      // 빈 정류장 마스터(학생 0명) 합집합 — 세션 무관, 해당 호차·방향만
+      for (const rs of registeredStops) {
         if (rs.bus_name !== busName || rs.direction !== dir) continue
         const loc = rs.stop_name.trim()
         if (!locMap.has(loc)) locMap.set(loc, { time: rs.default_time, count: 0, names: [] })
@@ -741,7 +738,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
       result[busName] = dir === 'arr' ? [...sorted, schoolStop] : [schoolStop, ...sorted]
     }
     return result
-  }, [groups, dir, selectedSession, selectedBuses, registeredStops, routeDay]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [groups, dir, selectedSession, selectedBuses, registeredStops]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 등하원 동시보기용 — 양쪽 방향 정류장 추출
   const bothDirStopsByBus = useMemo((): Record<'arr'|'dep', Record<string, RouteStop[]>> => {
@@ -756,7 +753,6 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
           if (getRunLabel(group.session_name, d) !== selectedSession) continue
           for (const s of (group.busMap[busName] ?? [])) {
             for (const day of s.days) {
-              if (routeDay && day !== routeDay) continue // 요일 필터
               const loc = (s.dayLocs?.[day] ?? s.location ?? '').trim()
               if (!loc) continue
               const t = s.dayTimes?.[day] ?? s.pickup_time
@@ -767,8 +763,8 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
             }
           }
         }
-        // 빈 정류장 마스터(학생 0명) 합집합 — 해당 호차·방향만 (요일 필터 시엔 제외)
-        if (!routeDay) for (const rs of registeredStops) {
+        // 빈 정류장 마스터(학생 0명) 합집합 — 해당 호차·방향만
+        for (const rs of registeredStops) {
           if (rs.bus_name !== busName || rs.direction !== targetDir) continue
           const loc = rs.stop_name.trim()
           if (!locMap.has(loc)) locMap.set(loc, { time: rs.default_time, count: 0, names: [] })
@@ -781,7 +777,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
       return result
     }
     return { arr: compute('arr'), dep: compute('dep') }
-  }, [bothDirGroups, selectedSession, selectedBuses, bothDir, effectiveSchoolName, registeredStops, routeDay])
+  }, [bothDirGroups, selectedSession, selectedBuses, bothDir, effectiveSchoolName, registeredStops])
 
   // 전체 정류장 — 등하원 양쪽 데이터 통합 (좌표 설정용)
   const allStops = useMemo(() => {
@@ -4135,26 +4131,6 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
                   </div>
                 ) : <p className="text-[11px] text-[#64748B] text-center py-2">세션을 선택하세요</p>}
               </div>
-
-              {/* 요일 필터 — 선택 요일에 타는 정류장만 노선에 그려 하루치 동선만 깔끔. '전체'=주간 합집합(기존과 동일) */}
-              {selectedSession && (
-                <div>
-                  <div className="flex items-center justify-between mb-1 px-0.5">
-                    <p className="text-[9px] font-bold text-[#64748B] uppercase tracking-wider">요일</p>
-                    <span className="text-[9px] font-bold" style={{ color: routeDay ? '#1A73E8' : '#94A3B8' }}>{routeDay ? `${routeDay}요일 노선` : '주간 전체'}</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    {(['월','화','수','목','금'] as const).map((d, di) => (
-                      <button key={d} onClick={() => setRouteDay(routeDay === d ? '' : d)}
-                        className="flex-1 py-1.5 rounded-lg text-[11px] font-bold transition-colors"
-                        style={routeDay === d ? { background: DAY_DOT_COLOR[di], color: '#fff' } : { background: '#F1F3F4', color: '#5F6368' }}>{d}</button>
-                    ))}
-                    <button onClick={() => setRouteDay('')}
-                      className="flex-1 py-1.5 rounded-lg text-[10px] font-bold transition-colors"
-                      style={routeDay === '' ? { background: '#475569', color: '#fff' } : { background: '#F1F3F4', color: '#5F6368' }}>전체</button>
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* 등하원 동시보기는 좌측 팝업 미연동이라 우측 리스트 유지 / 그 외엔 지도 호차카드 안내 */}
