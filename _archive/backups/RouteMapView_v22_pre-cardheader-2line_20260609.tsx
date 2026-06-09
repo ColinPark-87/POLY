@@ -3060,25 +3060,23 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
                 { let bn = 0; for (const n of stopNodes) { if (n.students.length > 0) { bn++; boardingNumByName.set(n.name, bn) } } }
                 return (
                   <div key={bus.name} className="bg-white rounded-2xl shadow-sm ring-1 ring-[#E2E8F0] overflow-hidden">
-                    {/* 호차 헤더 — 1줄: 호차·세션 / 2줄: 인원·정류장 (한 줄 안 깨지게) */}
-                    <div className="px-4 py-3"
+                    {/* 호차 헤더 */}
+                    <div className="flex items-center gap-2 px-4 py-3"
                       style={{ background: `linear-gradient(135deg, ${bColor}14, transparent 70%)`, borderLeft: `4px solid ${bColor}` }}>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[17px] font-black tracking-tight" style={{ color: bColor }}>{bus.name}</span>
-                        {busSession && (
-                          <span className="text-[10px] font-black px-2 py-0.5 rounded-full"
-                            style={{ background: sessColor + '20', color: sessColor }}>
-                            {busSession}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-baseline gap-1 mt-1.5 whitespace-nowrap" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                      <span className="text-[17px] font-black tracking-tight" style={{ color: bColor }}>{bus.name}</span>
+                      {busSession && (
+                        <span className="text-[10px] font-black px-2 py-0.5 rounded-full"
+                          style={{ background: sessColor + '20', color: sessColor }}>
+                          {busSession}
+                        </span>
+                      )}
+                      <span className="ml-auto flex items-baseline gap-1" style={{ fontVariantNumeric: 'tabular-nums' }}>
                         {todayCount !== null ? (
                           <>
                             <span className="text-[9px] font-bold text-[#94A3B8]">오늘</span>
                             <span className="text-[16px] font-black text-[#0F172A]">{todayCount}</span>
                             <span className="text-[10px] font-bold text-[#94A3B8]">명</span>
-                            <span className="text-[10px] text-[#CBD5E1] mx-1.5">·</span>
+                            <span className="text-[10px] text-[#CBD5E1] mx-1">·</span>
                             <span className="text-[9px] font-bold text-[#94A3B8]">주간</span>
                             <span className="text-[14px] font-black text-[#475569]">{weekCount}</span>
                             <span className="text-[10px] font-bold text-[#94A3B8]">명</span>
@@ -3089,10 +3087,10 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
                             <span className="text-[10px] font-bold text-[#94A3B8]">명</span>
                           </>
                         )}
-                        <span className="text-[10px] text-[#CBD5E1] mx-1.5">·</span>
+                        <span className="text-[10px] text-[#CBD5E1] mx-1">·</span>
                         <span className="text-[16px] font-black text-[#0F172A]">{stopNodes.length}</span>
                         <span className="text-[10px] font-bold text-[#94A3B8]">정류장</span>
-                      </div>
+                      </span>
                     </div>
                     {/* 여유(정원) + ETA(분·거리) + 게이지 — 컴팩트 카드 통합 */}
                     {(() => {
