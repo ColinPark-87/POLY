@@ -3925,8 +3925,9 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
           </div>
         )}
 
-        {/* ── 지도 FAB 컨트롤 (좌하단 — 명단·추가·이동·홈 한 줄 세로. 줌은 마우스 스크롤로 대체) */}
-        <div className="absolute z-[1000] pointer-events-auto" style={{ bottom: 30, left: 10 }}>
+        {/* ── 지도 FAB 컨트롤 (좌하단 — 편집/지도 2열 나란히, 컴팩트, 카카오 축척·로고 위로 띄움) */}
+        <div className="absolute z-[1000] flex flex-row gap-2 items-end pointer-events-auto" style={{ bottom: 30, left: 10 }}>
+          {/* 편집 도구 열: 명단 · 추가 · 이동 (활성 시 색 채움) */}
           <div className="flex flex-col rounded-xl overflow-hidden shadow-lg ring-1 ring-[#E2E8F0] bg-white">
             <button onClick={() => setRosterOpen(v => !v)}
               title="호차 명단 — 선택 호차 전체 탑승생 학생설정 보기·수정"
@@ -3957,6 +3958,15 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
                 <circle cx="12" cy="10" r="2.4" />
               </svg>
             </button>
+          </div>
+          {/* 지도 컨트롤 열: 전체보기 · 학원중심 · 줌 */}
+          <div className="flex flex-col rounded-xl overflow-hidden shadow-lg ring-1 ring-[#E2E8F0] bg-white">
+            <button onClick={fabFitRoute} title="노선 전체 보기"
+              className="w-9 h-9 flex items-center justify-center text-[#0F172A] hover:bg-[#F8FAFC] transition-colors active:scale-95">
+              <svg className="w-[16px] h-[16px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2" />
+              </svg>
+            </button>
             <div className="h-px bg-[#E2E8F0]" />
             <button onClick={fabCenterSchool} title="학원 중심으로"
               className="w-9 h-9 flex items-center justify-center text-[#004EA2] hover:bg-[#EAF2FB] transition-colors active:scale-95">
@@ -3964,6 +3974,12 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 11l9-8 9 8M5 10v9a1 1 0 0 0 1 1h4v-5h4v5h4a1 1 0 0 0 1-1v-9" />
               </svg>
             </button>
+            <div className="h-px bg-[#E2E8F0]" />
+            <button onClick={() => fabZoom(-1)} title="확대"
+              className="w-9 h-8 flex items-center justify-center text-[#0F172A] hover:bg-[#F8FAFC] transition-colors text-lg font-bold leading-none active:scale-95">+</button>
+            <div className="h-px bg-[#E2E8F0]" />
+            <button onClick={() => fabZoom(1)} title="축소"
+              className="w-9 h-8 flex items-center justify-center text-[#0F172A] hover:bg-[#F8FAFC] transition-colors text-xl font-bold leading-none active:scale-95">−</button>
           </div>
         </div>
 
