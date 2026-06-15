@@ -2,9 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { resolvePermissions } from '@/lib/permissions'
 import { buildEnrolledStudents, type EnrollmentRow } from '@/lib/campus-analytics'
-import geoFilterData from '@/lib/data/campus-geo-filter.json'
-
-type GeoEntry = { center: { lat: number; lng: number }; radiusKm: number; schools: { name: string; within: boolean }[]; apartments: { name: string; within: boolean }[] }
 
 export const dynamic = 'force-dynamic'
 
@@ -130,21 +127,11 @@ export async function GET(_req: NextRequest) {
   }).length
   const chodeungCount = grandSessTotal - yuchibuCount
 
-  // 캠퍼스 반경필터 (lib/data/campus-geo-filter.json) — 해당 캠퍼스의 반경 내 학교/아파트만 인식
-  const { data: campusRow } = await service.from('campuses').select('name').eq('id', campusId).single()
-  const geo = (geoFilterData as Record<string, GeoEntry>)[campusRow?.name ?? ''] ?? null
-  const geoFilter = geo ? {
-    radiusKm: geo.radiusKm,
-    schoolsInRegion: geo.schools.filter(s => s.within).map(s => s.name),
-    aptsInRegion: geo.apartments.filter(a => a.within).map(a => a.name),
-  } : null
-
   return NextResponse.json({
     students: result,
     grandSessTotal,
     yuchibuCount,
     chodeungCount,
-    geoFilter,
   })
 }
 

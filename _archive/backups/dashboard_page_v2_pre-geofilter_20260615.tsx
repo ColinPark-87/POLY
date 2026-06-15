@@ -1,11 +1,8 @@
 'use client'
 
-import { useEffect, useRef, useState, useMemo } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { downloadLeaveForm, type LeaveFormData } from '@/lib/downloadLeaveForm'
 import { NO_SHUTTLE_BUS } from '@/lib/campus-dashboard-buses'
-import { normalizeApt } from '@/lib/utils/apartment-name'
-
-interface GeoFilter { radiusKm: number; schoolsInRegion: string[]; aptsInRegion: string[] }
 
 // ── 공통 상수 ────────────────────────────────────────────
 const DAYS = ['월', '화', '수', '목', '금'] as const
@@ -25,20 +22,11 @@ const LEAVE_TYPE_LABELS: Record<string, string> = {
 
 // ── 통계분석 상수/유틸 ───────────────────────────────────
 const GRADE_ORDER = ['5세','6세','7세','1학년','2학년','3학년','4학년','5학년','6학년']
-// 사립초등학교 명단. ⚠️ 검색 기반 분류이므로 캠퍼스 담당자 검수 권장(반경 내 학교에만 적용).
 const PRIVATE_SCHOOLS = new Set([
   // 서울/노원권
   '경희초등학교','광운초등학교','금성초등학교','동북초등학교','상명초등학교','영훈초등학교','청원초등학교','태강삼육초등학교','한신초등학교','화랑초등학교',
   // 고양/일산권
   '예일초등학교','경기글로벌스쿨',
-  // 수원/광교·용인권
-  '소화초등학교','중앙기독초등학교','수원중앙기독초등학교','용인한얼초등학교',
-  // 대전권
-  '대전삼육초등학교','대전성모초등학교','대전목양초등학교',
-  // 서울 목동/양천·강남권
-  '이대부속초등학교','홍대부속초등학교','리라초등학교','경기초등학교','경복초등학교',
-  // 인천 송도권
-  '인천박문초등학교','박문초등학교','인성초등학교','영화초등학교',
 ])
 const A_BG = '#F7F8FA'
 const A_SURFACE = '#FFFFFF'
@@ -141,22 +129,16 @@ function ageGroup(grade: string, level?: string | null): string {
   return ['5세','6세','7세','유치부'].includes(normalizeGrade(grade)) ? '유치부' : '초등부'
 }
 
-function processDb(students: DbStudent[], geo?: { schools: Set<string>; apts: Set<string> } | null): Processed[] {
+function processDb(students: DbStudent[]): Processed[] {
   return students.map(s => {
     const detail = s.detail_address || ''
     const addr = s.address || ''
-    let apt = normalizeApt(s.apartment) || extractAptFromDetail(detail) || '기타'
-    let school = (s.school || '').replace(/\s+/g, ' ').trim() || '없음'
+    const apt = s.apartment || extractAptFromDetail(detail) || '기타'
     const dong = extractDongFromDetail(detail, addr)
     const gradeNorm = ecpAge(s.level) ?? normalizeGrade(s.grade)
-    // 캠퍼스 반경 필터: 반경 밖 학교/아파트는 '없음'/'기타'로 처리해 집계·랭킹·사립초에서 제외
-    if (geo) {
-      if (school !== '없음' && !geo.schools.has(school)) school = '없음'
-      if (apt !== '기타' && !geo.apts.has(apt)) apt = '기타'
-    }
     return {
       name: s.name, cls: s.session || '', level: s.level || '',
-      school, grade: s.grade || '',
+      school: s.school || '없음', grade: s.grade || '',
       apt: apt || '기타', dong, gradeNorm,
       group: ['5세','6세','7세','유치부'].includes(gradeNorm) ? '유치부' : '초등부',
     }
@@ -355,8 +337,6 @@ export default function CampusDashboardPage() {
 
   // ── 통계분석 state ──
   const [dbStudents, setDbStudents] = useState<DbStudent[]>([])
-  const [geoFilter, setGeoFilter] = useState<GeoFilter | null>(null)
-  const geoSets = useMemo(() => geoFilter ? { schools: new Set(geoFilter.schoolsInRegion), apts: new Set(geoFilter.aptsInRegion) } : null, [geoFilter])
   const [grandSessTotal, setGrandSessTotal] = useState<number | null>(null) // 수강건수 (개설반현황용)
   const [analyticsLoading, setAnalyticsLoading] = useState(true)
   const [detailPopup, setDetailPopup] = useState<{ title: string; students: Processed[]; drillType?: string } | null>(null)
@@ -385,7 +365,6 @@ export default function CampusDashboardPage() {
   useEffect(() => {
     fetch('/api/campus/analytics').then(r => r.json()).then(d => {
       setDbStudents(d.students ?? [])
-      setGeoFilter(d.geoFilter ?? null)
       if (d.grandSessTotal != null) setGrandSessTotal(d.grandSessTotal)
       setAnalyticsLoading(false)
     })
@@ -423,7 +402,7 @@ export default function CampusDashboardPage() {
   // ── Chart.js 렌더링 (아파트 + 입퇴소만) ──
   useEffect(() => {
     if (analyticsLoading || tab !== 'analytics') return
-    const processed = processDb(dbStudents, geoSets)
+    const processed = processDb(dbStudents)
 
     function renderCharts() {
       const mod = chartModRef.current
@@ -539,7 +518,7 @@ export default function CampusDashboardPage() {
       Object.values(chartsRef.current).forEach(c => { try { (c as any)?.destroy() } catch { /* ignore */ } })
       chartsRef.current = {}
     }
-  }, [dbStudents, analyticsLoading, tab, trendData, geoSets])
+  }, [dbStudents, analyticsLoading, tab, trendData])
 
   // ── 핸들러 ──
   async function handleApproval(id: string, status: 'approved'|'rejected', note?: string) {
@@ -607,19 +586,15 @@ export default function CampusDashboardPage() {
   }
 
   // ── 통계분석 가공 ──
-  const processed = processDb(dbStudents, geoSets)
+  const processed = processDb(dbStudents)
   // 고유 학생 수 기준 (수강건수가 아닌 student_id 기준 중복 제거)
   const total = processed.length
   const yuchi = processed.filter(s => s.group === '유치부').length
   const chodeung = processed.filter(s => s.group === '초등부').length
   const elemStudents = processed.filter(s => s.group === '초등부')
   const privateCount = elemStudents.filter(s => PRIVATE_SCHOOLS.has(s.school)).length
-  // 반경필터 캠퍼스는 학교를 아는(반경 내) 초등학생만 분모 (반경 밖 학교는 '없음' 처리됨)
-  const elemDenom = geoFilter
-    ? elemStudents.filter(s => s.school && s.school !== '없음' && s.school !== '미입력' && s.school !== '기타').length
-    : elemStudents.length
-  const publicCount = elemDenom - privateCount
-  const privateRate = elemDenom > 0 ? Math.round(privateCount / elemDenom * 100) : 0
+  const publicCount = elemStudents.length - privateCount
+  const privateRate = elemStudents.length > 0 ? Math.round(privateCount / elemStudents.length * 100) : 0
   const dongDataAll = countBy(processed, s => s.dong).filter(([k]) => k !== '기타')
   const schoolDataAll = countBy(processed, s => s.school).filter(([k]) => k && k !== '없음' && k !== '미입력' && k !== '기타')
   const dongData = showAllDongs ? dongDataAll : dongDataAll.slice(0, 10)
