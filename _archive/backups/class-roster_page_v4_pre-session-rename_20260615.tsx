@@ -357,15 +357,6 @@ export default function ClassRosterPage() {
     else alert('세션 삭제에 실패했습니다.')
   }
 
-  async function handleRenameSession(sess: Session, newName: string): Promise<boolean> {
-    const trimmed = newName.trim()
-    if (!trimmed || trimmed === sess.name) return false
-    const r = await post({ action: 'update_session', session_id: sess.id, name: trimmed })
-    if (r) { await load(); return true }
-    alert('세션 이름 변경에 실패했습니다.')
-    return false
-  }
-
   // 헤더용: 세션별 합산 (대시보드와 동일)
   const _getSessCount = (filterFn: (name: string) => boolean) =>
     sessions.filter(s => filterFn(s.name)).reduce((sum, s) => {
@@ -995,7 +986,6 @@ export default function ClassRosterPage() {
           onNewStudent={(classId, classLevel) => setNewStudentModal({ classId, classLevel })}
           onReorderClasses={handleReorderClasses}
           onDeleteSession={handleDeleteSession}
-          onRenameSession={handleRenameSession}
           onReorderSessions={handleReorderSessions}
         />
       ) : tab === 'students' ? (
@@ -1603,7 +1593,7 @@ function RosterTab({
   matchEnrollments, classVisible, getEnrollments, getWaitlist,
   dragEnrId, dragOverClassId, setDragEnrId, setDragOverClassId, onDrop, onBulkDrop,
   onAddClass, onEditClass, onEnroll, onUnenroll, onStudentClick, onStudentMemoMenu, onStudentMemoIcon, onWaitlistAdd, onNewStudent,
-  onReorderClasses, onDeleteSession, onRenameSession, onReorderSessions,
+  onReorderClasses, onDeleteSession, onReorderSessions,
 }: {
   sessions: Session[]; classes: ClassItem[]; enrollments: Enrollment[]; buses: Bus[]
   search: string; setSearch: (s: string) => void; searchLower: string
@@ -1622,7 +1612,6 @@ function RosterTab({
   onNewStudent: (classId: string, classLevel: string) => void
   onReorderClasses: (sessionId: string, orderedIds: string[]) => void
   onDeleteSession: (sess: Session) => void
-  onRenameSession: (sess: Session, newName: string) => Promise<boolean>
   onReorderSessions: (orderedIds: string[]) => void
 }) {
   const [dragClsId, setDragClsId] = useState<string | null>(null)
@@ -1711,18 +1700,6 @@ function RosterTab({
   const toggleSessionCollapse = (id: string) => setCollapsedSessions(prev => {
     const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next
   })
-  // 세션 이름 인라인 변경
-  const [editingSessId, setEditingSessId] = useState<string | null>(null)
-  const [editSessName, setEditSessName] = useState('')
-  const [savingSessName, setSavingSessName] = useState(false)
-  async function commitRename(sess: Session) {
-    if (savingSessName) return
-    if (editSessName.trim() === sess.name || !editSessName.trim()) { setEditingSessId(null); return }
-    setSavingSessName(true)
-    const ok = await onRenameSession(sess, editSessName)
-    setSavingSessName(false)
-    if (ok) setEditingSessId(null)
-  }
   function dropReorderSession(targetId: string) {
     if (!dragSessId || dragSessId === targetId) { setDragSessId(null); setDragOverSessId(null); return }
     const order = sessions.map(s => s.id)
@@ -1843,16 +1820,14 @@ function RosterTab({
         const cols = Math.min(sessClasses.length, 16)
         const cardWidth = cols > 0 ? `calc((100% - ${(cols - 1) * 6}px) / ${cols})` : '120px'
         const collapsed = collapsedSessions.has(sess.id)
-        const editing = editingSessId === sess.id
-        const dragEnabled = collapsed && !editing
 
         return (
           <div key={sess.id}
-            draggable={dragEnabled}
-            onDragStart={dragEnabled ? () => setDragSessId(sess.id) : undefined}
-            onDragOver={dragEnabled ? (e => { e.preventDefault(); if (dragSessId && dragSessId !== sess.id) setDragOverSessId(sess.id) }) : undefined}
-            onDragLeave={dragEnabled ? (() => setDragOverSessId(cur => (cur === sess.id ? null : cur))) : undefined}
-            onDrop={dragEnabled ? (() => dropReorderSession(sess.id)) : undefined}
+            draggable={collapsed}
+            onDragStart={collapsed ? () => setDragSessId(sess.id) : undefined}
+            onDragOver={collapsed ? (e => { e.preventDefault(); if (dragSessId && dragSessId !== sess.id) setDragOverSessId(sess.id) }) : undefined}
+            onDragLeave={collapsed ? (() => setDragOverSessId(cur => (cur === sess.id ? null : cur))) : undefined}
+            onDrop={collapsed ? (() => dropReorderSession(sess.id)) : undefined}
             className={dragOverSessId === sess.id ? 'rounded-lg ring-2 ring-[#1e3a5f] ring-offset-2' : ''}>
             {/* Section header */}
             <div className="flex items-center justify-between mb-2 pb-1.5" style={{ borderBottom: `2px solid ${color}` }}>
@@ -1863,29 +1838,7 @@ function RosterTab({
                   style={collapsed ? { cursor: 'grab' } : {}}>
                   {collapsed ? '▶' : '▼'}
                 </button>
-                {editing ? (
-                  <span className="flex items-center gap-1">
-                    <input autoFocus value={editSessName}
-                      onChange={e => setEditSessName(e.target.value)}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter') { e.preventDefault(); commitRename(sess) }
-                        else if (e.key === 'Escape') setEditingSessId(null)
-                      }}
-                      className="text-[13px] font-extrabold border border-[#CBD5E1] rounded px-1.5 py-0.5 w-44 focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]"
-                      style={{ color }} />
-                    <button onClick={() => commitRename(sess)} disabled={savingSessName}
-                      title="저장" className="text-[13px] text-[#16A34A] hover:bg-[#F0FDF4] rounded px-1 leading-none disabled:opacity-50">✓</button>
-                    <button onClick={() => setEditingSessId(null)}
-                      title="취소" className="text-[13px] text-[#94A3B8] hover:bg-[#F1F5F9] rounded px-1 leading-none">✕</button>
-                  </span>
-                ) : (
-                  <>
-                    <span className="text-[13px] font-extrabold" style={{ color }}>{sess.name}</span>
-                    <button onClick={() => { setEditingSessId(sess.id); setEditSessName(sess.name) }}
-                      title="세션 이름 변경"
-                      className="text-[#94A3B8] hover:text-[#1E293B] text-[11px] leading-none w-5 h-5 flex items-center justify-center rounded hover:bg-[#F1F5F9]">✎</button>
-                  </>
-                )}
+                <span className="text-[13px] font-extrabold" style={{ color }}>{sess.name}</span>
                 {sess.time_range && (
                   <span className="text-[11px] text-[#64748B] bg-[#F1F5F9] px-2 py-0.5 rounded-full">{sess.time_range}</span>
                 )}

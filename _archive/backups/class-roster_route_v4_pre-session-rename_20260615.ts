@@ -123,24 +123,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ session: data })
   }
 
-  if (action === 'update_session') {
-    const { session_id, name, time_range } = body
-    if (!session_id) return NextResponse.json({ error: 'session_id 필요' }, { status: 400 })
-    const upd: Record<string, unknown> = {}
-    if (name !== undefined) {
-      const trimmed = String(name).trim()
-      if (!trimmed) return NextResponse.json({ error: '세션 이름을 입력하세요' }, { status: 400 })
-      upd.name = trimmed
-    }
-    if (time_range !== undefined) upd.time_range = time_range || null
-    if (Object.keys(upd).length === 0) return NextResponse.json({ error: '변경할 내용이 없습니다' }, { status: 400 })
-    // campus_id 로 소유권 확인하며 업데이트 (cross-campus 무결성 보호)
-    const { error } = await service.from('class_sessions').update(upd)
-      .eq('id', session_id).eq('campus_id', campusId)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    return NextResponse.json({ ok: true })
-  }
-
   if (action === 'delete_session') {
     const { session_id } = body
     if (!session_id) return NextResponse.json({ error: 'session_id 필요' }, { status: 400 })
