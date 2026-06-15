@@ -5,10 +5,10 @@
 | 항목 | 내용 |
 |---|---|
 | 백업 일시 | 2026-06-15 |
-| 백업 커밋 | `14fc091` (스냅샷) · 최근 배포 커밋 `104e6ae` (세션 이름변경) |
+| 백업 커밋 | `14fc091` (스냅샷) · 최근 배포 커밋 `c74de8b` (초등부 히어로 catch-all) |
 | 백업 브랜치 | `backup/pre-hq-pwd-20260615` (오늘 기능작업 직전 전체 스냅샷) |
-| Vercel 롤백 대상 (직전 라이브) | `dpl_E4gsmLSBhuR1Z3ymhrZuicu9bRqJ` (HQ비번+캠퍼스삭제+반편성 배포) |
-| 최근 배포 | `dpl_51Un7haMDxJV2xBTBSnhy6qKzZXi` (개설반 세션 이름변경) / https://poly-241pmrv9r-colinpark-87s-projects.vercel.app |
+| Vercel 롤백 대상 (직전 라이브) | `dpl_51Un7haMDxJV2xBTBSnhy6qKzZXi` (세션 이름변경 배포) |
+| 최근 배포 | `dpl_FfvoPY8mhfNz85P7p8xbW4KBsg12` (초등부 히어로=유치부 외 전부) / https://poly-oxyal1fij-colinpark-87s-projects.vercel.app |
 | 배포 URL | https://poly-system.vercel.app |
 | 백업 이유 | 오늘 기능작업(HQ 비번변경·캠퍼스삭제·반편성·세션 이름변경) 직전 상태 보존 |
 
