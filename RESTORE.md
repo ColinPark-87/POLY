@@ -5,29 +5,34 @@
 | 항목 | 내용 |
 |---|---|
 | 백업 일시 | 2026-06-15 |
-| 백업 커밋 | `6b2aced` |
-| 백업 브랜치 | `backup/pre-pwa-ios-20260615` (현재 작업트리 전체 스냅샷) |
-| Vercel 롤백 대상 (이 변경 전 라이브) | `dpl_Cn2dXsSY5oLgB3AQWmw44ZE4v3zo` / https://poly-k64l37l0i-colinpark-87s-projects.vercel.app |
+| 백업 커밋 | `14fc091` (스냅샷) · 배포 커밋 `d9a5922` |
+| 백업 브랜치 | `backup/pre-hq-pwd-20260615` (HQ 비번변경 직전 전체 스냅샷) |
+| Vercel 롤백 대상 (이 변경 전 라이브) | `dpl_FDSXf6dAgymJoMBugfvhqkssxxfg` (직전 PWA 배포) |
+| 이번 배포 | `dpl_E4gsmLSBhuR1Z3ymhrZuicu9bRqJ` / https://poly-3vv6mozqz-colinpark-87s-projects.vercel.app |
 | 배포 URL | https://poly-system.vercel.app |
-| 백업 이유 | PWA 아이폰 설치 수정(`apple-mobile-web-app-capable` 레거시 태그 추가) 배포 전 상태 보존 |
+| 백업 이유 | HQ 원장/직원 비밀번호 직접변경 + 캠퍼스 삭제 FK 수정 + 반편성 재업로드 덮어쓰기 확인 배포 전 상태 보존 |
 
 ### 빠른 복구 (이번 배포가 잘못된 경우)
 
 **Vercel 즉시 롤백 (라이브를 이 변경 전으로):**
 ```bash
 cd "C:\Users\user\Desktop\Colin 작업폴더\leave-system"
-vercel promote dpl_Cn2dXsSY5oLgB3AQWmw44ZE4v3zo
+vercel promote dpl_FDSXf6dAgymJoMBugfvhqkssxxfg
 ```
 
-**iOS 변경만 코드에서 되돌리기:**
+**전체 작업트리 스냅샷으로 돌아가기:**
 ```bash
-git checkout -- app/layout.tsx   # 또는 _archive/backups/layout_v1_pre-apple-capable_20260615.tsx 로 교체
+git checkout backup/pre-hq-pwd-20260615   # 돌아오기: git checkout vehicle-remote-redesign
 ```
 
-**전체 작업트리 스냅샷 확인:**
+**개별 파일만 되돌리기 (예시):**
 ```bash
-git checkout backup/pre-pwa-ios-20260615   # 돌아오기: git checkout vehicle-remote-redesign
+# 캠퍼스 삭제 라우트 / 반편성 import / HQ 캠퍼스 상세 페이지 등
+git checkout 14fc091 -- "app/api/hq/campuses/[id]/route.ts"
+# 또는 _archive/backups/*_v1_*_20260615.{ts,tsx} 사본으로 교체
 ```
+
+> 이전 PWA 백업: 커밋 `6b2aced` / 브랜치 `backup/pre-pwa-ios-20260615` / Vercel `dpl_Cn2dXsSY5oLgB3AQWmw44ZE4v3zo`
 
 ---
 
