@@ -5,12 +5,12 @@
 | 항목 | 내용 |
 |---|---|
 | 백업 일시 | 2026-06-15 |
-| 백업 커밋 | `14fc091` (스냅샷) · 배포 커밋 `d9a5922` |
-| 백업 브랜치 | `backup/pre-hq-pwd-20260615` (HQ 비번변경 직전 전체 스냅샷) |
-| Vercel 롤백 대상 (이 변경 전 라이브) | `dpl_FDSXf6dAgymJoMBugfvhqkssxxfg` (직전 PWA 배포) |
-| 이번 배포 | `dpl_E4gsmLSBhuR1Z3ymhrZuicu9bRqJ` / https://poly-3vv6mozqz-colinpark-87s-projects.vercel.app |
+| 백업 커밋 | `14fc091` (스냅샷) · 최근 배포 커밋 `104e6ae` (세션 이름변경) |
+| 백업 브랜치 | `backup/pre-hq-pwd-20260615` (오늘 기능작업 직전 전체 스냅샷) |
+| Vercel 롤백 대상 (직전 라이브) | `dpl_E4gsmLSBhuR1Z3ymhrZuicu9bRqJ` (HQ비번+캠퍼스삭제+반편성 배포) |
+| 최근 배포 | `dpl_51Un7haMDxJV2xBTBSnhy6qKzZXi` (개설반 세션 이름변경) / https://poly-241pmrv9r-colinpark-87s-projects.vercel.app |
 | 배포 URL | https://poly-system.vercel.app |
-| 백업 이유 | HQ 원장/직원 비밀번호 직접변경 + 캠퍼스 삭제 FK 수정 + 반편성 재업로드 덮어쓰기 확인 배포 전 상태 보존 |
+| 백업 이유 | 오늘 기능작업(HQ 비번변경·캠퍼스삭제·반편성·세션 이름변경) 직전 상태 보존 |
 
 ### 빠른 복구 (이번 배포가 잘못된 경우)
 
