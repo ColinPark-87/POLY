@@ -21,10 +21,7 @@ export async function GET(request: NextRequest) {
 
   const service = createServiceClient()
   const { data: profile } = await service.from('users').select(STUDENT_EDIT_COLS).eq('id', user.id).single()
-  // HQ 관리자는 자기 캠퍼스가 없으므로 ?campus_id 로 대상 캠퍼스 지정 (place-spots와 동일 패턴).
-  // 일반 캠퍼스 사용자는 항상 자기 campus_id로 스코프되며 ?campus_id 파라미터는 무시됨.
-  let campusId: string | null | undefined = profile?.campus_id
-  if (!campusId && profile?.role === 'hq_admin') campusId = new URL(request.url).searchParams.get('campus_id')
+  const campusId = profile?.campus_id
   if (!campusId) return NextResponse.json({ error: '캠퍼스 없음' }, { status: 400 })
 
   // 학생 PII 접근 게이트: 개설반/차량/신규생 권한 보유자만 (일반 직원 차단).

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient as createBrowserClient } from '@/lib/supabase/client'
+import InstallAppButton from '@/components/InstallAppButton'
 
 interface Campus {
   id: string
@@ -322,6 +323,12 @@ export default function LoginPage() {
             >
               비밀번호를 잊으셨나요?
             </button>
+          </div>
+
+          {/* 앱 설치 — 브라우저 설치 아이콘을 못 찾아도 여기서 바로 설치/안내 */}
+          <div className="mt-4 pt-4 border-t border-[#EEF2F7]">
+            <InstallAppButton />
+            <p className="text-[11px] text-[#94A3B8] text-center mt-2">설치하면 홈 화면/바탕화면에서 앱처럼 바로 열 수 있어요</p>
           </div>
         </div>
       </div>

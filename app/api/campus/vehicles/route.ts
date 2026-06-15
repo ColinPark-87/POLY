@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { resolvePermissions } from '@/lib/permissions'
 import { selectOrphanOverrides, buildSynthEntry } from '@/lib/utils/today-overrides'
+import { applyEnrollmentSchedule } from '@/lib/utils/vehicle-schedule'
 
 const DAYS = ['월', '화', '수', '목', '금'] as const
 type Day = typeof DAYS[number]
@@ -730,63 +731,18 @@ export async function POST(request: NextRequest) {
     }
 
     const schedKey = dir === 'arr' ? 'arr_schedule' : 'dep_schedule'
-    const sched = { ...(enr[schedKey as keyof typeof enr] as Record<string,string> ?? {}) }
     const allDays = ['월', '화', '수', '목', '금']
     const dayBusesMap = (day_buses && typeof day_buses === 'object') ? (day_buses as Record<string, string>) : null
     const dayList: string[] = dayBusesMap
       ? Object.keys(dayBusesMap).filter(d => allDays.includes(d))
       : (Array.isArray(days) ? days : [])
 
-    if (dayBusesMap) {
-      // 요일별 호차 직접 지정 모드 — 지정한 요일만 반영, 나머지 요일은 그대로 둠(제거 로직 없음).
-      // 위치는 day_locations[d]가 있으면 적용, 없고 호차가 바뀌었으면 옛 위치 제거.
-      for (const d of dayList) {
-        const b = dayBusesMap[d]
-        const busChanged = sched[d] !== b
-        if (b) sched[d] = b
-        else { delete sched[d]; delete sched[d + '_loc']; delete sched[d + '_time']; continue }
-        if (day_locations && Object.prototype.hasOwnProperty.call(day_locations, d)) {
-          const dl = day_locations[d]
-          if (dl) sched[d + '_loc'] = dl; else delete sched[d + '_loc']
-        } else if (busChanged) {
-          delete sched[d + '_loc']
-        }
-      }
-    } else {
-      // 같은 호차에서 요일을 줄일 때만 빠진 요일을 제거한다.
-      // 호차를 바꾸는(이동) 경우엔 선택하지 않은 요일은 기존 호차 배정을 그대로 둔다
-      // → 요일별로 다른 호차(예: 평소 8호차, 수요일만 2호차)를 지원. (선택 요일만 새 호차로 덮어씀)
-      const reducingSameBus = !!bus_name && (!old_bus_name || old_bus_name === bus_name)
-      if (reducingSameBus) {
-        for (const d of allDays) {
-          if (sched[d] === bus_name && !dayList.includes(d)) {
-            delete sched[d]
-            delete sched[d + '_loc']
-          }
-        }
-      }
-      for (const d of dayList) {
-        if (bus_name) sched[d] = bus_name
-        else delete sched[d]  // 미배정: 선택 요일의 버스 배정 제거
-        // 요일별 장소(day_locations)가 있으면 그 요일은 개별 장소, 없으면 단일 location 적용
-        const dloc = (day_locations && Object.prototype.hasOwnProperty.call(day_locations, d)) ? day_locations[d] : location
-        if (dloc === '' || dloc === null || dloc === undefined) delete sched[d + '_loc']
-        else sched[d + '_loc'] = dloc
-      }
-    }
-    if (day_times && Object.keys(day_times).length > 0) {
-      // 요일별 시간 (요일별 정류장에 맞는 시간) — 각 요일 _time 설정, 단일 _time 제거
-      for (const d of dayList) {
-        const dt = day_times[d]
-        if (dt) sched[d + '_time'] = dt
-        else delete sched[d + '_time']
-      }
-      delete sched['_time']
-    } else if (pickup_time !== undefined) {
-      if (pickup_time) sched['_time'] = pickup_time
-      else delete sched['_time']
-      clearPerDayTimes(sched)
-    }
+    // 스케줄 JSON 변형은 순수 함수로 위임 (lib/utils/vehicle-schedule.ts).
+    // 요일별로 다른 호차를 타는 학생이 한쪽 호차를 저장할 때 다른 요일 시간이 덮어써지는 버그 방지.
+    const sched = applyEnrollmentSchedule(
+      (enr[schedKey as keyof typeof enr] as Record<string, string>) ?? {},
+      { days, bus_name, old_bus_name, location, pickup_time, day_locations, day_times, day_buses },
+    )
     const { error } = await service.from('class_enrollments')
       .update({ [schedKey]: sched })
       .eq('student_id', student_id).eq('class_id', class_id)

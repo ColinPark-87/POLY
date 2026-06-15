@@ -95,6 +95,123 @@ export function buildScheduleUpdate(s: RosterEditState): ScheduleUpdateBody {
 }
 
 /**
+ * 서버: enrollment의 arr_schedule/dep_schedule JSON을 편집 요청에 맞게 변형하는 순수 함수.
+ * (app/api/campus/vehicles/route.ts 의 update_enrollment_schedule 핸들러가 호출)
+ *
+ * 시간 저장 불변식: 한 enrollment의 시간은 "공유 _time" XOR "요일별 {요일}_time" 둘 중 하나로만
+ * 표현한다(섞지 않는다). 차량관리는 _time을, 개설반 현황(StudentDetailModal)은 요일별 _time을
+ * 우선 읽으므로, 섞이면 두 화면의 시간이 어긋난다.
+ *
+ * 핵심 수정: 한 학생이 요일별로 다른 호차를 타서(예: 수=2호차/15:03, 월·금=5호차/15:22)
+ * 한 enrollment가 여러 호차로 나뉘는 경우, 한쪽(예: 5호차)을 단일 모드로 저장할 때 공유 _time으로
+ * 합치면 dayList 밖 요일(수)의 시간까지 5호차 시간(15:22)으로 덮어써졌다.
+ * → dayList 밖에 배정이 남아있으면 공유 _time을 그 요일들의 요일별 _time으로 먼저 이관한 뒤,
+ *   편집 요일만 요일별 _time으로 적용하고 _time은 비워(요일별 모드로 전환) 다른 요일 시간을 보존한다.
+ */
+export function applyEnrollmentSchedule(
+  current: Record<string, string>,
+  p: {
+    days?: string[]
+    bus_name?: string
+    old_bus_name?: string
+    location?: string
+    pickup_time?: string
+    day_locations?: Record<string, string>
+    day_times?: Record<string, string>
+    day_buses?: Record<string, string>
+  },
+): Record<string, string> {
+  const sched: Record<string, string> = { ...current }
+  const allDays: readonly string[] = WEEKDAYS
+  const dayBusesMap =
+    p.day_buses && typeof p.day_buses === 'object' ? p.day_buses : null
+  const dayList: string[] = dayBusesMap
+    ? Object.keys(dayBusesMap).filter(d => allDays.includes(d))
+    : Array.isArray(p.days)
+      ? p.days
+      : []
+
+  // ── 호차·장소 반영 ────────────────────────────────────────────────
+  if (dayBusesMap) {
+    // 요일별 호차 직접 지정 모드 — 지정한 요일만 반영, 나머지 요일은 그대로 둠.
+    for (const d of dayList) {
+      const b = dayBusesMap[d]
+      const busChanged = sched[d] !== b
+      if (b) sched[d] = b
+      else {
+        delete sched[d]
+        delete sched[d + '_loc']
+        delete sched[d + '_time']
+        continue
+      }
+      if (p.day_locations && Object.prototype.hasOwnProperty.call(p.day_locations, d)) {
+        const dl = p.day_locations[d]
+        if (dl) sched[d + '_loc'] = dl
+        else delete sched[d + '_loc']
+      } else if (busChanged) {
+        delete sched[d + '_loc']
+      }
+    }
+  } else {
+    // 같은 호차에서 요일을 줄일 때만 빠진 요일을 제거(호차 이동 시엔 미선택 요일의 기존 배정 보존).
+    const reducingSameBus = !!p.bus_name && (!p.old_bus_name || p.old_bus_name === p.bus_name)
+    if (reducingSameBus) {
+      for (const d of allDays) {
+        if (sched[d] === p.bus_name && !dayList.includes(d)) {
+          delete sched[d]
+          delete sched[d + '_loc']
+        }
+      }
+    }
+    for (const d of dayList) {
+      if (p.bus_name) sched[d] = p.bus_name
+      else delete sched[d]
+      const dloc =
+        p.day_locations && Object.prototype.hasOwnProperty.call(p.day_locations, d)
+          ? p.day_locations[d]
+          : p.location
+      if (dloc === '' || dloc === null || dloc === undefined) delete sched[d + '_loc']
+      else sched[d + '_loc'] = dloc
+    }
+  }
+
+  // ── 시간 반영 ─────────────────────────────────────────────────────
+  // dayList 밖에 배정이 남아있는 요일(요일별로 다른 호차를 타는 학생)의 시간을 보존하기 위해
+  // 기존 공유 _time을 먼저 그 요일들의 요일별 _time으로 이관한다.
+  const otherDays = allDays.filter(d => !dayList.includes(d) && sched[d])
+  const prevShared = sched['_time']
+  if (prevShared && otherDays.length > 0) {
+    for (const d of otherDays) {
+      if (!sched[d + '_time']) sched[d + '_time'] = prevShared
+    }
+  }
+  if (p.day_times && Object.keys(p.day_times).length > 0) {
+    // 요일별 시간 — 각 요일 _time 설정, 공유 _time 제거
+    for (const d of dayList) {
+      const dt = p.day_times[d]
+      if (dt) sched[d + '_time'] = dt
+      else delete sched[d + '_time']
+    }
+    delete sched['_time']
+  } else if (p.pickup_time !== undefined) {
+    if (otherDays.length > 0) {
+      // 다른 요일에 다른 호차/시간 배정이 남아있음 → 요일별 모드로 전환해 그 시간들을 보존.
+      delete sched['_time']
+      for (const d of dayList) {
+        if (p.pickup_time) sched[d + '_time'] = p.pickup_time
+        else delete sched[d + '_time']
+      }
+    } else {
+      // 단일 호차 전 요일 — 공유 _time 하나로 통일(공통 케이스)
+      if (p.pickup_time) sched['_time'] = p.pickup_time
+      else delete sched['_time']
+      for (const d of allDays) delete sched[d + '_time']
+    }
+  }
+  return sched
+}
+
+/**
  * 학생 데이터에서 요일별(다른 호차/장소/시간) 편집이 필요한지 판정.
  * 요일에 따라 호차·장소·시간 중 하나라도 다르면 true.
  */

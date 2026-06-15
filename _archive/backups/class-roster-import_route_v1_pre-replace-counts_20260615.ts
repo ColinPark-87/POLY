@@ -42,7 +42,6 @@ export async function POST(request: NextRequest) {
   const stats = {
     sessions_created: 0, classes_created: 0,
     students_created: 0, enrollments: 0, buses: 0,
-    replaced_sessions: 0, replaced_enrollments: 0,
     errors: [] as string[],
   }
 
@@ -59,14 +58,10 @@ export async function POST(request: NextRequest) {
       const { data: oldClasses } = await service.from('classes').select('id').in('session_id', oldSessionIds)
       const oldClassIds = (oldClasses ?? []).map(c => c.id)
       if (oldClassIds.length > 0) {
-        const { count } = await service.from('class_enrollments')
-          .select('id', { count: 'exact', head: true }).in('class_id', oldClassIds)
-        stats.replaced_enrollments += count ?? 0
         await service.from('class_enrollments').delete().in('class_id', oldClassIds)
       }
       await service.from('classes').delete().in('session_id', oldSessionIds)
       await service.from('class_sessions').delete().in('id', oldSessionIds)
-      stats.replaced_sessions += oldSessionIds.length
     }
 
     function excelToTimeStr(val: unknown): string {
@@ -298,14 +293,10 @@ export async function POST(request: NextRequest) {
       const { data: oldClasses } = await service.from('classes').select('id').in('session_id', oldSessionIds)
       const oldClassIds = (oldClasses ?? []).map(c => c.id)
       if (oldClassIds.length > 0) {
-        const { count } = await service.from('class_enrollments')
-          .select('id', { count: 'exact', head: true }).in('class_id', oldClassIds)
-        stats.replaced_enrollments += count ?? 0
         await service.from('class_enrollments').delete().in('class_id', oldClassIds)
       }
       await service.from('classes').delete().in('session_id', oldSessionIds)
       await service.from('class_sessions').delete().in('id', oldSessionIds)
-      stats.replaced_sessions += oldSessionIds.length
     }
   }
 

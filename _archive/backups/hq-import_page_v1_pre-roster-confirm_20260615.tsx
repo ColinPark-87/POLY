@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 
 interface Campus { id: string; name: string }
 interface ImportResult { ok: boolean; year: number; success: number; skipped: number; errors: string[] }
-interface RosterResult { ok: boolean; sessions_created: number; classes_created: number; students_created: number; enrollments: number; buses: number; replaced_sessions?: number; replaced_enrollments?: number; errors: string[]; stopCoords?: Record<string, { lat: number; lng: number }> }
+interface RosterResult { ok: boolean; sessions_created: number; classes_created: number; students_created: number; enrollments: number; buses: number; errors: string[]; stopCoords?: Record<string, { lat: number; lng: number }> }
 
 type UploadPhase = '' | 'uploading' | 'processing'
 
@@ -100,7 +100,7 @@ export default function HqImportPage() {
     if (!rosterCampusId) { setRosterError('캠퍼스를 선택해주세요.'); return }
     if (!rosterFile.name.match(/\.xlsx?$/i)) { setRosterError('Excel 파일(.xlsx, .xls)만 가능합니다.'); return }
     const cName = campuses.find(c => c.id === rosterCampusId)?.name ?? rosterCampusId
-    if (!confirm(`반편성 업로드 대상 캠퍼스: 「${cName}」\n'${rosterMonth}'의 기존 반편성 데이터(세션·반·수강배정)가 모두 삭제되고\n이 파일로 완전히 교체됩니다. (학생·호차 정보는 유지)\n\n캠퍼스·운영월이 맞는지 확인하세요. 계속할까요?`)) return
+    if (!confirm(`반편성 업로드 대상 캠퍼스: 「${cName}」\n해당 캠퍼스 데이터에 반영됩니다(덮어쓰기 포함). 캠퍼스가 맞는지 확인하세요. 계속할까요?`)) return
     setRosterPhase('uploading'); setRosterProgress(0); setRosterError(''); setRosterResult(null)
     const formData = new FormData()
     formData.append('file', rosterFile)
@@ -281,9 +281,6 @@ export default function HqImportPage() {
             {rosterError && <p className="text-[#EF4444] text-sm">{rosterError}</p>}
             {rosterResult && (
               <div className="bg-[#D1FAE5] border border-[#6EE7B7] rounded-xl px-4 py-3 text-sm text-[#059669] font-medium">
-                {(rosterResult.replaced_enrollments ?? 0) > 0 && (
-                  <span className="block text-[#B45309] font-semibold mb-0.5">↻ 기존 수강배정 {rosterResult.replaced_enrollments}건 삭제 후 교체</span>
-                )}
                 완료 — 세션 {rosterResult.sessions_created}개 · 반 {rosterResult.classes_created}개 · 학생 {rosterResult.students_created}명 · 수강배정 {rosterResult.enrollments}건{rosterResult.buses > 0 ? ` · 차량 ${rosterResult.buses}대` : ''}
                 {rosterResult.errors.length > 0 && (
                   <div className="mt-2 space-y-1">

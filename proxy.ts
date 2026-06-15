@@ -90,6 +90,7 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // 정적 이미지(public/*.png 등)는 인증 미들웨어 우회 — 캠퍼스 엠블럼 등 항상 로드
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|api/|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico)).*)'],
+  // 정적 이미지(public/*.png 등)·PWA 매니페스트는 인증 미들웨어 우회 — 캠퍼스 엠블럼·앱 설치 정보 항상 로드
+  // (.webmanifest 미제외 시 /manifest.webmanifest 가 /login 으로 리다이렉트돼 PWA 설치가 깨짐)
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|api/|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico|webmanifest)).*)'],
 }

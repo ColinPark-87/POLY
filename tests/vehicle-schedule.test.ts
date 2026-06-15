@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildScheduleUpdate, detectPerDay, type RosterEditState } from '@/lib/utils/vehicle-schedule'
+import { buildScheduleUpdate, detectPerDay, applyEnrollmentSchedule, type RosterEditState } from '@/lib/utils/vehicle-schedule'
 
 function base(overrides: Partial<RosterEditState> = {}): RosterEditState {
   return {
@@ -119,6 +119,81 @@ describe('buildScheduleUpdate — 요일별 호차 모드 (변경 요일만 전�
     }))
     expect(body.day_buses).toEqual({ 월: '8호차', 화: '2호차' })
     expect(body.day_locations).toEqual({ 월: '중계역', 화: '중계역' })
+  })
+})
+
+describe('applyEnrollmentSchedule — 서버 스케줄 변형', () => {
+  it('단일 호차 전 요일: 공유 _time 으로 통일하고 요일별 _time 제거', () => {
+    const out = applyEnrollmentSchedule(
+      { 월: '8호차', 화: '8호차', 수: '8호차', 수_time: '17:30' },
+      { days: ['월', '화', '수'], bus_name: '8호차', old_bus_name: '8호차', location: '중계역', pickup_time: '17:10' },
+    )
+    expect(out['_time']).toBe('17:10')
+    expect(out['수_time']).toBeUndefined()
+  })
+
+  // 회귀: 조준우 유치부 하원 — 한 학생이 요일별로 다른 호차를 타는 경우
+  // (수=2호차/15:03, 월·금=5호차/15:22). 5호차를 나중에 저장해도 수요일 15:03 이 보존돼야 한다.
+  it('요일별 다른 호차: 5호차(월·금)를 저장해도 수요일(2호차) 시간이 덮어써지지 않는다', () => {
+    // 1) 먼저 2호차(수) 15:03 저장
+    let sched = applyEnrollmentSchedule(
+      {},
+      { days: ['수'], bus_name: '2호차', old_bus_name: '2호차', location: '중계1동 주민센터 건너편', pickup_time: '15:03' },
+    )
+    expect(sched['수']).toBe('2호차')
+    // otherDays 없음 → 공유 _time
+    expect(sched['_time']).toBe('15:03')
+
+    // 2) 이어서 5호차(월·금) 15:22 저장 — 이때 수요일 배정이 이미 존재
+    sched = applyEnrollmentSchedule(
+      sched,
+      { days: ['월', '금'], bus_name: '5호차', old_bus_name: '5호차', location: '신내 진로A 버스정류장', pickup_time: '15:22' },
+    )
+
+    // 수요일은 여전히 2호차 / 15:03, 월·금은 5호차 / 15:22
+    expect(sched['수']).toBe('2호차')
+    expect(sched['수_time']).toBe('15:03')
+    expect(sched['월']).toBe('5호차')
+    expect(sched['금']).toBe('5호차')
+    expect(sched['월_time']).toBe('15:22')
+    expect(sched['금_time']).toBe('15:22')
+    // 요일별 모드로 전환 → 공유 _time 은 비어야 한다(섞이면 화면 시간 어긋남)
+    expect(sched['_time']).toBeUndefined()
+  })
+
+  it('요일별 다른 호차: 반대 순서(2호차를 나중에 저장)에도 월·금 시간이 보존된다', () => {
+    let sched = applyEnrollmentSchedule(
+      {},
+      { days: ['월', '금'], bus_name: '5호차', old_bus_name: '5호차', location: '신내 진로A', pickup_time: '15:22' },
+    )
+    expect(sched['_time']).toBe('15:22')
+    sched = applyEnrollmentSchedule(
+      sched,
+      { days: ['수'], bus_name: '2호차', old_bus_name: '2호차', location: '중계1동 주민센터 건너편', pickup_time: '15:03' },
+    )
+    expect(sched['월_time']).toBe('15:22')
+    expect(sched['금_time']).toBe('15:22')
+    expect(sched['수_time']).toBe('15:03')
+    expect(sched['_time']).toBeUndefined()
+  })
+
+  it('요일별 day_times 저장 시에도 dayList 밖 다른 호차 시간을 보존한다', () => {
+    // 수=2호차 15:03(공유 _time) 상태에서, 5호차(월·금)를 요일별 시간으로 저장
+    let sched = applyEnrollmentSchedule(
+      {},
+      { days: ['수'], bus_name: '2호차', old_bus_name: '2호차', location: '중계1동', pickup_time: '15:03' },
+    )
+    sched = applyEnrollmentSchedule(sched, {
+      days: ['월', '금'],
+      bus_name: '5호차',
+      old_bus_name: '5호차',
+      location: '신내',
+      day_locations: { 월: '신내', 금: '신내' },
+      day_times: { 월: '15:22', 금: '15:22' },
+    })
+    expect(sched['수_time']).toBe('15:03')
+    expect(sched['월_time']).toBe('15:22')
+    expect(sched['_time']).toBeUndefined()
   })
 })
 

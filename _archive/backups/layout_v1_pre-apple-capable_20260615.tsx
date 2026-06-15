@@ -22,10 +22,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="ko">
       <head>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        {/* 구형 iOS(16.4 미만)에서도 홈 화면 앱이 주소창 없이 전체화면(standalone)으로 뜨도록.
-            Next 16의 appleWebApp.capable은 표준 'mobile-web-app-capable'만 내보내므로(=iOS 16.4+),
-            레거시 'apple-mobile-web-app-capable'을 직접 추가해 모든 iOS 버전을 커버한다. */}
-        <meta name="apple-mobile-web-app-capable" content="yes" />
       </head>
       <body>{children}</body>
     </html>

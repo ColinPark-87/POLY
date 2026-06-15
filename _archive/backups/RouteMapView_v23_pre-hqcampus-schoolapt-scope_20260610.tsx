@@ -447,12 +447,10 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
   useEffect(() => { reloadPlaceSpots() }, [campusId])
 
   // 학교/아파트 상위 목록(인원수) — 지오코딩 캐시와 무관하게 항상 로드
-  // HQ에서 캠퍼스를 볼 때는 campus_id를 넘겨야 해당 캠퍼스 기준으로 집계됨(없으면 세션 캠퍼스).
   useEffect(() => {
-    const cq = campusId ? `&campus_id=${campusId}` : ''
-    fetch(`/api/campus/students?schools=1${cq}`).then(r => r.ok ? r.json() : null).then(d => { if (d?.schools) setSchoolRaw(d.schools) }).catch(() => {})
-    fetch(`/api/campus/students?apartments=1${cq}`).then(r => r.ok ? r.json() : null).then(d => { if (d?.apartments) setAptRaw(d.apartments) }).catch(() => {})
-  }, [campusId])
+    fetch('/api/campus/students?schools=1').then(r => r.ok ? r.json() : null).then(d => { if (d?.schools) setSchoolRaw(d.schools) }).catch(() => {})
+    fetch('/api/campus/students?apartments=1').then(r => r.ok ? r.json() : null).then(d => { if (d?.apartments) setAptRaw(d.apartments) }).catch(() => {})
+  }, [])
 
   // 자동 지오코딩 spot + 오버라이드(좌표보정/추가/숨김) 병합
   function applyPlaceOverrides(auto: Record<string, { lat: number; lng: number; count: number }>, kind: 'school' | 'apt', raw: { name: string; count: number }[]) {
