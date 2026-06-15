@@ -373,9 +373,10 @@ export default function ClassRosterPage() {
       return sum + sc.reduce((n, c) => n + getEnrollments(c.id).length, 0)
     }, 0)
   const _유치부 = _getSessCount(n => n.includes('유치부') && !n.includes('방과후'))
-  // 초등부 = 유치부·방과후가 아닌 전부 (세션명 미매칭 캠퍼스도 포함)
-  const _초등부 = _getSessCount(n => !n.includes('유치부') && !n.includes('방과후'))
-  const grandSessTotal = _유치부 + _초등부
+  const _매일반 = _getSessCount(n => (n.includes('매일반') || n.includes('5일')) && !n.includes('유치부'))
+  const _삼일반 = _getSessCount(n => (n.includes('월수금') || n.includes('3일')) && !n.includes('유치부'))
+  const _이일반 = _getSessCount(n => (n.includes('화목') || n.includes('2일')) && !n.includes('유치부'))
+  const grandSessTotal = _유치부 + _매일반 + _삼일반 + _이일반
 
   const searchLower = search.toLowerCase()
   const matchEnrollments = (classId: string) => {
@@ -1753,8 +1754,7 @@ function RosterTab({
   const 매일반SessTotal = getSessCount(n => (n.includes('매일반') || n.includes('5일')) && !n.includes('유치부'))
   const 삼일반SessTotal = getSessCount(n => (n.includes('월수금') || n.includes('3일')) && !n.includes('유치부'))
   const 이일반SessTotal = getSessCount(n => (n.includes('화목') || n.includes('2일')) && !n.includes('유치부'))
-  // 초등부 = 유치부·방과후가 아닌 전부 (세션명 미매칭 캠퍼스도 포함). 매일반/3일반/2일반은 세부 칩 표시용.
-  const 초등부SessTotal = getSessCount(n => !n.includes('유치부') && !n.includes('방과후'))
+  const 초등부SessTotal = 매일반SessTotal + 삼일반SessTotal + 이일반SessTotal
   const grandSessTotal = 유치부SessTotal + 초등부SessTotal  // 방과후 제외
 
   if (sessions.length === 0) return (

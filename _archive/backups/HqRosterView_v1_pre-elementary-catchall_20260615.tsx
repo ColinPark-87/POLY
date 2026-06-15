@@ -95,8 +95,7 @@ export function RosterView({ data }: { data: RosterData }) {
   const 매일반Total = getSessCount(sessions, classes, enrollments, n => n.includes('매일반') && !n.includes('유치부'))
   const 삼일반Total = getSessCount(sessions, classes, enrollments, n => n.includes('월수금') || (n.includes('3일반') && !n.includes('유치부')))
   const 이일반Total = getSessCount(sessions, classes, enrollments, n => n.includes('화목') || (n.includes('2일반') && !n.includes('유치부')))
-  // 초등부 = 유치부·방과후가 아닌 전부 (세션명이 매일반/월수금/화목과 안 맞는 캠퍼스도 포함)
-  const 초등부Total = getSessCount(sessions, classes, enrollments, n => !n.includes('유치부') && !n.includes('방과후'))
+  const 초등부Total = 매일반Total + 삼일반Total + 이일반Total
   const grandTotal = 유치부Total + 초등부Total
 
   if (sessions.length === 0) {
