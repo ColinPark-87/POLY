@@ -6,7 +6,6 @@ import { buildStopSearchResults, type StopSearchRow, type RegisteredStop } from 
 import { cleanRoutePolyline, type LatLng } from '@/lib/utils/route-geometry'
 import { buildScheduleUpdate, detectPerDay } from '@/lib/utils/vehicle-schedule'
 import { normStop, sameStop } from '@/lib/utils/stop-name'
-import { aptNameMatches } from '@/lib/utils/apartment-name'
 
 const COORDS_KEY = 'shuttle-stop-coords'
 const SCHOOL_STOP = { name: '중계폴리어학원', lat: 37.6556, lng: 127.0686 }
@@ -147,8 +146,8 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
   const [placeSpots, setPlaceSpots] = useState<{ kind: string; name: string; lat: number | null; lng: number | null; hidden: boolean }[]>([])
   const [placeAddName, setPlaceAddName] = useState('')
   const aptMarkersRef = useRef<any[]>([])
-  const schoolSpotsCacheKey = `school-spots-v4-${campusId ?? 'default'}`
-  const aptSpotsCacheKey = `apt-spots-v4-${campusId ?? 'default'}`
+  const schoolSpotsCacheKey = `school-spots-v3-${campusId ?? 'default'}`
+  const aptSpotsCacheKey = `apt-spots-v3-${campusId ?? 'default'}`
 
   const [selectedSession, setSelectedSession] = useState<string | null>(null)
   const [selectedBuses, setSelectedBuses] = useState<string[]>([])
@@ -496,19 +495,16 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
     async function geocodeList(
       items: { name: string; count: number }[],
       setter: (v: Record<string, { lat: number; lng: number; count: number }>) => void,
-      cacheKey: string,
-      fallbackRe: RegExp
+      cacheKey: string
     ) {
       const spots: Record<string, { lat: number; lng: number; count: number }> = {}
       for (const item of items.slice(0, 25)) {
         try {
           const res = await fetch(`/api/geocode?q=${encodeURIComponent(item.name)}${centerSuffix}`)
           const data = res.ok ? await res.json() : null
-          const results = (data?.results ?? []) as { name: string; lat: number; lng: number }[]
-          // 공백·표기차 무시 정확매칭 → 없으면 같은 종류(아파트/학교)인 반경 내 최근접 결과로만 폴백
-          // (카페·부동산 등 엉뚱한 상호로 마킹되는 것 방지)
-          const matched = results.find(r => aptNameMatches(r.name, item.name))
-            ?? results.find(r => fallbackRe.test(r.name))
+          const matched = (data?.results ?? []).find((r: any) =>
+            r.name === item.name || r.name.includes(item.name) || item.name.includes(r.name)
+          )
           if (matched) spots[item.name] = { lat: matched.lat, lng: matched.lng, count: item.count }
         } catch {}
         await new Promise(r => setTimeout(r, 120))
@@ -522,13 +518,13 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
     // 학교 fetch
     fetch('/api/campus/students?schools=1')
       .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d?.schools?.length) return geocodeList(d.schools, setSchoolSpots, schoolSpotsCacheKey, /학교|초등|중학교|고등학교/) })
+      .then(d => { if (d?.schools?.length) return geocodeList(d.schools, setSchoolSpots, schoolSpotsCacheKey) })
       .catch(() => {})
 
     // 아파트 fetch
     fetch('/api/campus/students?apartments=1')
       .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d?.apartments?.length) return geocodeList(d.apartments, setAptSpots, aptSpotsCacheKey, /아파트|단지/) })
+      .then(d => { if (d?.apartments?.length) return geocodeList(d.apartments, setAptSpots, aptSpotsCacheKey) })
       .catch(() => {})
   }, [campusId, coords])
 

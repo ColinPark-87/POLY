@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { resolvePermissions } from '@/lib/permissions'
-import { normalizeApt } from '@/lib/utils/apartment-name'
 
 // 신규생 생성/수정 권한: campus_admin/hq_admin 또는 원장·관리자·상담 등 enrollEdit 보유 직책
 const STUDENT_EDIT_COLS = 'campus_id, position, role, name, perm_class_roster, perm_enroll_edit, perm_vehicles, perm_vehicles_restricted, perm_analytics'
@@ -53,7 +52,7 @@ export async function GET(request: NextRequest) {
       .not('school', 'is', null)
     const countMap: Record<string, number> = {}
     for (const r of rows ?? []) {
-      const s = ((r as any).school as string ?? '').replace(/\s+/g, ' ').trim()
+      const s = (r as any).school as string
       if (s) countMap[s] = (countMap[s] ?? 0) + 1
     }
     const schools = Object.entries(countMap)
@@ -71,10 +70,9 @@ export async function GET(request: NextRequest) {
       .eq('campus_id', campusId)
       .eq('is_active', true)
       .not('apartment', 'is', null)
-    // 동-호수/잡음 제거한 클린 단지명으로 묶어 집계 (중계처럼) → 지오코딩·집계 정확도↑
     const countMap: Record<string, number> = {}
     for (const r of rows ?? []) {
-      const a = normalizeApt((r as any).apartment as string)
+      const a = (r as any).apartment as string
       if (a) countMap[a] = (countMap[a] ?? 0) + 1
     }
     const apartments = Object.entries(countMap)
