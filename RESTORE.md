@@ -5,11 +5,11 @@
 | 항목 | 내용 |
 |---|---|
 | 백업 일시 | 2026-06-15 |
-| 백업 커밋 | `14fc091` (스냅샷) · 최근 배포 커밋 (좌표0 캠퍼스 학원지오코딩 폴백) |
-| 백업 브랜치 | `backup/pre-hq-pwd-20260615` (오늘 기능작업 직전 전체 스냅샷) |
-| Vercel 롤백 대상 (직전 라이브) | `dpl_ANUPiWPcUrqoeaqjeWyovpDDAj9z` (개설반 반12개초과 2줄정렬 배포) |
-| 최근 배포 | `dpl_E1odPkLmywFpQVbdWHfAgf496i8G` (차량지도 좌표0 캠퍼스 중계당김 수정) / https://poly-system.vercel.app |
-| 데이터 변경 | `campus_stop_coords` 운정 센터 1행(stop_name='운정', 37.7348,126.7330). 광교·분당은 코드 폴백으로 처리(DB 미변경) |
+| 백업 커밋 | 최근 배포 커밋 `b9a0b74` (원장 대시보드 반경필터) |
+| 백업 브랜치 | `backup/pre-dashboard-fill-20260615` (대시보드작업 직전 스냅샷), `backup/pre-hq-pwd-20260615` |
+| Vercel 롤백 대상 (직전 라이브) | `dpl_E1odPkLmywFpQVbdWHfAgf496i8G` (좌표0 캠퍼스 중계당김 수정) |
+| 최근 배포 | `dpl_HUXG74uC7mdMuTcSn4j5Ze3z14dJ` (원장 대시보드 반경필터+사립초) / https://poly-system.vercel.app |
+| 데이터 변경 | `campus_stop_coords`: 운정/광교/분당 센터(사용자/에이전트), 분당 스트레이 '중계폴리어학원' 행 삭제. 대시보드 반경필터는 `lib/data/campus-geo-filter.json`(생성기 재실행 가능) |
 | 배포 URL | https://poly-system.vercel.app |
 | 백업 이유 | 오늘 기능작업(HQ 비번변경·캠퍼스삭제·반편성·세션 이름변경) 직전 상태 보존 |
 
