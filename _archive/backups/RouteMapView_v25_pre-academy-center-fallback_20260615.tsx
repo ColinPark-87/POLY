@@ -127,7 +127,6 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
   const centeredRef = useRef(false)
   const coordsRef = useRef<Record<string, { lat: number; lng: number }>>({})
   const schoolGeocodedRef = useRef(false)
-  const academyGeoRef = useRef(false) // 좌표0 캠퍼스 학원명 지오코딩 센터링 1회 가드
 
   const [loading, setLoading] = useState(true)
   const [dir, setDir] = useState<'arr' | 'dep'>('dep')
@@ -136,8 +135,6 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
   const [coords, setCoords] = useState<Record<string, { lat: number; lng: number }>>({})
   // 현재 좌표(coords)가 어느 캠퍼스(coordsKey)의 것인지 추적 — 캠퍼스 전환 중 옛 좌표로 잘못 센터링되는 것 방지
   const [coordsLoadedKey, setCoordsLoadedKey] = useState('')
-  // DB 좌표 로드 완료 키 — 로드 중 잠깐 빈 좌표로 학원 지오코딩 폴백이 잘못 도는 것 방지
-  const [coordsDbLoadedKey, setCoordsDbLoadedKey] = useState('')
   const [mapReady, setMapReady] = useState(false)
   const [coordsSaving, setCoordsSaving] = useState(false)
   const [schoolSpots, setSchoolSpots] = useState<Record<string, { lat: number; lng: number; count: number }>>({})
@@ -429,7 +426,6 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
         localStorage.setItem(coordsKey, JSON.stringify(merged))
       })
       .catch(() => {})
-      .finally(() => setCoordsDbLoadedKey(coordsKey))
   }, [coordsKey])
 
   // coordsRef: coords 상태를 ref에 동기화 (비동기 effect에서 최신 좌표 접근용)
@@ -475,7 +471,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
 
   // 캠퍼스 변경 시 중심·지오코딩 재설정 (캠퍼스별 독립 지도 — campusId가 늦게 도착해도 다시 적용).
   // 지오코딩 effect보다 먼저 선언해야 같은 렌더에서 ref가 먼저 리셋됨.
-  useEffect(() => { centeredRef.current = false; schoolGeocodedRef.current = false; academyGeoRef.current = false }, [campusId])
+  useEffect(() => { centeredRef.current = false; schoolGeocodedRef.current = false }, [campusId])
 
   // 학교/아파트 스팟: 캠퍼스 좌표 준비 후 지오코딩 (캐시 우선)
   useEffect(() => {
@@ -956,38 +952,9 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
     } else if (all.length === 1) {
       centeredRef.current = true
       mapRef.current.setCenter(new kakao.maps.LatLng(all[0].lat, all[0].lng))
-    } else if (campusId && effectiveSchoolName && coordsDbLoadedKey === coordsKey && !academyGeoRef.current) {
-      // 3순위(좌표 0개 캠퍼스, DB 로드 완료 후): 학원명으로 지오코딩해 센터 → 중계 기본값(초기 하드코딩)에 묶이는 것 방지.
-      // 결과는 localStorage에 캐시(반복 Kakao 호출 방지). DB 미기록(클라 표시 전용).
-      academyGeoRef.current = true
-      const cacheK = `academy-center-${campusId}`
-      const applyCenter = (lat: number, lng: number) => {
-        if (mapRef.current && !centeredRef.current) {
-          centeredRef.current = true
-          mapRef.current.setCenter(new kakao.maps.LatLng(lat, lng))
-        }
-      }
-      let cachedHit = false
-      try {
-        const cached = localStorage.getItem(cacheK)
-        if (cached) { const { lat, lng } = JSON.parse(cached); applyCenter(lat, lng); cachedHit = true }
-      } catch {}
-      if (!cachedHit) {
-        ;(async () => {
-          try {
-            const res = await fetch(`/api/geocode?q=${encodeURIComponent('폴리어학원 ' + effectiveSchoolName)}`)
-            const data = res.ok ? await res.json() : null
-            const results = (data?.results ?? []) as { name: string; lat: number; lng: number }[]
-            const hit = results.find(r => /폴리|poly/i.test(r.name)) ?? results[0]
-            if (hit) {
-              try { localStorage.setItem(cacheK, JSON.stringify({ lat: hit.lat, lng: hit.lng })) } catch {}
-              applyCenter(hit.lat, hit.lng)
-            }
-          } catch {}
-        })()
-      }
     }
-  }, [mapReady, coords, campusId, effectiveSchoolName, coordsLoadedKey, coordsDbLoadedKey, coordsKey])
+    // 좌표가 하나도 없으면 센터링하지 않고 다음 로드를 대기 (기본 위치 유지)
+  }, [mapReady, coords, campusId, effectiveSchoolName, coordsLoadedKey, coordsKey])
 
   // 패널 접기/펼치기 · 전체화면 토글 시 지도 리레이아웃 (CSS transition 완료 후)
   useEffect(() => {
