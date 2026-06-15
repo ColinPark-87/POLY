@@ -1840,8 +1840,10 @@ function RosterTab({
         const sessEnrollCount = sessClasses.reduce((n, c) => n + getEnrollments(c.id).length, 0)
         const visibleClasses = searchLower ? sessClasses.filter(c => classVisible(c.id)) : sessClasses
         if (searchLower && visibleClasses.length === 0) return null
-        const cols = Math.min(sessClasses.length, 16)
-        const cardWidth = cols > 0 ? `calc((100% - ${(cols - 1) * 6}px) / ${cols})` : '120px'
+        // 반이 12개를 넘으면 반으로 나눠 2줄로 정렬 (한 줄이 너무 길어지는 것 방지)
+        const classRows = visibleClasses.length > 12
+          ? [visibleClasses.slice(0, Math.ceil(visibleClasses.length / 2)), visibleClasses.slice(Math.ceil(visibleClasses.length / 2))]
+          : [visibleClasses]
         const collapsed = collapsedSessions.has(sess.id)
         const editing = editingSessId === sess.id
         const dragEnabled = collapsed && !editing
@@ -1911,9 +1913,13 @@ function RosterTab({
                 반이 없습니다. 위 버튼으로 추가해 주세요.
               </div>
             ) : (
-              <div className="overflow-x-auto -mx-1 px-1 pb-1">
-              <div className="flex flex-nowrap sm:flex-wrap gap-[6px]" style={{ minWidth: 'max-content' }}>
-                {visibleClasses.map(cls => {
+              <div className="overflow-x-auto -mx-1 px-1 pb-1 space-y-1.5">
+              {classRows.map((rowClasses, rowIdx) => {
+                const rowCols = Math.min(rowClasses.length, 16)
+                const rowCardWidth = rowCols > 0 ? `calc((100% - ${(rowCols - 1) * 6}px) / ${rowCols})` : '120px'
+                return (
+                <div key={rowIdx} className="flex flex-nowrap sm:flex-wrap gap-[6px]" style={{ minWidth: 'max-content' }}>
+                {rowClasses.map(cls => {
                   const enrs = matchEnrollments(cls.id)
                   const all = getEnrollments(cls.id)
                   const waitlist = getWaitlist(cls.id)
@@ -1926,7 +1932,7 @@ function RosterTab({
                           : dragClsId === cls.id ? 'opacity-40'
                           : isDragTarget ? 'ring-2 ring-blue-400 border-blue-400 bg-blue-50' : 'border-[#e0e0e0]'
                       }`}
-                      style={{ width: cardWidth, minWidth: '150px' }}
+                      style={{ width: rowCardWidth, minWidth: '150px' }}
                       onDragOver={e => {
                         if (dragClsId && dragClsId !== cls.id) { e.preventDefault(); setDragOverClsId(cls.id) }
                         else if (dragEnrId) { e.preventDefault(); setDragOverClassId(cls.id) }
@@ -2053,7 +2059,9 @@ function RosterTab({
                     </div>
                   )
                 })}
-              </div>
+                </div>
+                )
+              })}
               </div>
             ))}
           </div>
