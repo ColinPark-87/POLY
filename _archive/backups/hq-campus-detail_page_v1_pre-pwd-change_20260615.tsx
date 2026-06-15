@@ -75,12 +75,6 @@ export default function HqCampusDetailPage() {
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailSaving, setDetailSaving] = useState(false)
   const [detailError, setDetailError] = useState('')
-  // 비밀번호 변경 (HQ 직접 지정)
-  const [pwOpen, setPwOpen] = useState(false)
-  const [pwNew, setPwNew] = useState('')
-  const [pwConfirm, setPwConfirm] = useState('')
-  const [pwSaving, setPwSaving] = useState(false)
-  const [pwMsg, setPwMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [leavesToDelete, setLeavesToDelete] = useState<string[]>([])
   const [leavesToAdd, setLeavesToAdd] = useState<{ date: string; type: string }[]>([])
   const [newLeaveForm, setNewLeaveForm] = useState<{ date: string; type: string } | null>(null)
@@ -406,7 +400,6 @@ export default function HqCampusDetailPage() {
             setLeavesToDelete([])
             setLeavesToAdd([])
             setNewLeaveForm(null)
-            setPwOpen(false); setPwNew(''); setPwConfirm(''); setPwMsg(null)
             setDetailLoading(true)
             const res = await fetch(`/api/hq/campuses/${id}/employees/${row.id}?year=${balanceYear}`)
             const d = await res.json()
@@ -447,22 +440,6 @@ export default function HqCampusDetailPage() {
             } : r))
             setDetailSaving(false)
             setDetailEmp(null)
-          }
-
-          async function changePassword() {
-            if (!detailEmp) return
-            if (pwNew.length < 6) { setPwMsg({ ok: false, text: '새 비밀번호는 6자 이상이어야 합니다.' }); return }
-            if (pwNew !== pwConfirm) { setPwMsg({ ok: false, text: '새 비밀번호가 일치하지 않습니다.' }); return }
-            setPwSaving(true); setPwMsg(null)
-            const res = await fetch(`/api/hq/campuses/${id}/employees/${detailEmp.id}/password`, {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ password: pwNew }),
-            })
-            const d = await res.json()
-            setPwSaving(false)
-            if (!res.ok) { setPwMsg({ ok: false, text: d.error ?? '변경 실패' }); return }
-            setPwMsg({ ok: true, text: '비밀번호가 변경되었습니다. 직원에게 전달하세요.' })
-            setPwNew(''); setPwConfirm('')
           }
 
           if (balanceLoading) return <div className="flex justify-center py-8"><div className="w-6 h-6 border-2 border-[#0F172A] border-t-transparent rounded-full animate-spin" /></div>
@@ -874,31 +851,6 @@ export default function HqCampusDetailPage() {
                     </div>
 
                     {detailError && <p className="text-[#EF4444] text-sm bg-[#FEF2F2] rounded-xl px-4 py-2 mx-6 mb-4">{detailError}</p>}
-
-                    {/* 비밀번호 변경 (HQ 직접 지정) */}
-                    <div className="px-6 pb-4">
-                      <div className="border border-[#E2E8F0] rounded-xl overflow-hidden">
-                        <button type="button" onClick={() => setPwOpen(v => !v)}
-                          className="w-full flex items-center justify-between px-4 py-2.5 bg-[#F8FAFC] hover:bg-[#F1F5F9] transition-colors">
-                          <span className="text-sm font-semibold text-[#1E293B]">🔑 비밀번호 변경</span>
-                          <svg className={`w-4 h-4 text-[#94A3B8] transition-transform ${pwOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                        </button>
-                        {pwOpen && (
-                          <div className="p-4 space-y-2.5">
-                            <p className="text-xs text-[#64748B]">{detailEmp.name} 직원의 로그인 비밀번호를 새로 지정합니다. 변경 후 직원에게 전달하세요.</p>
-                            <input type="password" value={pwNew} onChange={e => setPwNew(e.target.value)} placeholder="새 비밀번호 (6자 이상)" autoComplete="new-password"
-                              className="w-full border border-[#E2E8F0] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0F172A]" />
-                            <input type="password" value={pwConfirm} onChange={e => setPwConfirm(e.target.value)} placeholder="새 비밀번호 확인" autoComplete="new-password"
-                              className="w-full border border-[#E2E8F0] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0F172A]" />
-                            {pwMsg && <p className={`text-sm ${pwMsg.ok ? 'text-[#059669]' : 'text-[#EF4444]'}`}>{pwMsg.text}</p>}
-                            <button type="button" onClick={changePassword} disabled={pwSaving || !pwNew || !pwConfirm}
-                              className="w-full bg-[#004EA2] hover:bg-[#003E83] text-white font-semibold py-2 rounded-xl text-sm disabled:opacity-50">
-                              {pwSaving ? '변경 중...' : '비밀번호 변경'}
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
 
                     {/* 저장/취소 */}
                     <div className="px-6 pb-5 flex gap-3 border-t border-[#E2E8F0] pt-4">
