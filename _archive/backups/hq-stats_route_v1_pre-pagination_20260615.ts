@@ -18,23 +18,6 @@ function monthToNum(m: string): number {
   return p && p.length >= 2 ? Number(p[0]) * 100 + Number(p[1]) : 0
 }
 
-// Supabase/PostgREST 는 단일 select 를 서버측에서 1000행으로 자르므로(.limit(10000) 무효),
-// 전 캠퍼스 합계처럼 1000행을 넘는 조회는 .range() 페이지네이션으로 전부 가져온다.
-async function fetchAllRows<T>(
-  makeQuery: () => { range: (from: number, to: number) => PromiseLike<{ data: unknown[] | null }> }
-): Promise<T[]> {
-  const PAGE = 1000
-  const out: T[] = []
-  for (let from = 0; ; from += PAGE) {
-    const { data } = await makeQuery().range(from, from + PAGE - 1)
-    const rows = (data ?? []) as T[]
-    if (rows.length === 0) break
-    out.push(...rows)
-    if (rows.length < PAGE) break
-  }
-  return out
-}
-
 export async function GET() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -120,14 +103,13 @@ export async function GET() {
   const prevSessMeta: Record<string, { campusId: string; group: string }> = {}
   for (const s of prevSessions) prevSessMeta[s.id] = { campusId: s.campus_id, group: getSessionGroup(s.name) }
 
-  type ClassRow = { id: string; session_id: string }
-  const [allClasses, prevClasses] = await Promise.all([
+  const [{ data: allClasses }, { data: prevClasses }] = await Promise.all([
     latestSessionIds.length
-      ? fetchAllRows<ClassRow>(() => service.from('classes').select('id, session_id').in('session_id', latestSessionIds).order('id'))
-      : Promise.resolve([] as ClassRow[]),
+      ? service.from('classes').select('id, session_id').in('session_id', latestSessionIds)
+      : Promise.resolve({ data: [] as { id: string; session_id: string }[] }),
     prevSessionIds.length
-      ? fetchAllRows<ClassRow>(() => service.from('classes').select('id, session_id').in('session_id', prevSessionIds).order('id'))
-      : Promise.resolve([] as ClassRow[]),
+      ? service.from('classes').select('id, session_id').in('session_id', prevSessionIds)
+      : Promise.resolve({ data: [] as { id: string; session_id: string }[] }),
   ])
 
   const classMeta: Record<string, { campusId: string; group: string }> = {}
@@ -138,19 +120,17 @@ export async function GET() {
   const classIds = Object.keys(classMeta)
   const prevClassIds = Object.keys(prevClassMeta)
 
-  type EnrRow = { class_id: string; student_id: string; campus_id: string; arr_schedule: Record<string, string>; dep_schedule: Record<string, string>; is_waitlist: boolean }
-  type PrevEnrRow = { class_id: string; student_id: string }
-  const [allEnrollments, prevEnrollments] = await Promise.all([
+  const [{ data: allEnrollments }, { data: prevEnrollments }] = await Promise.all([
     classIds.length
-      ? fetchAllRows<EnrRow>(() => service.from('class_enrollments')
+      ? service.from('class_enrollments')
           .select('class_id, student_id, campus_id, arr_schedule, dep_schedule, is_waitlist')
-          .in('class_id', classIds).eq('is_waitlist', false).order('id'))
-      : Promise.resolve([] as EnrRow[]),
+          .in('class_id', classIds).eq('is_waitlist', false).limit(10000)
+      : Promise.resolve({ data: [] as { class_id: string; student_id: string; campus_id: string; arr_schedule: Record<string, string>; dep_schedule: Record<string, string>; is_waitlist: boolean }[] }),
     prevClassIds.length
-      ? fetchAllRows<PrevEnrRow>(() => service.from('class_enrollments')
+      ? service.from('class_enrollments')
           .select('class_id, student_id')
-          .in('class_id', prevClassIds).eq('is_waitlist', false).order('id'))
-      : Promise.resolve([] as PrevEnrRow[]),
+          .in('class_id', prevClassIds).eq('is_waitlist', false).limit(10000)
+      : Promise.resolve({ data: [] as { class_id: string; student_id: string }[] }),
   ])
 
   // 현재월 캠퍼스×카테고리별 학생 집합
