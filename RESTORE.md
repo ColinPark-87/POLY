@@ -5,11 +5,11 @@
 | 항목 | 내용 |
 |---|---|
 | 백업 일시 | 2026-06-15 |
-| 백업 커밋 | `14fc091` (스냅샷) · 최근 배포 커밋 `bad57df` (학교/아파트 마킹 정규화) |
+| 백업 커밋 | `14fc091` (스냅샷) · 최근 배포 커밋 (좌표0 캠퍼스 학원지오코딩 폴백) |
 | 백업 브랜치 | `backup/pre-hq-pwd-20260615` (오늘 기능작업 직전 전체 스냅샷) |
-| Vercel 롤백 대상 (직전 라이브) | `dpl_GVXUvFgRwb1QwhX2w1vTHqCiyWSR` (HQ stats 페이지네이션 배포) |
-| 최근 배포 | `dpl_GrZxTzVjBuNCiEP72rA94piufRRX` (학교/아파트 지도마킹 정규화 + 운정센터) / https://poly-fs8u6gp5t-colinpark-87s-projects.vercel.app |
-| 데이터 변경 | `campus_stop_coords` 운정 센터 1행 추가(stop_name='운정', 37.7348,126.7330). 되돌리려면 해당 row 삭제 |
+| Vercel 롤백 대상 (직전 라이브) | `dpl_ANUPiWPcUrqoeaqjeWyovpDDAj9z` (개설반 반12개초과 2줄정렬 배포) |
+| 최근 배포 | `dpl_E1odPkLmywFpQVbdWHfAgf496i8G` (차량지도 좌표0 캠퍼스 중계당김 수정) / https://poly-system.vercel.app |
+| 데이터 변경 | `campus_stop_coords` 운정 센터 1행(stop_name='운정', 37.7348,126.7330). 광교·분당은 코드 폴백으로 처리(DB 미변경) |
 | 배포 URL | https://poly-system.vercel.app |
 | 백업 이유 | 오늘 기능작업(HQ 비번변경·캠퍼스삭제·반편성·세션 이름변경) 직전 상태 보존 |
 
