@@ -212,6 +212,50 @@ export function applyEnrollmentSchedule(
 }
 
 /**
+ * 차량관리 "전체 적용"(호차 시간 일괄변경) 서버 로직의 순수 함수.
+ * (route.ts 의 bulk_update_location_time / bulk_set_time 핸들러가 호출)
+ *
+ * 한 enrollment에서 `busName`(+선택적 location)을 타는 요일의 시간만 `newTime`으로 바꾸되,
+ * 다른 호차를 타는 다른 요일의 시간은 보존한다.
+ *
+ * 버그(2026-06-16, 중계 3호차 한휘): 기존 핸들러가 무조건 `sched._time = newTime` +
+ * 요일별시간 삭제(clearPerDayTimes)를 해, 월=3호차/화수목금=6호차인 학생의 3호차 시간을
+ * 바꾸면 공유 _time이 모든 요일에 적용돼 6호차(화수목금) 시간까지 같이 바뀌었다.
+ * → applyEnrollmentSchedule 와 동일한 "_time XOR {요일}_time" 불변식으로 수정:
+ *   다른 호차 요일이 남아있으면 공유 _time을 그 요일들로 이관 후 요일별 모드로 전환한다.
+ */
+export function applyBulkTimeToSchedule(
+  current: Record<string, string>,
+  busName: string,
+  location: string | null | undefined,
+  newTime: string,
+): Record<string, string> {
+  const sched: Record<string, string> = { ...current }
+  const allDays: readonly string[] = WEEKDAYS
+  // 이 호차(+위치)를 타는 요일 = 변경 대상
+  const targetDays = allDays.filter(
+    d => sched[d] === busName && (!location || sched[d + '_loc'] === location),
+  )
+  if (targetDays.length === 0) return sched // 해당 호차/위치 탑승 없음 → 변경 없음
+  // 변경 대상이 아닌, 다른 배정이 남아있는 요일(요일별 다른 호차/위치) → 시간 보존 필요
+  const otherDays = allDays.filter(d => sched[d] && !targetDays.includes(d))
+  if (otherDays.length > 0) {
+    // 요일별 모드로 전환: 기존 공유 _time을 다른 요일로 이관 → 대상요일만 newTime → 공유 _time 제거
+    const prevShared = sched['_time']
+    if (prevShared) {
+      for (const d of otherDays) if (!sched[d + '_time']) sched[d + '_time'] = prevShared
+    }
+    for (const d of targetDays) sched[d + '_time'] = newTime
+    delete sched['_time']
+  } else {
+    // 단일 호차 전 요일 → 공유 _time 하나로 통일
+    sched['_time'] = newTime
+    for (const d of allDays) delete sched[d + '_time']
+  }
+  return sched
+}
+
+/**
  * 학생 데이터에서 요일별(다른 호차/장소/시간) 편집이 필요한지 판정.
  * 요일에 따라 호차·장소·시간 중 하나라도 다르면 true.
  */

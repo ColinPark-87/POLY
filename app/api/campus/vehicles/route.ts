@@ -2,16 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { resolvePermissions } from '@/lib/permissions'
 import { selectOrphanOverrides, buildSynthEntry } from '@/lib/utils/today-overrides'
-import { applyEnrollmentSchedule } from '@/lib/utils/vehicle-schedule'
+import { applyEnrollmentSchedule, applyBulkTimeToSchedule } from '@/lib/utils/vehicle-schedule'
 
-const DAYS = ['월', '화', '수', '목', '금'] as const
-type Day = typeof DAYS[number]
-
-// 시간 표준화: 공통 _time을 설정/삭제할 때 요일별 {요일}_time override를 제거해
-// 개설반 현황(StudentDetailModal: {요일}_time 우선)과 차량관리(_time)가 항상 같은 시간을 보게 함
-function clearPerDayTimes(sched: Record<string, string>) {
-  for (const d of DAYS) delete sched[d + '_time']
-}
+type Day = '월' | '화' | '수' | '목' | '금'
 
 // 차량관리 대상 월 선택: 다음 달 개설반이 미리 생성돼 있으면 다음 달 우선,
 // 없으면 현재 달, 그것도 없으면 가장 최신 달.
@@ -28,13 +21,6 @@ function pickTargetMonth(availableMonths: string[]): string {
   return availableMonths[0] ?? ''
 }
 
-// 세션 이름에서 수업 가능 요일 반환 (빈 배열 = 필터 없음)
-function getClassDays(sessionName: string | null): Day[] {
-  if (!sessionName) return []
-  if (/화목|2일/.test(sessionName)) return ['화', '목']
-  if (/월수금|3일/.test(sessionName)) return ['월', '수', '금']
-  return []
-}
 
 // 세션 이름에서 그룹 레이블 추출 (유치부/초등부 구분용)
 // 유치부 방과후: 등원/하원 모두 유치부 그룹
@@ -615,7 +601,7 @@ export async function POST(request: NextRequest) {
     const { student_id, date, direction: dir, bus_name, pickup_time, pickup_location, days, session_name } = body
     // GET과 동일하게 최신 달 세션만 검색 (다른 달 enrollment 오업데이트 방지)
     const { data: allMonthRows } = await service.from('class_sessions').select('month').eq('campus_id', campusId)
-    const availableMonths = [...new Set((allMonthRows ?? []).map((s: any) => s.month as string))].sort((a, b) => {
+    const availableMonths = [...new Set((allMonthRows ?? []).map((s: { month: string }) => s.month))].sort((a, b) => {
       const parse = (m: string) => { const parts = m.match(/\d+/g); if (!parts || parts.length < 2) return 0; return Number(parts[0]) * 100 + Number(parts[1]) }
       return parse(b) - parse(a)
     })
@@ -661,9 +647,12 @@ export async function POST(request: NextRequest) {
       if (pickup_location) currentSched[d + '_loc'] = pickup_location
       else if (busChanged) delete currentSched[d + '_loc']  // 다른 호차로 옮기는데 위치 미지정 → 옛 호차 위치가 잔존하지 않도록 제거
     }
-    if (pickup_time) { currentSched['_time'] = pickup_time; clearPerDayTimes(currentSched) }
+    // 요일별 다른 호차 보존: 추가한 호차 요일 시간만 설정(다른 호차 요일 시간 덮어쓰기 방지)
+    const finalSched = pickup_time
+      ? applyBulkTimeToSchedule(currentSched, bus_name, pickup_location ?? null, pickup_time)
+      : currentSched
     const { error: updateError } = await service.from('class_enrollments')
-      .update({ [schedKey]: currentSched })
+      .update({ [schedKey]: finalSched })
       .eq('student_id', student_id)
       .eq('class_id', enr.class_id)
     if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 })
@@ -818,9 +807,12 @@ export async function POST(request: NextRequest) {
         if (req.location) sched[d + '_loc'] = req.location
         else delete sched[d + '_loc']
       }
-      if (req.pickup_time) { sched['_time'] = req.pickup_time; clearPerDayTimes(sched) }
+      // 요일별 다른 호차 보존: 변경 호차 요일 시간만 설정(다른 호차 요일 시간 덮어쓰기 방지)
+      const finalSched = req.pickup_time
+        ? applyBulkTimeToSchedule(sched, req.to_bus, req.location ?? null, req.pickup_time)
+        : sched
       await service.from('class_enrollments')
-        .update({ [schedKey]: sched })
+        .update({ [schedKey]: finalSched })
         .eq('student_id', req.student_id).eq('class_id', req.class_id)
       // 복수 등록 학생: 변경 요일을 다른 enrollment에서 제거해 같은 요일 중복 호차 노출 방지
       if (reqDays.length > 0) {
@@ -878,11 +870,11 @@ export async function POST(request: NextRequest) {
       .in('class_id', classIds).eq('is_waitlist', false)
     const toUpdate: { student_id: string; class_id: string; sched: Record<string,string> }[] = []
     for (const enr of enrollments ?? []) {
-      const sched = { ...(enr[schedKey as keyof typeof enr] as Record<string,string> ?? {}) }
-      const onBusAtLoc = allDays.some(d => sched[d] === bus_name && (!location || sched[d + '_loc'] === location))
+      const cur = (enr[schedKey as keyof typeof enr] as Record<string,string> ?? {})
+      const onBusAtLoc = allDays.some(d => cur[d] === bus_name && (!location || cur[d + '_loc'] === location))
       if (!onBusAtLoc) continue
-      sched['_time'] = new_time
-      clearPerDayTimes(sched)
+      // 요일별 다른 호차를 타는 학생은 이 호차 요일의 시간만 바꾸고 다른 호차 요일 시간은 보존
+      const sched = applyBulkTimeToSchedule(cur, bus_name, location ?? null, new_time)
       toUpdate.push({ student_id: enr.student_id, class_id: enr.class_id, sched })
     }
     let failedLoc = 0
@@ -912,11 +904,11 @@ export async function POST(request: NextRequest) {
     const days = ['월', '화', '수', '목', '금']
     const toUpdate: { student_id: string; class_id: string; sched: Record<string,string> }[] = []
     for (const enr of enrollments ?? []) {
-      const sched = { ...(enr[schedKey as keyof typeof enr] as Record<string,string> ?? {}) }
-      const hasBus = days.some(d => sched[d] === bus_name)
+      const cur = (enr[schedKey as keyof typeof enr] as Record<string,string> ?? {})
+      const hasBus = days.some(d => cur[d] === bus_name)
       if (hasBus) {
-        sched['_time'] = time
-        clearPerDayTimes(sched)
+        // 요일별 다른 호차 보존 — 이 호차 요일 시간만 설정
+        const sched = applyBulkTimeToSchedule(cur, bus_name, null, time)
         toUpdate.push({ student_id: enr.student_id, class_id: enr.class_id, sched })
       }
     }

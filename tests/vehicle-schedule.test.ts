@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildScheduleUpdate, detectPerDay, applyEnrollmentSchedule, type RosterEditState } from '@/lib/utils/vehicle-schedule'
+import { buildScheduleUpdate, detectPerDay, applyEnrollmentSchedule, applyBulkTimeToSchedule, type RosterEditState } from '@/lib/utils/vehicle-schedule'
 
 function base(overrides: Partial<RosterEditState> = {}): RosterEditState {
   return {
@@ -218,5 +218,47 @@ describe('detectPerDay', () => {
 
   it('요일이 없으면 false', () => {
     expect(detectPerDay({ ...common, days: [], dayBus: {}, dayLoc: {}, dayTime: {} })).toBe(false)
+  })
+})
+
+describe('applyBulkTimeToSchedule — 호차 시간 일괄변경 (요일별 다른 호차 보존)', () => {
+  it('요일별 다른 호차: 한 호차 시간 변경이 다른 호차 요일 시간을 덮어쓰지 않는다 (한휘 버그)', () => {
+    // 월=3호차, 화수목금=6호차. 공유 _time 17:00.
+    const sched = {
+      월: '3호차', 화: '6호차', 수: '6호차', 목: '6호차', 금: '6호차',
+      _time: '17:00',
+      월_loc: '성원A', 화_loc: '청구3차', 수_loc: '청구3차', 목_loc: '청구3차', 금_loc: '청구3차',
+    }
+    const out = applyBulkTimeToSchedule(sched, '3호차', '성원A', '15:06')
+    // 3호차(월)만 15:06, 6호차(화수목금)는 기존 17:00 보존, 공유 _time 제거
+    expect(out['월_time']).toBe('15:06')
+    expect(out['화_time']).toBe('17:00')
+    expect(out['금_time']).toBe('17:00')
+    expect(out['_time']).toBeUndefined()
+    // 호차 배정은 그대로
+    expect(out['월']).toBe('3호차')
+    expect(out['화']).toBe('6호차')
+  })
+
+  it('단일 호차 전 요일: 공유 _time 으로 통일하고 요일별 시간 제거', () => {
+    const sched = { 월: '3호차', 화: '3호차', 수: '3호차', _time: '17:00' }
+    const out = applyBulkTimeToSchedule(sched, '3호차', null, '15:06')
+    expect(out['_time']).toBe('15:06')
+    expect(out['월_time']).toBeUndefined()
+    expect(out['월']).toBe('3호차')
+  })
+
+  it('해당 호차를 안 타면 변경 없음', () => {
+    const sched = { 월: '6호차', _time: '17:00' }
+    const out = applyBulkTimeToSchedule(sched, '3호차', null, '15:06')
+    expect(out['_time']).toBe('17:00')
+  })
+
+  it('위치 필터: 같은 호차라도 다른 위치 요일은 시간 보존', () => {
+    const sched = { 월: '3호차', 화: '3호차', _time: '17:00', 월_loc: '성원A', 화_loc: '선덕사거리' }
+    const out = applyBulkTimeToSchedule(sched, '3호차', '성원A', '15:06')
+    expect(out['월_time']).toBe('15:06')   // 성원A
+    expect(out['화_time']).toBe('17:00')   // 선덕사거리 보존
+    expect(out['_time']).toBeUndefined()
   })
 })
