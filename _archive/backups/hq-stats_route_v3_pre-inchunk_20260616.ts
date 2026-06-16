@@ -18,27 +18,19 @@ function monthToNum(m: string): number {
   return p && p.length >= 2 ? Number(p[0]) * 100 + Number(p[1]) : 0
 }
 
-// Supabase/PostgREST 는 .in() 목록을 URL 쿼리스트링에 직렬화하므로, id 개수가 수백 개를
-// 넘으면 URL 길이 한도를 초과해 400(Bad Request)을 반환하고 결과가 통째로 빈다(에러는 조용히
-// 삼켜져 0행처럼 보임 → 전 캠퍼스 학생수 0). 또한 단일 select 는 서버측에서 1000행으로 잘린다
-// (.limit(10000) 무효). 따라서 id 목록을 청크로 나눠, 각 청크를 .range() 페이지네이션으로
-// 전부 가져온 뒤 합친다.
-const IN_CHUNK = 150 // 150 UUID ≈ 5.5KB URL — 한도 대비 안전 여유
-async function fetchAllByIn<T>(
-  ids: string[],
-  makeQuery: (chunk: string[]) => { range: (from: number, to: number) => PromiseLike<{ data: unknown[] | null }> }
+// Supabase/PostgREST 는 단일 select 를 서버측에서 1000행으로 자르므로(.limit(10000) 무효),
+// 전 캠퍼스 합계처럼 1000행을 넘는 조회는 .range() 페이지네이션으로 전부 가져온다.
+async function fetchAllRows<T>(
+  makeQuery: () => { range: (from: number, to: number) => PromiseLike<{ data: unknown[] | null }> }
 ): Promise<T[]> {
   const PAGE = 1000
   const out: T[] = []
-  for (let i = 0; i < ids.length; i += IN_CHUNK) {
-    const chunk = ids.slice(i, i + IN_CHUNK)
-    for (let from = 0; ; from += PAGE) {
-      const { data } = await makeQuery(chunk).range(from, from + PAGE - 1)
-      const rows = (data ?? []) as T[]
-      if (rows.length === 0) break
-      out.push(...rows)
-      if (rows.length < PAGE) break
-    }
+  for (let from = 0; ; from += PAGE) {
+    const { data } = await makeQuery().range(from, from + PAGE - 1)
+    const rows = (data ?? []) as T[]
+    if (rows.length === 0) break
+    out.push(...rows)
+    if (rows.length < PAGE) break
   }
   return out
 }
@@ -131,10 +123,10 @@ export async function GET() {
   type ClassRow = { id: string; session_id: string }
   const [allClasses, prevClasses] = await Promise.all([
     latestSessionIds.length
-      ? fetchAllByIn<ClassRow>(latestSessionIds, (ids) => service.from('classes').select('id, session_id').in('session_id', ids).order('id'))
+      ? fetchAllRows<ClassRow>(() => service.from('classes').select('id, session_id').in('session_id', latestSessionIds).order('id'))
       : Promise.resolve([] as ClassRow[]),
     prevSessionIds.length
-      ? fetchAllByIn<ClassRow>(prevSessionIds, (ids) => service.from('classes').select('id, session_id').in('session_id', ids).order('id'))
+      ? fetchAllRows<ClassRow>(() => service.from('classes').select('id, session_id').in('session_id', prevSessionIds).order('id'))
       : Promise.resolve([] as ClassRow[]),
   ])
 
@@ -150,14 +142,14 @@ export async function GET() {
   type PrevEnrRow = { class_id: string; student_id: string }
   const [allEnrollments, prevEnrollments] = await Promise.all([
     classIds.length
-      ? fetchAllByIn<EnrRow>(classIds, (ids) => service.from('class_enrollments')
+      ? fetchAllRows<EnrRow>(() => service.from('class_enrollments')
           .select('class_id, student_id, campus_id, arr_schedule, dep_schedule, is_waitlist')
-          .in('class_id', ids).eq('is_waitlist', false).order('id'))
+          .in('class_id', classIds).eq('is_waitlist', false).order('id'))
       : Promise.resolve([] as EnrRow[]),
     prevClassIds.length
-      ? fetchAllByIn<PrevEnrRow>(prevClassIds, (ids) => service.from('class_enrollments')
+      ? fetchAllRows<PrevEnrRow>(() => service.from('class_enrollments')
           .select('class_id, student_id')
-          .in('class_id', ids).eq('is_waitlist', false).order('id'))
+          .in('class_id', prevClassIds).eq('is_waitlist', false).order('id'))
       : Promise.resolve([] as PrevEnrRow[]),
   ])
 
@@ -197,9 +189,9 @@ export async function GET() {
 
   // 증감 학생 이름 조회
   const changedIdList = [...changedStudentIds]
-  const changedStudentRows = changedIdList.length
-    ? await fetchAllByIn<{ id: string; name: string }>(changedIdList, (ids) => service.from('campus_students').select('id, name').in('id', ids).order('id'))
-    : ([] as { id: string; name: string }[])
+  const { data: changedStudentRows } = changedIdList.length
+    ? await service.from('campus_students').select('id, name').in('id', changedIdList)
+    : { data: [] as { id: string; name: string }[] }
   const studentNameMap: Record<string, string> = {}
   for (const s of changedStudentRows ?? []) studentNameMap[s.id] = s.name
 
