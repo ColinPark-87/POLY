@@ -230,17 +230,7 @@ export async function GET() {
     '초등부': Object.values(prevStudentByCampusCat).reduce((s, c) => s + (c['초등부'] ?? 0), 0),
   }
 
-  // 캠퍼스별 고유 학생 수 (student_id 중복제거) — '수강생'/'전체 학생' 집계의 정본.
-  // 행 수로 세면 한 학생이 같은 달 2개 반을 들을 때 중복 집계되어 유치부+초등부(중복제거) 합과
-  // 어긋나므로, 캠퍼스 자체 대시보드(roster.uniqueStudents)와 동일하게 Set 크기로 집계한다.
-  const currStudentSetByCampus: Record<string, Set<string>> = {}
-  for (const enr of allEnrollments ?? []) {
-    const meta = classMeta[enr.class_id]; if (!meta) continue
-    if (!currStudentSetByCampus[meta.campusId]) currStudentSetByCampus[meta.campusId] = new Set()
-    currStudentSetByCampus[meta.campusId].add(enr.student_id)
-  }
-
-  // 기존 호환용 (그룹별 행 수 — UI 미표시, 레거시 필드만 유지)
+  // 기존 호환용
   const studentByCampus: Record<string, Record<string, number>> = {}
   for (const enr of allEnrollments ?? []) {
     const meta = classMeta[enr.class_id]; if (!meta) continue
@@ -249,13 +239,13 @@ export async function GET() {
     studentByCampus[campusId][group] = (studentByCampus[campusId][group] ?? 0) + 1
   }
   const totalStudentByGroup: Record<string, number> = {}
+  let totalStudents = 0
   for (const byGroup of Object.values(studentByCampus)) {
     for (const [group, count] of Object.entries(byGroup)) {
       totalStudentByGroup[group] = (totalStudentByGroup[group] ?? 0) + count
+      totalStudents += count
     }
   }
-  // 전체 학생 = 캠퍼스별 고유 학생 수 합 (중복제거) → 히어로의 유치부+초등부 합과 일치
-  const totalStudents = Object.values(currStudentSetByCampus).reduce((s, set) => s + set.size, 0)
 
   // 직전월 레이블 (가장 많은 캠퍼스 기준)
   const prevMonthValues = Object.values(prevMonthByCampus)
@@ -329,7 +319,7 @@ export async function GET() {
       totalUsed,
       remaining,
       usageRate,
-      studentCount: currStudentSetByCampus[c.id]?.size ?? 0,
+      studentCount: Object.values(studentByCampus[c.id] ?? {}).reduce((a, b) => a + b, 0),
       studentByGroup: studentByCampus[c.id] ?? {},
       studentByCategory: studentByCampusCat[c.id] ?? { '유치부': 0, '초등부': 0 },
       prevStudentByCategory: prevStudentByCampusCat[c.id] ?? { '유치부': 0, '초등부': 0 },
