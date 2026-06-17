@@ -7,6 +7,7 @@ import { cleanRoutePolyline, type LatLng } from '@/lib/utils/route-geometry'
 import { buildScheduleUpdate, detectPerDay } from '@/lib/utils/vehicle-schedule'
 import { normStop, sameStop } from '@/lib/utils/stop-name'
 import { aptNameMatches } from '@/lib/utils/apartment-name'
+import { PresenceBadge } from '@/components/campus/PresenceBadge'
 
 const COORDS_KEY = 'shuttle-stop-coords'
 const SCHOOL_STOP = { name: '중계폴리어학원', lat: 37.6556, lng: 127.0686 }
@@ -150,8 +151,10 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
   const [placeSpots, setPlaceSpots] = useState<{ kind: string; name: string; lat: number | null; lng: number | null; hidden: boolean }[]>([])
   const [placeAddName, setPlaceAddName] = useState('')
   const aptMarkersRef = useRef<any[]>([])
-  const schoolSpotsCacheKey = `school-spots-v4-${campusId ?? 'default'}`
-  const aptSpotsCacheKey = `apt-spots-v4-${campusId ?? 'default'}`
+  // v5: 2026-06-17 — 캠퍼스 전환 중 옛 캠퍼스 센터로 잘못 지오코딩되어 캐시에 저장된
+  // 오염 데이터(타캠퍼스 권역 마킹)를 무효화하기 위해 v4→v5 버전업.
+  const schoolSpotsCacheKey = `school-spots-v5-${campusId ?? 'default'}`
+  const aptSpotsCacheKey = `apt-spots-v5-${campusId ?? 'default'}`
 
   const [selectedSession, setSelectedSession] = useState<string | null>(null)
   const [selectedBuses, setSelectedBuses] = useState<string[]>([])
@@ -475,7 +478,11 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
 
   // 캠퍼스 변경 시 중심·지오코딩 재설정 (캠퍼스별 독립 지도 — campusId가 늦게 도착해도 다시 적용).
   // 지오코딩 effect보다 먼저 선언해야 같은 렌더에서 ref가 먼저 리셋됨.
-  useEffect(() => { centeredRef.current = false; schoolGeocodedRef.current = false; academyGeoRef.current = false }, [campusId])
+  useEffect(() => {
+    centeredRef.current = false; schoolGeocodedRef.current = false; academyGeoRef.current = false
+    // 캠퍼스 전환 시 옛 캠퍼스 마커가 잔존(타캠퍼스 권역 표시)하지 않도록 즉시 비움 → 새 캠퍼스 캐시/지오코딩으로 재구성
+    setSchoolSpots({}); setAptSpots({})
+  }, [campusId])
 
   // 학교/아파트 스팟: 캠퍼스 좌표 준비 후 지오코딩 (캐시 우선)
   useEffect(() => {
@@ -488,14 +495,26 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
       if (ca) setAptSpots(JSON.parse(ca))
       if (cs && ca) { schoolGeocodedRef.current = true; return }
     } catch {}
-    // 캠퍼스 중심 좌표 확인: 캠퍼스명 → 첫 번째 stop → SCHOOL_STOP 순으로 fallback
+    // ★ HQ에서 campusId가 있는 경우, 이 캠퍼스의 DB 좌표가 로드 완료될 때까지 대기.
+    //   (대기 안 하면 캠퍼스 전환 직후 coordsRef에 옛 캠퍼스 좌표가 남아 그 중심으로 지오코딩 →
+    //    새 캠퍼스 아파트가 타캠퍼스 권역에 찍히거나 안 찍히는 버그. ref 미설정으로 좌표 도착 후 재시도.)
+    if (campusId && coordsDbLoadedKey !== coordsKey) return
+    // 캠퍼스 중심 좌표: 캠퍼스명 매칭 우선 → (게이트 통과 후라 같은 캠퍼스인) 임의 stop → 기본(중계)
     const schoolName = effectiveSchoolName ?? SCHOOL_STOP.name
     const center = coordsRef.current[schoolName]
       ?? Object.values(coordsRef.current)[0]
       ?? (campusId ? null : { lat: SCHOOL_STOP.lat, lng: SCHOOL_STOP.lng })
     if (!center) return
     schoolGeocodedRef.current = true
-    const centerSuffix = `&x=${center.lng}&y=${center.lat}&radius=5000`
+    const GEO_RADIUS = 5000
+    const centerSuffix = `&x=${center.lng}&y=${center.lat}&radius=${GEO_RADIUS}`
+    // 중심으로부터 거리(m) — Kakao가 반경을 못 지켜 먼 동명 결과를 줄 때 타캠퍼스 권역 마킹 방지용 가드
+    const distM = (lat: number, lng: number) => {
+      const R = 6371000, toRad = (d: number) => d * Math.PI / 180
+      const dLat = toRad(lat - center.lat), dLng = toRad(lng - center.lng)
+      const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(center.lat)) * Math.cos(toRad(lat)) * Math.sin(dLng / 2) ** 2
+      return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)))
+    }
 
     async function geocodeList(
       items: { name: string; count: number }[],
@@ -513,7 +532,9 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
           // (카페·부동산 등 엉뚱한 상호로 마킹되는 것 방지)
           const matched = results.find(r => aptNameMatches(r.name, item.name))
             ?? results.find(r => fallbackRe.test(r.name))
-          if (matched) spots[item.name] = { lat: matched.lat, lng: matched.lng, count: item.count }
+          // 중심에서 반경(+여유 20%) 밖이면 타캠퍼스 권역으로 판단해 버림
+          if (matched && distM(matched.lat, matched.lng) <= GEO_RADIUS * 1.2)
+            spots[item.name] = { lat: matched.lat, lng: matched.lng, count: item.count }
         } catch {}
         await new Promise(r => setTimeout(r, 120))
       }
@@ -523,18 +544,18 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
       }
     }
 
-    // 학교 fetch
-    fetch('/api/campus/students?schools=1')
+    // 학교 fetch (HQ에서 캠퍼스를 볼 때 campus_id를 넘겨야 400이 안 나고 해당 캠퍼스 기준으로 집계됨)
+    fetch(`/api/campus/students?schools=1${cqs}`)
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (d?.schools?.length) return geocodeList(d.schools, setSchoolSpots, schoolSpotsCacheKey, /학교|초등|중학교|고등학교/) })
       .catch(() => {})
 
     // 아파트 fetch
-    fetch('/api/campus/students?apartments=1')
+    fetch(`/api/campus/students?apartments=1${cqs}`)
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (d?.apartments?.length) return geocodeList(d.apartments, setAptSpots, aptSpotsCacheKey, /아파트|단지/) })
       .catch(() => {})
-  }, [campusId, coords])
+  }, [campusId, coords, cqs, coordsDbLoadedKey, coordsKey])
 
   const updateCoords = useCallback(async (c: Record<string, { lat: number; lng: number }>) => {
     setCoords(c)
@@ -3382,6 +3403,11 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
           </div>
         )}
         <div ref={mapContainerRef} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
+
+        {/* ── 동시 작업자 표시 (캠퍼스 단위) — 지도 좌상단 */}
+        <div className="absolute top-3 left-3 z-[1000] pointer-events-none">
+          <PresenceBadge campusId={campusId} />
+        </div>
 
         {/* ── 정류장 검색 오버레이 — 지도 우상단 */}
         <div className="absolute top-3 right-3 z-[1000] w-72 pointer-events-auto">
