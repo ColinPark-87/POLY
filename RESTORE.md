@@ -4,12 +4,12 @@
 
 | 항목 | 내용 |
 |---|---|
-| 백업 일시 | 2026-06-17 (동시편집 presence+충돌 배포 직전) |
-| 백업 브랜치 | `backup/pre-presence-deploy-20260617` (배포 직전 작업트리 스냅샷) |
-| 백업 커밋 | presence/충돌 feature `d78af82`(Phase3) 포함 |
-| Vercel 롤백 대상 (직전 라이브) | `poly-7n7fbhbm5-colinpark-87s-projects.vercel.app` (= HQ 차량마킹 수정 배포, 2026-06-17 오전) |
-| 최근 배포 | `dpl_EsuuWfJpuXYMhkmqBJGcVBfbuqST` (presence+충돌, 2026-06-17) / https://poly-system.vercel.app |
-| 롤백 방법 | `vercel promote poly-7n7fbhbm5-colinpark-87s-projects.vercel.app` (즉시 라이브 롤백) 또는 `git checkout backup/pre-presence-deploy-20260617` 후 재배포 |
+| 백업 일시 | 2026-06-17 (presence 보는중/편집중 구분 배포 직전) |
+| 백업 브랜치 | `backup/pre-presence-edit-deploy-20260617` (직전: `backup/pre-presence-deploy-20260617`) |
+| 백업 커밋 | presence 보는중/편집중 `20f408b` |
+| Vercel 롤백 대상 (직전 라이브) | `poly-8i6v2vg9n-colinpark-87s-projects.vercel.app` (= presence+충돌 1차, dpl_EsuuWfJpuXYMhkmqBJGcVBfbuqST) |
+| 최근 배포 | (배포 후 갱신) presence 편집중구분 / https://poly-system.vercel.app |
+| 롤백 방법 | `vercel promote poly-8i6v2vg9n-colinpark-87s-projects.vercel.app` (즉시 라이브 롤백) 또는 `git checkout backup/pre-presence-edit-deploy-20260617` 후 재배포 |
 | DB 의존(이번 배포) | presence/충돌 기능은 `campus_presence` 테이블 + `updated_at`/`updated_by` 컬럼·트리거(2026-06-17 SQL 적용됨)에 의존. 컬럼은 미사용 시 무해 → 코드 롤백만으로 충분 |
 
 ---
