@@ -4,8 +4,10 @@
 
 /** 표시·집계용 클린 단지명: 공백 정규화 + 잡음기호 제거 + 끝의 동/호수 제거 */
 export function normalizeApt(s: string | null | undefined): string {
-  let v = (s ?? '').replace(/[★☆◆●▶•]/g, ' ') // ★☆◆●▶•
-                   .replace(/\s+/g, ' ').trim()
+  let v = (s ?? '')
+    .replace(/\[[^\]]*\]/g, ' ')   // "[2026 차]" 같은 운영 태그 제거 (지오코딩 쿼리 오염 방지)
+    .replace(/[★☆◆●▶•*]/g, ' ')   // ★☆◆●▶• 및 * (개별라이딩 표식 등) 잡음기호
+    .replace(/\s+/g, ' ').trim()
   if (!v) return ''
   // 끝에 붙은 동-호수/동/호수 제거 (동 번호가 이름 일부가 아닌 주소 꼬리일 때)
   v = v

@@ -4,14 +4,23 @@
 
 | 항목 | 내용 |
 |---|---|
-| 백업 일시 | 2026-06-15 |
-| 백업 커밋 | 최근 배포 커밋 `b9a0b74` (원장 대시보드 반경필터) |
-| 백업 브랜치 | `backup/pre-dashboard-fill-20260615` (대시보드작업 직전 스냅샷), `backup/pre-hq-pwd-20260615` |
-| Vercel 롤백 대상 (직전 라이브) | `dpl_E1odPkLmywFpQVbdWHfAgf496i8G` (좌표0 캠퍼스 중계당김 수정) |
-| 최근 배포 | `dpl_HUXG74uC7mdMuTcSn4j5Ze3z14dJ` (원장 대시보드 반경필터+사립초) / https://poly-system.vercel.app |
-| 데이터 변경 | `campus_stop_coords`: 운정/광교/분당 센터(사용자/에이전트), 분당 스트레이 '중계폴리어학원' 행 삭제. 대시보드 반경필터는 `lib/data/campus-geo-filter.json`(생성기 재실행 가능) |
+| 백업 일시 | 2026-06-17 (동시편집 presence+충돌 배포 직전) |
+| 백업 브랜치 | `backup/pre-presence-deploy-20260617` (배포 직전 작업트리 스냅샷) |
+| 백업 커밋 | presence/충돌 feature `d78af82`(Phase3) 포함 |
+| Vercel 롤백 대상 (직전 라이브) | `poly-7n7fbhbm5-colinpark-87s-projects.vercel.app` (= HQ 차량마킹 수정 배포, 2026-06-17 오전) |
+| 최근 배포 | (배포 후 갱신) presence+충돌 / https://poly-system.vercel.app |
+| 롤백 방법 | `vercel promote poly-7n7fbhbm5-colinpark-87s-projects.vercel.app` (즉시 라이브 롤백) 또는 `git checkout backup/pre-presence-deploy-20260617` 후 재배포 |
+| DB 의존(이번 배포) | presence/충돌 기능은 `campus_presence` 테이블 + `updated_at`/`updated_by` 컬럼·트리거(2026-06-17 SQL 적용됨)에 의존. 컬럼은 미사용 시 무해 → 코드 롤백만으로 충분 |
+
+---
+### (이전) 2026-06-16 백업 정보
+| 항목 | 내용 |
+|---|---|
+| 백업 커밋 | 직전 라이브 `254af41` · 수정 `a09a3f7`(호차 시간 전체적용 덮어쓰기) |
+| Vercel 롤백 | `poly-qgacg41ep-colinpark-87s-projects.vercel.app` (= dpl 254af41) |
+| 데이터 변경(2026-06-16, 버스적용) | campus_buses·class_enrollments(arr/dep_schedule)·class_sessions.time_range·campus_stop_coords (목동매그넷·송도·송파·광명) + campus_students 동(detail_address/address) 4캠 + 광명 비재원 339 삭제. 스냅샷 `_archive/backups/bus-apply-2026-06-16/`(중계 포함)·`gwangmyeong-cleanup-2026-06-16/` |
 | 배포 URL | https://poly-system.vercel.app |
-| 백업 이유 | 오늘 기능작업(HQ 비번변경·캠퍼스삭제·반편성·세션 이름변경) 직전 상태 보존 |
+| 백업 이유 | 호차 시간 전체적용 버그수정 배포 직전 상태(254af41) 보존 |
 
 ### 빠른 복구 (이번 배포가 잘못된 경우)
 
