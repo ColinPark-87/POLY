@@ -37,6 +37,25 @@ export async function PATCH(
     oldName = target?.name ?? null
   }
 
+  // 이메일 변경 시 Supabase Auth 계정 이메일도 함께 갱신 (안 하면 users.email≠auth.email →
+  // 직원이 표시된 이메일로 로그인 불가. 대상이 같은 캠퍼스인지 확인 후 auth 먼저 갱신해 동기화 유지)
+  if (typeof updates.email === 'string' && updates.email.trim()) {
+    const newEmail = updates.email.trim().toLowerCase()
+    updates.email = newEmail
+    const { data: target } = await service.from('users').select('email, campus_id').eq('id', id).single()
+    if (!target || target.campus_id !== campusId) {
+      return NextResponse.json({ error: '권한 없음' }, { status: 403 })
+    }
+    if ((target.email ?? '').toLowerCase() !== newEmail) {
+      const { error: authEmailErr } = await service.auth.admin.updateUserById(id, { email: newEmail, email_confirm: true })
+      if (authEmailErr) {
+        const m = (authEmailErr.message ?? '').toLowerCase()
+        const dup = m.includes('already') || m.includes('registered') || m.includes('exists') || m.includes('duplicate')
+        return NextResponse.json({ error: dup ? '이미 사용 중인 이메일입니다.' : `이메일 변경 실패: ${authEmailErr.message}` }, { status: 400 })
+      }
+    }
+  }
+
   const { error } = await service
     .from('users')
     .update(updates)
