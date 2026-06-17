@@ -23,4 +23,14 @@ describe('filterPresent', () => {
     const rows = [{ user_id: 'a', user_name: 'Alice', last_seen: iso(30) }]
     expect(filterPresent(rows, 'me', now, 30)).toHaveLength(1)
   })
+
+  it('page에 edit 포함이면 editing=true, 아니면 false', () => {
+    const rows = [
+      { user_id: 'a', user_name: 'Alice', last_seen: iso(5), page: 'vehicles-edit' },
+      { user_id: 'b', user_name: 'Bob', last_seen: iso(5), page: 'vehicles' },
+    ]
+    const out = filterPresent(rows, 'me', now, 30)
+    expect(out.find(r => r.user_name === 'Alice')?.editing).toBe(true)
+    expect(out.find(r => r.user_name === 'Bob')?.editing).toBe(false)
+  })
 })

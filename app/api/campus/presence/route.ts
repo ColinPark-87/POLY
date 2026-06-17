@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   const c = await ctx(request); if ('err' in c) return c.err
   const { data } = await c.service.from('campus_presence')
-    .select('user_id, user_name, last_seen').eq('campus_id', c.campusId)
+    .select('user_id, user_name, last_seen, page').eq('campus_id', c.campusId)
   const present = filterPresent(data ?? [], c.user.id, Date.now(), WINDOW_SEC)
   return NextResponse.json({ present })
 }

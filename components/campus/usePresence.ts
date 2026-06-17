@@ -1,19 +1,21 @@
 'use client'
 import { useEffect, useState, useRef } from 'react'
 
-export interface Present { user_name: string | null; last_seen: string }
+export interface Present { user_name: string | null; last_seen: string; editing: boolean }
 const HEARTBEAT_MS = 15000
 
-/** 차량관리 화면에 머무는 동안 하트비트 전송 + 동시 작업자 목록 조회. */
-export function usePresence(campusId?: string) {
+/** 차량관리 화면 접속 중 하트비트 전송 + 동시 접속자 조회. editing=true면 '편집 중'으로 표시됨. */
+export function usePresence(campusId?: string, editing = false) {
   const [present, setPresent] = useState<Present[]>([])
+  const cq = campusId ? `?campus_id=${campusId}` : ''
+  const pageRef = useRef('vehicles')
+  pageRef.current = editing ? 'vehicles-edit' : 'vehicles'
   const beat = useRef<() => void>(() => {})
 
-  const cq = campusId ? `?campus_id=${campusId}` : ''
   beat.current = () => {
     fetch(`/api/campus/presence${cq}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ page: 'vehicles' }),
+      body: JSON.stringify({ page: pageRef.current }),
     }).catch(() => {})
     fetch(`/api/campus/presence${cq}`)
       .then(r => r.ok ? r.json() : { present: [] })
@@ -35,6 +37,9 @@ export function usePresence(campusId?: string) {
       leave()
     }
   }, [campusId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 편집 시작/종료 시 즉시 하트비트(편집 중 표시 지연 없이)
+  useEffect(() => { beat.current() }, [editing])
 
   return present
 }

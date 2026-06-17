@@ -3422,9 +3422,9 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
         )}
         <div ref={mapContainerRef} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
 
-        {/* ── 동시 작업자 표시 (캠퍼스 단위) — 지도 좌상단 */}
+        {/* ── 동시 접속자/편집자 표시 (캠퍼스 단위) — 지도 좌상단 */}
         <div className="absolute top-3 left-3 z-[1000] pointer-events-none">
-          <PresenceBadge campusId={campusId} />
+          <PresenceBadge campusId={campusId} editing={!!leftEditModal || !!candidateStop || !!addStopModal || adjustMode || !!placeAdjust} />
         </div>
 
         {/* ── 동시편집 충돌 모달 */}
