@@ -1219,7 +1219,7 @@ export default function VehiclesPage() {
           ))}
         </div>
         <div className="ml-auto flex items-center gap-2 pr-0.5">
-          <PresenceBadge campusId={campusId} editing={mapEditing || !!addRiderModal} />
+          <PresenceBadge campusId={campusId} editing={mapEditing || !!addRiderModal || !!editSchedModal || !!overrideModal || !!bulkTimeModal} />
           {month && <span className="text-[11px] font-semibold text-[#1D4ED8] whitespace-nowrap hidden sm:inline">📅 {month}</span>}
           <button onClick={() => setFullscreen(f => !f)}
             title={fullscreen ? '전체화면 종료 (Esc)' : '전체화면으로 보기'}
