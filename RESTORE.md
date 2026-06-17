@@ -4,13 +4,13 @@
 
 | 항목 | 내용 |
 |---|---|
-| 백업 일시 | 2026-06-17 (presence 3개탭 공통표시 배포 직전) |
-| 백업 브랜치 | `backup/pre-usage-stats-20260617` (직전: backup/pre-email-sync-fix-20260617) (직전 staff/presence: backup/pre-presence-editfix-20260617) (직전: `backup/pre-presence-alltabs-20260617`) (직전: `backup/pre-presence-edit-deploy-20260617`) |
-| 백업 커밋 | presence 3개탭 공통 `66dab94` |
-| Vercel 롤백 대상 (직전 라이브) | `poly-q239atar2-colinpark-87s-projects.vercel.app` (= presence 편집중구분, dpl_3wh2yV7Af6cinyqbaUsroT95vEsF) |
-| 최근 배포 | `dpl_Fhjq3jsFUrHC5hCbPitpkY7uKJW8` (직원 이메일-Auth 동기화 fix, 2026-06-17) / https://poly-system.vercel.app |
-| 롤백 방법 | `vercel promote poly-q239atar2-colinpark-87s-projects.vercel.app` (즉시 라이브 롤백) 또는 `git checkout backup/pre-usage-stats-20260617` (직전: backup/pre-email-sync-fix-20260617) (직전 staff/presence: backup/pre-presence-editfix-20260617) (직전: `backup/pre-presence-alltabs-20260617`) 후 재배포 |
-| DB 의존(이번 배포) | presence/충돌 기능은 `campus_presence` 테이블 + `updated_at`/`updated_by` 컬럼·트리거(2026-06-17 SQL 적용됨)에 의존. 컬럼은 미사용 시 무해 → 코드 롤백만으로 충분 |
+| 백업 일시 | 2026-06-17 (파일럿 사용현황 배포 직전) |
+| 백업 브랜치 | `backup/pre-usage-stats-20260617` (직전들: pre-email-sync-fix / pre-presence-editfix / pre-presence-alltabs …) |
+| 백업 커밋 | 파일럿 사용현황 직전 |
+| Vercel 롤백 대상 (직전 라이브) | `dpl_Fhjq3jsFUrHC5hCbPitpkY7uKJW8` (= 직원 이메일-Auth 동기화 fix) |
+| 최근 배포 | `dpl_D1zztdc2kpmdpkwhUaE22pDciUJy` (파일럿 사용현황, 2026-06-17) / https://poly-system.vercel.app |
+| 롤백 방법 | `vercel promote dpl_Fhjq3jsFUrHC5hCbPitpkY7uKJW8` (즉시 라이브 롤백) 또는 `git checkout backup/pre-usage-stats-20260617` 후 재배포 |
+| DB 의존(이번 배포) | `usage_logs` 테이블(접속·활동 기록)에 의존. **미생성이어도 기록은 조용히 무시(본동작 무해)**, 단 통계는 빔. 테이블 drop도 무해 |
 
 ---
 ### (이전) 2026-06-16 백업 정보
