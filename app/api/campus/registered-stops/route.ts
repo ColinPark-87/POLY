@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { resolvePermissions } from '@/lib/permissions'
+import { logUsage } from '@/lib/usage-log'
 
 // 빈 정류장 마스터 (campus_registered_stops) — 학생 배정 없이 정류장만 등록.
 // 좌표는 기존 campus_stop_coords(stop-coords route)에 저장하고 여기서는 다루지 않음.
@@ -61,6 +62,8 @@ export async function POST(request: NextRequest) {
   const default_time = body.default_time ? String(body.default_time).trim() : null
   if (!stop_name || !bus_name) return NextResponse.json({ error: '정류장명·호차 필요' }, { status: 400 })
 
+  await logUsage(service, { event_type: 'edit', area: 'vehicles', campusId, userId: user.id, userName: profile?.name ?? null, role: profile?.role ?? null })
+
   const { data, error } = await service
     .from('campus_registered_stops')
     .upsert(
@@ -94,6 +97,8 @@ export async function DELETE(request: NextRequest) {
   const direction = body.direction === 'arr' ? 'arr' : 'dep'
   // 단건 삭제만 허용 — 캠퍼스 전체 삭제 금지
   if (!stop_name || !bus_name) return NextResponse.json({ error: '정류장명·호차 필요' }, { status: 400 })
+
+  await logUsage(service, { event_type: 'edit', area: 'vehicles', campusId, userId: user.id, userName: profile?.name ?? null, role: profile?.role ?? null })
 
   const { error } = await service
     .from('campus_registered_stops')

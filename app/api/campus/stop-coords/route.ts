@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { resolvePermissions } from '@/lib/permissions'
 import { conflictBody } from '@/lib/vehicles/conflict'
+import { logUsage } from '@/lib/usage-log'
 
 // 차량 관리 권한 보유자(vehicles)만 접근 — 일반 직원의 좌표 열람/변조 차단.
 // 제한권한(vehiclesRestricted, 안전선생님)도 현행대로 접근 가능하도록 vehicles 만 요구.
@@ -56,6 +57,8 @@ export async function POST(request: NextRequest) {
   let campusId: string | null | undefined = profile?.campus_id
   if (!campusId && profile?.role === 'hq_admin') campusId = searchParams.get('campus_id')
   if (!campusId) return NextResponse.json({ error: '캠퍼스 없음' }, { status: 400 })
+
+  await logUsage(service, { event_type: 'edit', area: 'vehicles', campusId, userId: user.id, userName: profile?.name ?? null, role: profile?.role ?? null })
 
   const body = await request.json()
   const coords: Record<string, { lat: number; lng: number }> = body.coords ?? {}
@@ -113,6 +116,8 @@ export async function PATCH(request: NextRequest) {
   let campusId: string | null | undefined = profile?.campus_id
   if (!campusId && profile?.role === 'hq_admin') campusId = searchParams.get('campus_id')
   if (!campusId) return NextResponse.json({ error: '캠퍼스 없음' }, { status: 400 })
+
+  await logUsage(service, { event_type: 'edit', area: 'vehicles', campusId, userId: user.id, userName: profile?.name ?? null, role: profile?.role ?? null })
 
   const { oldName, newName, lat, lng, baseVersion, force } = await request.json()
   if (!oldName || !newName) return NextResponse.json({ error: '이름 필요' }, { status: 400 })
@@ -179,6 +184,8 @@ export async function DELETE(request: NextRequest) {
   if (!canVehicles(profile)) return NextResponse.json({ error: '권한 없음' }, { status: 403 })
   const campusId = profile?.campus_id
   if (!campusId) return NextResponse.json({ error: '캠퍼스 없음' }, { status: 400 })
+
+  await logUsage(service, { event_type: 'edit', area: 'vehicles', campusId, userId: user.id, userName: profile?.name ?? null, role: profile?.role ?? null })
 
   const { error } = await service
     .from('campus_stop_coords')

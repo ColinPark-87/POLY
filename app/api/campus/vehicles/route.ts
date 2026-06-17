@@ -4,6 +4,7 @@ import { resolvePermissions } from '@/lib/permissions'
 import { selectOrphanOverrides, buildSynthEntry } from '@/lib/utils/today-overrides'
 import { applyEnrollmentSchedule, applyBulkTimeToSchedule } from '@/lib/utils/vehicle-schedule'
 import { conflictBody } from '@/lib/vehicles/conflict'
+import { logUsage } from '@/lib/usage-log'
 
 type Day = '월' | '화' | '수' | '목' | '금'
 
@@ -547,6 +548,11 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json()
   const { action } = body
+
+  // 파일럿 사용현황: 차량 변경 활동 기록(읽기성 action 제외, 비차단)
+  if (action && action !== 'search_students') {
+    await logUsage(service, { event_type: 'edit', area: 'vehicles', campusId, userId: user.id, userName: profile?.name ?? null, role: profile?.role ?? null })
+  }
 
   // 세션명 기준 등하원 시간 유효성 검사
   function validatePickupTime(session_name: string | null, pickup_time: string | null, dir: 'arr' | 'dep', time_range?: string | null): boolean {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { logUsage } from '@/lib/usage-log'
 
 export async function POST(request: NextRequest) {
   const { email, password } = await request.json()
@@ -34,6 +35,9 @@ export async function POST(request: NextRequest) {
   }
 
   console.log('[login-api] user.id:', data.user.id, 'profile:', profile)
+
+  // 파일럿 사용현황: 로그인 성공 기록(비차단 — 실패해도 로그인 정상)
+  await logUsage(serviceClient, { event_type: 'login', campusId: profile?.campus_id ?? null, userId: data.user.id, userName: data.user.email ?? null, role: profile?.role ?? 'employee' })
 
   return NextResponse.json({ user: data.user, role: profile?.role ?? 'employee', position: profile?.position ?? '' })
 }
