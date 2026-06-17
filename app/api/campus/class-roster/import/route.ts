@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import * as XLSX from 'xlsx'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { logUsage } from '@/lib/usage-log'
 
 const DAYS_KO = ['월', '화', '수', '목', '금'] as const
 
@@ -24,7 +25,7 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: '인증 필요' }, { status: 401 })
 
   const service = createServiceClient()
-  const { data: profile } = await service.from('users').select('campus_id, role, position').eq('id', user.id).single()
+  const { data: profile } = await service.from('users').select('campus_id, name, role, position').eq('id', user.id).single()
   const { searchParams } = new URL(request.url)
   let campusId: string | null | undefined = profile?.campus_id
   if (!campusId && profile?.role === 'hq_admin') campusId = searchParams.get('campus_id')
@@ -35,6 +36,8 @@ export async function POST(request: NextRequest) {
   const formData = await request.formData()
   const file = formData.get('file') as File | null
   if (!file) return NextResponse.json({ error: '파일 없음' }, { status: 400 })
+
+  await logUsage(service, { event_type: 'edit', area: 'roster', campusId, userId: user.id, userName: (profile as { name?: string } | null)?.name ?? null, role: profile?.role ?? null })
 
   const buf = Buffer.from(await file.arrayBuffer())
   const wb = XLSX.read(buf, { type: 'buffer' })

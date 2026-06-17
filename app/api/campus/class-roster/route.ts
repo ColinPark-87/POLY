@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { logUsage } from '@/lib/usage-log'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { resolvePermissions } from '@/lib/permissions'
 import { partitionBulkMove, type BulkCandidate } from '@/lib/utils/roster-multimove'
@@ -113,6 +114,9 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json()
   const { action } = body
+
+  // 파일럿 사용현황: 개설반 변경 활동 기록(비차단)
+  await logUsage(service, { event_type: 'edit', area: 'roster', campusId, userId: user.id, userName: changedByName || null, role: profile?.role ?? null })
 
   if (action === 'add_session') {
     const { name, time_range, month } = body

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { resolvePermissions } from '@/lib/permissions'
 import { normalizeApt } from '@/lib/utils/apartment-name'
+import { logUsage } from '@/lib/usage-log'
 
 // 신규생 생성/수정 권한: campus_admin/hq_admin 또는 원장·관리자·상담 등 enrollEdit 보유 직책
 const STUDENT_EDIT_COLS = 'campus_id, position, role, name, perm_class_roster, perm_enroll_edit, perm_vehicles, perm_vehicles_restricted, perm_analytics'
@@ -127,6 +128,8 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  await logUsage(service, { event_type: 'edit', area: 'roster', campusId, userId: user.id, userName: (profile as { name?: string } | null)?.name ?? null, role: profile?.role ?? null })
+
   const effDate = enrolled_at || new Date().toISOString().slice(0, 10)
   const { data, error } = await service.from('campus_students').insert({
     campus_id: campusId, name: trimmedName, english_name: english_name?.trim() || null,
@@ -174,6 +177,8 @@ export async function PATCH(request: NextRequest) {
   // 메모만 수정하는 경우(이름 미전달)는 이름 필수 검사를 건너뜀
   const memoOnly = memo !== undefined && name === undefined
   if (!memoOnly && !name?.trim()) return NextResponse.json({ error: '이름 필수' }, { status: 400 })
+
+  await logUsage(service, { event_type: 'edit', area: 'roster', campusId, userId: user.id, userName: (profile as { name?: string } | null)?.name ?? null, role: profile?.role ?? null })
 
   const updateData: Record<string, unknown> = {}
   if (!memoOnly) {
