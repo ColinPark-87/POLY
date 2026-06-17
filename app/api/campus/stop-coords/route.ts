@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { resolvePermissions } from '@/lib/permissions'
+import { conflictBody } from '@/lib/vehicles/conflict'
 
 // 차량 관리 권한 보유자(vehicles)만 접근 — 일반 직원의 좌표 열람/변조 차단.
 // 제한권한(vehiclesRestricted, 안전선생님)도 현행대로 접근 가능하도록 vehicles 만 요구.
-const PERM_SELECT = 'campus_id, role, position, perm_class_roster, perm_vehicles, perm_vehicles_restricted'
+const PERM_SELECT = 'campus_id, name, role, position, perm_class_roster, perm_vehicles, perm_vehicles_restricted'
 function canVehicles(profile: { role?: string | null; position?: string | null; perm_class_roster?: boolean | null; perm_vehicles?: boolean | null; perm_vehicles_restricted?: boolean | null } | null) {
   return resolvePermissions({
     role: profile?.role ?? 'employee',
@@ -113,14 +114,22 @@ export async function PATCH(request: NextRequest) {
   if (!campusId && profile?.role === 'hq_admin') campusId = searchParams.get('campus_id')
   if (!campusId) return NextResponse.json({ error: '캠퍼스 없음' }, { status: 400 })
 
-  const { oldName, newName, lat, lng } = await request.json()
+  const { oldName, newName, lat, lng, baseVersion, force } = await request.json()
   if (!oldName || !newName) return NextResponse.json({ error: '이름 필요' }, { status: 400 })
+
+  // 충돌 검사: 편집 시작 후 다른 사람이 이 정류장을 바꿨으면 409 (force면 생략)
+  if (!force) {
+    const { data: cur } = await service.from('campus_stop_coords')
+      .select('updated_at, updated_by').eq('campus_id', campusId).eq('stop_name', oldName).maybeSingle()
+    const cf = conflictBody(cur, baseVersion)
+    if (cf) return NextResponse.json(cf, { status: 409 })
+  }
 
   // 1) campus_stop_coords: 기존 행 삭제 후 새 이름으로 삽입
   await service.from('campus_stop_coords').delete().eq('campus_id', campusId).eq('stop_name', oldName)
   if (lat !== undefined && lng !== undefined) {
     await service.from('campus_stop_coords').upsert(
-      { campus_id: campusId, stop_name: newName, lat, lng, updated_at: new Date().toISOString() },
+      { campus_id: campusId, stop_name: newName, lat, lng, updated_at: new Date().toISOString(), updated_by: profile?.name ?? null },
       { onConflict: 'campus_id,stop_name' }
     )
   }

@@ -3,6 +3,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { resolvePermissions } from '@/lib/permissions'
 import { selectOrphanOverrides, buildSynthEntry } from '@/lib/utils/today-overrides'
 import { applyEnrollmentSchedule, applyBulkTimeToSchedule } from '@/lib/utils/vehicle-schedule'
+import { conflictBody } from '@/lib/vehicles/conflict'
 
 type Day = '월' | '화' | '수' | '목' | '금'
 
@@ -133,6 +134,7 @@ export async function GET(request: NextRequest) {
   let enrollments: {
     student_id: string; class_id: string
     arr_schedule: Record<string, string>; dep_schedule: Record<string, string>
+    updated_at: string | null
     campus_students: { name: string; english_name: string | null }
   }[] = []
 
@@ -142,7 +144,7 @@ export async function GET(request: NextRequest) {
     const classIds = (classes ?? []).map(c => c.id)
     if (classIds.length) {
       const { data } = await service.from('class_enrollments')
-        .select('student_id, class_id, arr_schedule, dep_schedule, campus_students(name, english_name)')
+        .select('student_id, class_id, arr_schedule, dep_schedule, updated_at, campus_students(name, english_name)')
         .in('class_id', classIds).eq('is_waitlist', false)
       enrollments = (data ?? []) as unknown as typeof enrollments
     }
@@ -171,6 +173,7 @@ export async function GET(request: NextRequest) {
     busByDay?: Record<string, string>  // 요일별 호차 (요일별 다른 호차 편집용)
     pickup_time: string | null  // arr_schedule["_time"] / dep_schedule["_time"]
     is_bangwaHu?: boolean  // 방과후 세션 + 하원 여부 (매일반 탭 내 유치 배지용)
+    updated_at?: string | null  // enrollment 버전(낙관적 동시성 baseVersion)
   }
 
   interface TimeGroupRaw {
@@ -255,6 +258,7 @@ export async function GET(request: NextRequest) {
           days: assignedDays,
           pickup_time: resolvedTime,
           is_bangwaHu: !!(session_name?.includes('방과후') && !session_name?.includes('유치부') && direction === 'dep'),
+          updated_at: enr.updated_at,
         }
         if (!busMap[busName]) busMap[busName] = []
         busMap[busName].push(entry)
@@ -321,6 +325,7 @@ export async function GET(request: NextRequest) {
         dayLocs: dayLocsAll,
         pickup_time: finalTime,
         is_bangwaHu: !!(session_name?.includes('방과후') && !session_name?.includes('유치부') && direction === 'dep'),
+        updated_at: enr.updated_at,
       }
 
       if (!busMap[busName]) busMap[busName] = []
@@ -512,7 +517,7 @@ export async function POST(request: NextRequest) {
   const service = createServiceClient()
   const { data: profile } = await service
     .from('users')
-    .select('campus_id, position, role, perm_class_roster, perm_vehicles, perm_vehicles_restricted')
+    .select('campus_id, name, position, role, perm_class_roster, perm_vehicles, perm_vehicles_restricted')
     .eq('id', user.id)
     .single()
   const campusId = profile?.campus_id
@@ -691,13 +696,19 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === 'update_enrollment_schedule') {
-    const { student_id, class_id, direction: dir, days, bus_name, old_bus_name, location, pickup_time, day_locations, day_times, day_buses } = body
+    const { student_id, class_id, direction: dir, days, bus_name, old_bus_name, location, pickup_time, day_locations, day_times, day_buses, baseVersion, force } = body
     const campusErr = await assertClassInCampus(class_id)
     if (campusErr) return campusErr
     const { data: enr } = await service.from('class_enrollments')
-      .select('arr_schedule, dep_schedule, class_id')
+      .select('arr_schedule, dep_schedule, class_id, updated_at, updated_by')
       .eq('student_id', student_id).eq('class_id', class_id).single()
     if (!enr) return NextResponse.json({ error: '수강 없음' }, { status: 404 })
+
+    // 충돌 검사: 편집 시작 후 다른 사람이 이 학생 스케줄을 바꿨으면 409 (force면 생략)
+    if (!force) {
+      const cf = conflictBody(enr, baseVersion)
+      if (cf) return NextResponse.json(cf, { status: 409 })
+    }
 
     // 등하원 시간 유효성 검사
     if (pickup_time) {
@@ -733,7 +744,7 @@ export async function POST(request: NextRequest) {
       { days, bus_name, old_bus_name, location, pickup_time, day_locations, day_times, day_buses },
     )
     const { error } = await service.from('class_enrollments')
-      .update({ [schedKey]: sched })
+      .update({ [schedKey]: sched, updated_by: profile?.name ?? null })
       .eq('student_id', student_id).eq('class_id', class_id)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
@@ -923,16 +934,23 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === 'update_bus') {
-    const { bus_id, name, driver, driver_phone, safety, safety_phone, kt_name, kt_phone, capacity } = body
+    const { bus_id, name, driver, driver_phone, safety, safety_phone, kt_name, kt_phone, capacity, baseVersion, force } = body
 
-    // 기존 차량 이름 조회 (이름 변경 여부 판단용)
-    const { data: oldBus } = await service.from('campus_buses').select('name').eq('id', bus_id).eq('campus_id', campusId).single()
+    // 기존 차량 이름 조회 (이름 변경 여부 판단용) + 충돌 검사용 버전
+    const { data: oldBus } = await service.from('campus_buses').select('name, updated_at, updated_by').eq('id', bus_id).eq('campus_id', campusId).single()
     const oldName = oldBus?.name as string | undefined
+
+    // 충돌 검사: 편집 시작 후 다른 사람이 이 호차를 바꿨으면 409 (force면 생략)
+    if (!force) {
+      const cf = conflictBody(oldBus, baseVersion)
+      if (cf) return NextResponse.json(cf, { status: 409 })
+    }
 
     const updateData: Record<string, unknown> = {
       driver: driver||null, driver_phone: driver_phone||null,
       safety: safety||null, safety_phone: safety_phone||null,
       kt_name: kt_name||null, kt_phone: kt_phone||null,
+      updated_by: profile?.name ?? null,
     }
     if (capacity !== undefined && capacity !== null && capacity !== '') {
       const n = Number(capacity)

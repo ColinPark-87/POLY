@@ -5,7 +5,7 @@ import { resolvePermissions } from '@/lib/permissions'
 // 빈 정류장 마스터 (campus_registered_stops) — 학생 배정 없이 정류장만 등록.
 // 좌표는 기존 campus_stop_coords(stop-coords route)에 저장하고 여기서는 다루지 않음.
 
-const PERM_SELECT = 'campus_id, role, position, perm_class_roster, perm_vehicles, perm_vehicles_restricted'
+const PERM_SELECT = 'campus_id, name, role, position, perm_class_roster, perm_vehicles, perm_vehicles_restricted'
 
 function gateVehicles(profile: { role?: string | null; position?: string | null; perm_class_roster?: boolean | null; perm_vehicles?: boolean | null; perm_vehicles_restricted?: boolean | null } | null) {
   return resolvePermissions({
@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
   const { data, error } = await service
     .from('campus_registered_stops')
     .upsert(
-      { campus_id: campusId, stop_name, bus_name, direction, default_time },
+      { campus_id: campusId, stop_name, bus_name, direction, default_time, updated_by: profile?.name ?? null },
       { onConflict: 'campus_id,stop_name,bus_name,direction' }
     )
     .select('stop_name, bus_name, direction, default_time')

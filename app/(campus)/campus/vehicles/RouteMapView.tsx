@@ -8,6 +8,7 @@ import { buildScheduleUpdate, detectPerDay } from '@/lib/utils/vehicle-schedule'
 import { normStop, sameStop } from '@/lib/utils/stop-name'
 import { aptNameMatches } from '@/lib/utils/apartment-name'
 import { PresenceBadge } from '@/components/campus/PresenceBadge'
+import { ConflictModal, type Conflict } from '@/components/campus/ConflictModal'
 
 const COORDS_KEY = 'shuttle-stop-coords'
 const SCHOOL_STOP = { name: '중계폴리어학원', lat: 37.6556, lng: 127.0686 }
@@ -88,6 +89,7 @@ interface StudentEntry {
   dayTimes?: Record<string, string>  // 요일별 탑승 시간 (정류장 자동 매칭)
   busByDay?: Record<string, string>  // 요일별 호차 (요일별 다른 호차 편집용)
   override?: boolean
+  updated_at?: string | null  // enrollment 버전(충돌검사 baseVersion)
 }
 interface TimeGroup {
   session_name: string; time_range: string
@@ -242,6 +244,8 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
   const [leftEditTime, setLeftEditTime] = useState('')
   const [leftEditDays, setLeftEditDays] = useState<string[]>([])
   const [leftEditSaving, setLeftEditSaving] = useState(false)
+  // 동시편집 충돌(409) 모달
+  const [conflict, setConflict] = useState<Conflict | null>(null)
   // 좌측 패널 탑승자 추가 모달
   const [leftAddModal, setLeftAddModal] = useState<{ bus: string; sessionName: string; dir: 'arr' | 'dep' } | null>(null)
   const [leftAllStudents, setLeftAllStudents] = useState<{id: string; name: string; english_name: string | null}[]>([])
@@ -1702,7 +1706,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
     setLeftEditDays([...student.days])
   }
 
-  async function handleLeftEditSave() {
+  async function handleLeftEditSave(force = false) {
     if (!leftEditModal) return
     if (!leftEditModal.student.class_id) { alert('class_id 누락 — 페이지를 새로고침 후 다시 시도해주세요.'); return }
     if (leftEditDays.length === 0) { alert('요일을 1개 이상 선택해주세요.'); return }
@@ -1719,8 +1723,22 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
         old_bus_name: leftEditModal.busName || undefined,
         location: leftEditLoc,
         pickup_time: leftEditTime || undefined,
+        baseVersion: leftEditModal.student.updated_at ?? null,
+        force,
       }),
     })
+    // 동시편집 충돌: 다른 사람이 방금 바꿈 → 덮어쓰기/취소 선택
+    if (res.status === 409) {
+      const cf = await res.json().catch(() => ({}))
+      setLeftEditSaving(false)
+      setConflict({
+        updated_by: cf.updated_by ?? null,
+        updated_at: cf.updated_at ?? new Date().toISOString(),
+        onOverwrite: () => handleLeftEditSave(true),
+        onReload: () => { setLeftEditModal(null); Promise.all([refreshBothDirGroups(), loadData()]) },
+      })
+      return
+    }
     if (!res.ok) {
       const body = await res.json().catch(() => ({}))
       setLeftEditSaving(false)
@@ -2873,7 +2891,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
           <button onClick={handleLeftEditDelete} disabled={leftEditSaving}
             className="px-3 py-1.5 rounded-lg text-[12px] font-bold text-[#EF4444] border border-[#FECACA] hover:bg-[#FEF2F2] disabled:opacity-40">배정 삭제</button>
           <div className="flex-1" />
-          <button onClick={handleLeftEditSave} disabled={leftEditSaving}
+          <button onClick={() => handleLeftEditSave()} disabled={leftEditSaving}
             className="px-4 py-1.5 rounded-lg text-[12px] font-bold text-white disabled:opacity-40" style={{ background: busColor }}>
             {leftEditSaving ? '저장…' : '저장'}</button>
         </div>
@@ -3408,6 +3426,9 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
         <div className="absolute top-3 left-3 z-[1000] pointer-events-none">
           <PresenceBadge campusId={campusId} />
         </div>
+
+        {/* ── 동시편집 충돌 모달 */}
+        <ConflictModal c={conflict} onClose={() => setConflict(null)} />
 
         {/* ── 정류장 검색 오버레이 — 지도 우상단 */}
         <div className="absolute top-3 right-3 z-[1000] w-72 pointer-events-auto">
