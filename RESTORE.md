@@ -8,7 +8,7 @@
 | 백업 브랜치 | `backup/pre-presence-alltabs-20260617` (직전: `backup/pre-presence-edit-deploy-20260617`) |
 | 백업 커밋 | presence 3개탭 공통 `66dab94` |
 | Vercel 롤백 대상 (직전 라이브) | `poly-q239atar2-colinpark-87s-projects.vercel.app` (= presence 편집중구분, dpl_3wh2yV7Af6cinyqbaUsroT95vEsF) |
-| 최근 배포 | (배포 후 갱신) presence 3개탭 / https://poly-system.vercel.app |
+| 최근 배포 | `dpl_AnT8cDX254BDJPsQY3U7CJZV4WZW` (presence 3개탭, 2026-06-17) / https://poly-system.vercel.app |
 | 롤백 방법 | `vercel promote poly-q239atar2-colinpark-87s-projects.vercel.app` (즉시 라이브 롤백) 또는 `git checkout backup/pre-presence-alltabs-20260617` 후 재배포 |
 | DB 의존(이번 배포) | presence/충돌 기능은 `campus_presence` 테이블 + `updated_at`/`updated_by` 컬럼·트리거(2026-06-17 SQL 적용됨)에 의존. 컬럼은 미사용 시 무해 → 코드 롤백만으로 충분 |
 
