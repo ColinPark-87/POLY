@@ -113,7 +113,7 @@ function capStatus(n: number, cap: number = BUS_CAP): { label: string; color: st
   return { label: '여유', color: '#16A34A', bg: '#F0FDF4', ring: '#BBF7D0' }
 }
 
-export default function RouteMapView({ campusId, campusName, fullscreen = false }: { campusId?: string; campusName?: string; fullscreen?: boolean }) {
+export default function RouteMapView({ campusId, campusName, fullscreen = false, showPresence = true, onEditingChange }: { campusId?: string; campusName?: string; fullscreen?: boolean; showPresence?: boolean; onEditingChange?: (editing: boolean) => void }) {
   const cqs = campusId ? `&campus_id=${campusId}` : ''
   // campusId가 없으면 중계(hardcoded), 있으면 해당 캠퍼스 이름 사용 (없으면 null)
   const effectiveSchoolName = campusId ? (campusName ?? null) : SCHOOL_STOP.name
@@ -239,6 +239,10 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
 
   // 차량 일정 편집 모달 (우측 통합 패널 타임라인에서 사용)
   const [leftEditModal, setLeftEditModal] = useState<{ student: StudentEntry; busName: string; dir: 'arr' | 'dep'; sessionName: string } | null>(null)
+  // 지도 탭 편집 중 여부(presence '편집 중' 표시용) — 페이지(부모)에 보고
+  const mapEditing = !!leftEditModal || !!candidateStop || !!addStopModal || adjustMode || !!placeAdjust
+  useEffect(() => { onEditingChange?.(mapEditing) }, [mapEditing]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => onEditingChange?.(false), []) // 언마운트 시 편집 해제 // eslint-disable-line react-hooks/exhaustive-deps
   const [leftEditBus, setLeftEditBus] = useState('')
   const [leftEditLoc, setLeftEditLoc] = useState('')
   const [leftEditTime, setLeftEditTime] = useState('')
@@ -3422,10 +3426,12 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false 
         )}
         <div ref={mapContainerRef} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
 
-        {/* ── 동시 접속자/편집자 표시 (캠퍼스 단위) — 지도 좌상단 */}
-        <div className="absolute top-3 left-3 z-[1000] pointer-events-none">
-          <PresenceBadge campusId={campusId} editing={!!leftEditModal || !!candidateStop || !!addStopModal || adjustMode || !!placeAdjust} />
-        </div>
+        {/* ── 동시 접속자/편집자 표시 (캠퍼스 단위) — 지도 좌상단. 페이지가 자체 배지를 그리면(showPresence=false) 숨김 */}
+        {showPresence && (
+          <div className="absolute top-3 left-3 z-[1000] pointer-events-none">
+            <PresenceBadge campusId={campusId} editing={mapEditing} />
+          </div>
+        )}
 
         {/* ── 동시편집 충돌 모달 */}
         <ConflictModal c={conflict} onClose={() => setConflict(null)} />

@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import RouteMapView from './RouteMapView'
+import { PresenceBadge } from '@/components/campus/PresenceBadge'
 import { sameStop } from '@/lib/utils/stop-name'
 
 const DAYS = ['월', '화', '수', '목', '금'] as const
@@ -197,6 +198,8 @@ export default function VehiclesPage() {
 
   const [tab, setTab] = useState<'master'|'today'|'map'>('map')
   const [fullscreen, setFullscreen] = useState(false)
+  // 지도 탭(RouteMapView) 편집 상태 — presence '편집 중' 표시에 합산
+  const [mapEditing, setMapEditing] = useState(false)
   const [vehiclesRestricted, setVehiclesRestricted] = useState(false)
   const [campusName, setCampusName] = useState<string | undefined>(undefined)
   const [campusId, setCampusId] = useState<string | undefined>(undefined)
@@ -1216,6 +1219,7 @@ export default function VehiclesPage() {
           ))}
         </div>
         <div className="ml-auto flex items-center gap-2 pr-0.5">
+          <PresenceBadge campusId={campusId} editing={mapEditing || !!addRiderModal} />
           {month && <span className="text-[11px] font-semibold text-[#1D4ED8] whitespace-nowrap hidden sm:inline">📅 {month}</span>}
           <button onClick={() => setFullscreen(f => !f)}
             title={fullscreen ? '전체화면 종료 (Esc)' : '전체화면으로 보기'}
@@ -1390,7 +1394,7 @@ export default function VehiclesPage() {
 
       {/* ═══ 변경/기록 탭 (좌: 승인 대기 | 우: 변경 기록) ════════ */}
       {/* ═══ 노선 지도 탭 ════════════════════════════════════════ */}
-      {tab === 'map' && <RouteMapView campusId={campusId} campusName={campusName} fullscreen={fullscreen} />}
+      {tab === 'map' && <RouteMapView campusId={campusId} campusName={campusName} fullscreen={fullscreen} showPresence={false} onEditingChange={setMapEditing} />}
 
       </div>{/* /탭 콘텐츠 */}
 
