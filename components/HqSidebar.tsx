@@ -27,6 +27,7 @@ const navSections = [
   {
     title: '관리',
     items: [
+      { href: '/hq/usage', label: '파일럿 사용현황', icon: '📊' },
       { href: '/hq/import', label: '파일 업로드/다운로드', icon: '📂' },
       { href: '/hq/settings', label: '설정', icon: '⚙️' },
     ],
