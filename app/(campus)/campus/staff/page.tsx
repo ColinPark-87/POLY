@@ -58,6 +58,9 @@ export default function StaffPage() {
   const [editForm, setEditForm] = useState({ name: '', position: '', campus_hired_at: '', company_hired_at: '', email: '' })
   const [saving, setSaving] = useState(false)
   const [editError, setEditError] = useState('')
+  // 비밀번호 리셋 (원장이 직원 임시 비밀번호 발급)
+  const [resetResult, setResetResult] = useState<{ tempPassword: string; name: string } | null>(null)
+  const [resetting, setResetting] = useState(false)
 
   // 직원 추가 모달
   const [addModal, setAddModal] = useState(false)
@@ -133,9 +136,21 @@ export default function StaffPage() {
     load()
   }
 
+  async function handleResetPassword() {
+    if (!selected) return
+    if (!confirm(`${selected.name}님의 비밀번호를 임시 비밀번호로 리셋하시겠습니까?\n발급된 임시 비밀번호를 직원에게 전달해야 합니다.`)) return
+    setResetting(true)
+    const res = await fetch(`/api/campus/employees/${selected.id}/reset-password`, { method: 'POST' })
+    const d = await res.json().catch(() => ({}))
+    setResetting(false)
+    if (!res.ok) { alert(d.error ?? '비밀번호 리셋 실패'); return }
+    setResetResult({ tempPassword: d.tempPassword, name: selected.name })
+  }
+
   function openDetail(emp: Employee) {
     setSelected(emp)
     setDetailTab('info')
+    setResetResult(null)
     setEditForm({
       name: emp.name, position: emp.position || '기타',
       campus_hired_at: emp.campus_hired_at ?? '',
@@ -544,6 +559,24 @@ export default function StaffPage() {
                       className="flex-1 bg-[#004EA2] text-white font-semibold py-2.5 rounded-xl text-sm disabled:opacity-50">
                       {saving ? '저장 중...' : '저장'}
                     </button>
+                  </div>
+
+                  {/* 비밀번호 리셋 (원장) */}
+                  <div className="border-t border-[#F1F5F9] pt-3 mt-1">
+                    <p className="text-[10px] font-bold text-[#94A3B8] uppercase tracking-wider mb-2">계정 · 비밀번호</p>
+                    {resetResult ? (
+                      <div className="bg-[#D1FAE5] border border-[#6EE7B7] rounded-xl p-4">
+                        <p className="font-semibold text-[#059669] mb-1">{resetResult.name} 비밀번호 리셋 완료</p>
+                        <p className="text-sm text-[#047857]">아래 임시 비밀번호를 직원에게 전달해주세요:</p>
+                        <p className="font-mono text-lg font-bold text-[#1E293B] mt-2 bg-white rounded-lg px-3 py-2 border border-[#6EE7B7] tracking-widest break-all">{resetResult.tempPassword}</p>
+                      </div>
+                    ) : (
+                      <button type="button" onClick={handleResetPassword} disabled={resetting}
+                        className="w-full border border-[#FCD34D] text-[#B45309] py-2.5 rounded-xl text-sm font-semibold hover:bg-[#FFFBEB] transition-colors disabled:opacity-50">
+                        {resetting ? '리셋 중...' : '🔑 비밀번호 리셋'}
+                      </button>
+                    )}
+                    <p className="text-[10px] text-[#94A3B8] mt-1.5">임시 비밀번호가 발급됩니다. 직원은 로그인 후 비밀번호를 변경할 수 있습니다.</p>
                   </div>
                 </>
               )}
