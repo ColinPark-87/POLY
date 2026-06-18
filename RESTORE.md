@@ -4,13 +4,13 @@
 
 | 항목 | 내용 |
 |---|---|
-| 백업 일시 | 2026-06-18 (정류장명 변경 즉시반영=낙관적갱신 배포 직전) |
+| 백업 일시 | 2026-06-18 (정류장명 변경 ✅해결완료 — 단계별로그·에러노출 배포) |
 | 백업 브랜치 | `backup/pre-stopname-fix-20260618` (직전들: pre-usage-stats / pre-email-sync-fix …) |
-| 백업 커밋 | `6f78e8b` (정류장명 백엔드 rename = 직전 라이브) |
-| Vercel 롤백 대상 (직전 라이브) | `dpl_5VgntT8UB1fD1tKR1FgnJZ6NLm21` (= 정류장명 백엔드 rename) |
-| 최근 배포 | `dpl_HMs7CwzxTuRAehAp98jDhf7sRn92` (정류장명 변경 즉시반영, 2026-06-18) / https://poly-system.vercel.app |
-| 롤백 방법 | `vercel promote dpl_5VgntT8UB1fD1tKR1FgnJZ6NLm21` (즉시 라이브 롤백) 또는 `git checkout backup/pre-stopname-fix-20260618` 후 재배포 |
-| DB 의존(이번 배포) | 없음(스키마 변경 없음). 프론트 낙관적 갱신만 추가. ⚠️사용자는 **하드 리프레시(Ctrl+Shift+R) 1회** 필요(옛 JS 번들 캐시) |
+| 백업 커밋 | `469fdfb` (정류장명 즉시반영 = 직전 라이브) |
+| Vercel 롤백 대상 (직전 라이브) | `dpl_HMs7CwzxTuRAehAp98jDhf7sRn92` (= 정류장명 즉시반영) |
+| 최근 배포 (현재 라이브) | `dpl_9EtkdjaTxaH76AZ91xrj7rHejpSC` (정류장명 변경 단계별로그·에러노출, 2026-06-18) / https://poly-system.vercel.app — **✅사용자 확인 "지금 된대"** |
+| 롤백 방법 | `vercel promote dpl_HMs7CwzxTuRAehAp98jDhf7sRn92` (즉시 라이브 롤백) 또는 `git checkout backup/pre-stopname-fix-20260618` 후 재배포 |
+| DB 의존(이번 배포) | 없음(스키마 변경 없음). 정류장명 변경 PATCH가 단계별 에러를 응답·`[RENAME]` 로그로 노출(향후 디버깅용) |
 
 ---
 ### (이전) 2026-06-16 백업 정보
