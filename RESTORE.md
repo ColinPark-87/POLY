@@ -8,7 +8,7 @@
 | 백업 브랜치 | `backup/pre-stopname-fix-20260618` (직전들: pre-usage-stats / pre-email-sync-fix / pre-presence-editfix …) |
 | 백업 커밋 | `2bcef6c` (파일럿 사용현황 = 직전 라이브) |
 | Vercel 롤백 대상 (직전 라이브) | `dpl_D1zztdc2kpmdpkwhUaE22pDciUJy` (= 파일럿 사용현황) |
-| 최근 배포 | (배포 후 갱신) — 정류장명 변경 수정, 2026-06-18 / https://poly-system.vercel.app |
+| 최근 배포 | `dpl_5VgntT8UB1fD1tKR1FgnJZ6NLm21` (정류장명 변경 수정, 2026-06-18) / https://poly-system.vercel.app |
 | 롤백 방법 | `vercel promote dpl_D1zztdc2kpmdpkwhUaE22pDciUJy` (즉시 라이브 롤백) 또는 `git checkout backup/pre-stopname-fix-20260618` 후 재배포 |
 | DB 의존(이번 배포) | 없음(스키마 변경 없음). PATCH가 `campus_registered_stops`/`pickup_overrides`/`class_enrollments`의 기존 컬럼만 갱신 — 마이그레이션 불필요 |
 
