@@ -2265,18 +2265,11 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false,
     setRenaming(prev => ({ ...prev, [stopName]: true }))
     const coord = coords[stopName]
     try {
-      const res = await fetch(`/api/campus/stop-coords${campusId ? `?campus_id=${campusId}` : ''}`, {
+      await fetch(`/api/campus/stop-coords${campusId ? `?campus_id=${campusId}` : ''}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ oldName: stopName, newName, ...(coord ?? {}) }),
       })
-      // 서버 변경 실패 시(권한·충돌 등) 로컬을 바꾸지 않아 화면과 DB가 어긋나지 않게 한다.
-      if (!res.ok) {
-        let msg = '정류장명 변경에 실패했습니다.'
-        try { const e = await res.json(); if (e?.error && e.error !== 'conflict') msg = e.error } catch {}
-        alert(msg)
-        return
-      }
       // 로컬 coords 갱신
       const newCoords = { ...coords }
       if (coord) { newCoords[newName] = coord; delete newCoords[stopName] }
@@ -2292,10 +2285,6 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false,
       }
       setStopRename(prev => { const n = { ...prev }; delete n[stopName]; return n })
       setExpandedStop(newName)
-      // 서버 파생 데이터(학생 위치·등록정류장)를 다시 받아 새 이름을 노선에 반영.
-      // (다른 변경 핸들러들과 동일 — 안 하면 옛 이름이 그대로 남아 "변경 적용 안 됨"으로 보임)
-      await Promise.all([refreshBothDirGroups(), loadData()])
-      reloadRegisteredStops()
     } finally {
       setRenaming(prev => { const n = { ...prev }; delete n[stopName]; return n })
     }

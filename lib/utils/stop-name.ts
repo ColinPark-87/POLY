@@ -23,3 +23,46 @@ export function canonHanjin(s: string | null | undefined): string {
   const m = n.match(/^한진그랑빌\s*(\d+)\s*동?$/)
   return m ? `한진그랑빌 ${m[1]}동` : n
 }
+
+/**
+ * "08:57 중계1동" 처럼 정류장명 앞에 붙은 시간 프리픽스를 분리한다.
+ * (가져온 데이터의 {요일}_loc 값에 시간이 함께 저장돼 있는 경우가 있음)
+ * 시간이 없으면 prefix=''. name은 trim된 정류장명.
+ */
+export function splitLocTime(loc: string | null | undefined): { prefix: string; name: string } {
+  const s = loc ?? ''
+  const m = s.match(/^(\d{1,2}:\d{2}(?:\s*[-~]\s*\d{1,2}:\d{2})?\s+)(.+)$/)
+  if (m) return { prefix: m[1], name: m[2].trim() }
+  return { prefix: '', name: s.trim() }
+}
+
+/** 표준 요일 키(월~일). enrollment 스케줄 JSON의 {요일}_loc 순회용. */
+export const SCHEDULE_DAYS = ['월', '화', '수', '목', '금', '토', '일'] as const
+
+/**
+ * enrollment 스케줄 JSON에서 정류장명을 oldName→newName 으로 치환한다(순수 함수).
+ * - 시간 프리픽스("08:57 …")가 붙어 있어도 정류장명 부분만 비교/치환하고 프리픽스는 보존.
+ * - 공백 차이(이중공백 등)는 무시하고 매칭(sameStop).
+ * 정류장명 변경(rename) 시 정확일치만 비교하던 기존 핸들러가 시간 프리픽스/공백차 데이터를
+ * 놓쳐 변경이 적용되지 않던 문제를 해결한다.
+ * 반환: { sched: 갱신본, changed: 하나라도 바뀌면 true }
+ */
+export function renameStopInSchedule(
+  sched: Record<string, string> | null | undefined,
+  oldName: string,
+  newName: string,
+): { sched: Record<string, string>; changed: boolean } {
+  const next: Record<string, string> = { ...(sched ?? {}) }
+  let changed = false
+  for (const d of SCHEDULE_DAYS) {
+    const key = `${d}_loc`
+    const v = next[key]
+    if (v == null) continue
+    const { prefix, name } = splitLocTime(v)
+    if (sameStop(name, oldName)) {
+      next[key] = prefix + newName
+      changed = true
+    }
+  }
+  return { sched: next, changed }
+}

@@ -3,7 +3,6 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { resolvePermissions } from '@/lib/permissions'
 import { conflictBody } from '@/lib/vehicles/conflict'
 import { logUsage } from '@/lib/usage-log'
-import { renameStopInSchedule } from '@/lib/utils/stop-name'
 
 // 차량 관리 권한 보유자(vehicles)만 접근 — 일반 직원의 좌표 열람/변조 차단.
 // 제한권한(vehiclesRestricted, 안전선생님)도 현행대로 접근 가능하도록 vehicles 만 요구.
@@ -140,9 +139,7 @@ export async function PATCH(request: NextRequest) {
     )
   }
 
-  // 2) class_enrollments: {day}_loc 값이 oldName인 것 newName으로 변경.
-  // renameStopInSchedule: 시간 프리픽스("08:57 …")·이중공백 차이가 있어도 정류장명만 매칭/치환
-  // (기존 정확일치 비교는 가져온 데이터의 시간프리픽스/공백차를 놓쳐 변경이 적용되지 않았음).
+  // 2) class_enrollments: {day}_loc 값이 oldName인 것 newName으로 변경
   const { data: sessions } = await service.from('class_sessions').select('id').eq('campus_id', campusId)
   const sessionIds = (sessions ?? []).map(s => s.id)
   if (sessionIds.length) {
@@ -154,11 +151,17 @@ export async function PATCH(request: NextRequest) {
         .select('id, arr_schedule, dep_schedule')
         .in('class_id', classIds)
 
+      const DAYS = ['월', '화', '수', '목', '금', '토', '일']
       const toUpdate: { id: string; arr_schedule: object; dep_schedule: object }[] = []
       for (const enr of enrollments ?? []) {
-        const arr = renameStopInSchedule(enr.arr_schedule as Record<string, string> | null, oldName, newName)
-        const dep = renameStopInSchedule(enr.dep_schedule as Record<string, string> | null, oldName, newName)
-        if (arr.changed || dep.changed) toUpdate.push({ id: enr.id, arr_schedule: arr.sched, dep_schedule: dep.sched })
+        let changed = false
+        const arr = { ...(enr.arr_schedule as Record<string, string> ?? {}) }
+        const dep = { ...(enr.dep_schedule as Record<string, string> ?? {}) }
+        for (const d of DAYS) {
+          if (arr[`${d}_loc`] === oldName) { arr[`${d}_loc`] = newName; changed = true }
+          if (dep[`${d}_loc`] === oldName) { dep[`${d}_loc`] = newName; changed = true }
+        }
+        if (changed) toUpdate.push({ id: enr.id, arr_schedule: arr, dep_schedule: dep })
       }
       for (const row of toUpdate) {
         await service.from('class_enrollments')
@@ -167,28 +170,6 @@ export async function PATCH(request: NextRequest) {
       }
     }
   }
-
-  // 3) campus_registered_stops: 빈 정류장 마스터(학생 0명)도 이름 변경.
-  // 노선에 표시되는 정류장은 학생 위치 ∪ 등록정류장이라, 등록정류장명을 안 바꾸면
-  // 새로고침 시 옛 이름이 그대로 돌아와 "변경 적용 안 됨"으로 보였다.
-  // 새 이름으로 upsert(같은 호차·방향에 이미 있으면 병합) 후 옛 이름 행 삭제 — 유니크 충돌 회피.
-  const { data: regRows } = await service.from('campus_registered_stops')
-    .select('bus_name, direction, default_time').eq('campus_id', campusId).eq('stop_name', oldName)
-  if (regRows && regRows.length) {
-    await service.from('campus_registered_stops').upsert(
-      regRows.map(r => ({
-        campus_id: campusId, stop_name: newName, bus_name: r.bus_name,
-        direction: r.direction, default_time: r.default_time, updated_by: profile?.name ?? null,
-      })),
-      { onConflict: 'campus_id,stop_name,bus_name,direction' }
-    )
-    await service.from('campus_registered_stops')
-      .delete().eq('campus_id', campusId).eq('stop_name', oldName)
-  }
-
-  // 4) pickup_overrides: 오늘만 적용된 임시 위치(override location)도 oldName이면 newName으로.
-  await service.from('pickup_overrides')
-    .update({ location: newName }).eq('campus_id', campusId).eq('location', oldName)
 
   return NextResponse.json({ ok: true })
 }
