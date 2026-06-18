@@ -2292,26 +2292,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false,
       }
       setStopRename(prev => { const n = { ...prev }; delete n[stopName]; return n })
       setExpandedStop(newName)
-
-      // 낙관적 반영: 캐시·네트워크 지연과 무관하게 새 이름이 노선에 '즉시' 보이도록
-      // 모든 화면 파생 상태(등록정류장·groups·bothDirGroups)를 그 자리에서 갱신한다.
-      // (아래 refetch가 서버 권위값으로 확정 — 낙관적 갱신은 깜빡임 없는 즉시 피드백용.
-      //  옛 번들 캐시로 refetch가 늦거나 막혀도 사용자는 바뀐 이름을 바로 본다.)
-      const renameLoc = (s: string | null | undefined): string | null | undefined => (s && sameStop(s, stopName)) ? newName : s
-      const patchGroup = (g: TimeGroup): TimeGroup => ({
-        ...g,
-        busLocations: Object.fromEntries(Object.entries(g.busLocations).map(([bn, locs]) => [bn, locs.map(l => sameStop(l, stopName) ? newName : l)])),
-        busMap: Object.fromEntries(Object.entries(g.busMap).map(([bn, sts]) => [bn, sts.map(st => ({
-          ...st,
-          location: renameLoc(st.location) ?? null,
-          dayLocs: st.dayLocs ? Object.fromEntries(Object.entries(st.dayLocs).map(([d, l]) => [d, sameStop(l, stopName) ? newName : l])) : st.dayLocs,
-        }))])),
-      })
-      setRegisteredStops(prev => prev.map(rs => sameStop(rs.stop_name, stopName) ? { ...rs, stop_name: newName } : rs))
-      setGroups(prev => prev.map(patchGroup))
-      setBothDirGroups(prev => prev.map(x => ({ ...x, group: patchGroup(x.group) })))
-
-      // 서버 파생 데이터(학생 위치·등록정류장)를 다시 받아 새 이름을 노선에 확정 반영.
+      // 서버 파생 데이터(학생 위치·등록정류장)를 다시 받아 새 이름을 노선에 반영.
       // (다른 변경 핸들러들과 동일 — 안 하면 옛 이름이 그대로 남아 "변경 적용 안 됨"으로 보임)
       await Promise.all([refreshBothDirGroups(), loadData()])
       reloadRegisteredStops()
