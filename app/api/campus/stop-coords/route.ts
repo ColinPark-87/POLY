@@ -131,29 +131,36 @@ export async function PATCH(request: NextRequest) {
     if (cf) return NextResponse.json(cf, { status: 409 })
   }
 
+  // 각 단계 결과/에러를 모아 로그·응답으로 노출(어디서 안 바뀌는지 즉시 진단).
+  const errs: string[] = []
+  const result: Record<string, unknown> = { oldName, newName, campusId, by: profile?.name ?? null }
+
   // 1) campus_stop_coords: 기존 행 삭제 후 새 이름으로 삽입
-  await service.from('campus_stop_coords').delete().eq('campus_id', campusId).eq('stop_name', oldName)
-  if (lat !== undefined && lng !== undefined) {
-    await service.from('campus_stop_coords').upsert(
-      { campus_id: campusId, stop_name: newName, lat, lng, updated_at: new Date().toISOString(), updated_by: profile?.name ?? null },
-      { onConflict: 'campus_id,stop_name' }
-    )
+  {
+    const { error: delErr, count: delCnt } = await service.from('campus_stop_coords')
+      .delete({ count: 'exact' }).eq('campus_id', campusId).eq('stop_name', oldName)
+    if (delErr) errs.push(`coords-del:${delErr.message}`)
+    result.coordsDeleted = delCnt ?? 0
+    if (lat !== undefined && lng !== undefined) {
+      const { error: upErr } = await service.from('campus_stop_coords').upsert(
+        { campus_id: campusId, stop_name: newName, lat, lng, updated_at: new Date().toISOString(), updated_by: profile?.name ?? null },
+        { onConflict: 'campus_id,stop_name' }
+      )
+      if (upErr) errs.push(`coords-up:${upErr.message}`)
+      result.coordsUpserted = upErr ? false : true
+    }
   }
 
   // 2) class_enrollments: {day}_loc 값이 oldName인 것 newName으로 변경.
-  // renameStopInSchedule: 시간 프리픽스("08:57 …")·이중공백 차이가 있어도 정류장명만 매칭/치환
-  // (기존 정확일치 비교는 가져온 데이터의 시간프리픽스/공백차를 놓쳐 변경이 적용되지 않았음).
   const { data: sessions } = await service.from('class_sessions').select('id').eq('campus_id', campusId)
   const sessionIds = (sessions ?? []).map(s => s.id)
+  let enrChanged = 0
   if (sessionIds.length) {
     const { data: classes } = await service.from('classes').select('id').in('session_id', sessionIds)
     const classIds = (classes ?? []).map(c => c.id)
     if (classIds.length) {
       const { data: enrollments } = await service
-        .from('class_enrollments')
-        .select('id, arr_schedule, dep_schedule')
-        .in('class_id', classIds)
-
+        .from('class_enrollments').select('id, arr_schedule, dep_schedule').in('class_id', classIds)
       const toUpdate: { id: string; arr_schedule: object; dep_schedule: object }[] = []
       for (const enr of enrollments ?? []) {
         const arr = renameStopInSchedule(enr.arr_schedule as Record<string, string> | null, oldName, newName)
@@ -161,36 +168,40 @@ export async function PATCH(request: NextRequest) {
         if (arr.changed || dep.changed) toUpdate.push({ id: enr.id, arr_schedule: arr.sched, dep_schedule: dep.sched })
       }
       for (const row of toUpdate) {
-        await service.from('class_enrollments')
-          .update({ arr_schedule: row.arr_schedule, dep_schedule: row.dep_schedule })
-          .eq('id', row.id)
+        const { error } = await service.from('class_enrollments')
+          .update({ arr_schedule: row.arr_schedule, dep_schedule: row.dep_schedule }).eq('id', row.id)
+        if (error) errs.push(`enr:${error.message}`); else enrChanged++
       }
     }
   }
+  result.enrChanged = enrChanged
 
   // 3) campus_registered_stops: 빈 정류장 마스터(학생 0명)도 이름 변경.
-  // 노선에 표시되는 정류장은 학생 위치 ∪ 등록정류장이라, 등록정류장명을 안 바꾸면
-  // 새로고침 시 옛 이름이 그대로 돌아와 "변경 적용 안 됨"으로 보였다.
-  // 새 이름으로 upsert(같은 호차·방향에 이미 있으면 병합) 후 옛 이름 행 삭제 — 유니크 충돌 회피.
-  const { data: regRows } = await service.from('campus_registered_stops')
-    .select('bus_name, direction, default_time').eq('campus_id', campusId).eq('stop_name', oldName)
+  // 충돌 회피: 같은 (호차·방향)에 이미 newName이 있으면 제거 후 in-place UPDATE.
+  const { data: regRows, error: regSelErr } = await service.from('campus_registered_stops')
+    .select('bus_name, direction').eq('campus_id', campusId).eq('stop_name', oldName)
+  if (regSelErr) errs.push(`reg-sel:${regSelErr.message}`)
+  result.regMatched = (regRows ?? []).length
   if (regRows && regRows.length) {
-    await service.from('campus_registered_stops').upsert(
-      regRows.map(r => ({
-        campus_id: campusId, stop_name: newName, bus_name: r.bus_name,
-        direction: r.direction, default_time: r.default_time, updated_by: profile?.name ?? null,
-      })),
-      { onConflict: 'campus_id,stop_name,bus_name,direction' }
-    )
-    await service.from('campus_registered_stops')
-      .delete().eq('campus_id', campusId).eq('stop_name', oldName)
+    for (const r of regRows) {
+      await service.from('campus_registered_stops').delete()
+        .eq('campus_id', campusId).eq('stop_name', newName).eq('bus_name', r.bus_name).eq('direction', r.direction)
+    }
+    const { error: regUpdErr, count: regCnt } = await service.from('campus_registered_stops')
+      .update({ stop_name: newName, updated_by: profile?.name ?? null }, { count: 'exact' })
+      .eq('campus_id', campusId).eq('stop_name', oldName)
+    if (regUpdErr) errs.push(`reg-upd:${regUpdErr.message}`)
+    result.regUpdated = regCnt ?? 0
   }
 
   // 4) pickup_overrides: 오늘만 적용된 임시 위치(override location)도 oldName이면 newName으로.
-  await service.from('pickup_overrides')
+  const { error: ovErr } = await service.from('pickup_overrides')
     .update({ location: newName }).eq('campus_id', campusId).eq('location', oldName)
+  if (ovErr) errs.push(`ov:${ovErr.message}`)
 
-  return NextResponse.json({ ok: true })
+  console.log('[RENAME]', JSON.stringify({ ...result, errs }))
+  if (errs.length) return NextResponse.json({ ok: false, error: errs.join(' | '), result }, { status: 500 })
+  return NextResponse.json({ ok: true, result })
 }
 
 export async function DELETE(request: NextRequest) {
