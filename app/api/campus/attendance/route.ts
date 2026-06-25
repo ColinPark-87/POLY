@@ -59,7 +59,7 @@ export async function GET(req: NextRequest) {
   // 2. 반 목록
   const { data: classes, error: clsErr } = await serviceClient
     .from('classes')
-    .select('id, session_id, level, room, teacher, color, sort_order')
+    .select('id, session_id, level, room, teacher, color, sort_order, days')
     .in('session_id', sessionIds)
     .order('sort_order')
     .order('id')
@@ -138,6 +138,11 @@ export async function GET(req: NextRequest) {
       class_session_time_range: sess.time_range ?? '',
       class_session_days: sess.days ?? null,
       class_session_is_today: sess.is_today as boolean,
+      class_days: c.days ?? null,
+      // 반 days 있으면 우선, 없으면 세션 days 상속
+      class_is_today: c.days
+        ? c.days.includes(todayDay)
+        : sess.is_today as boolean,
       start_time_parsed: startTimeParsed,
       ui_status: resolveUiStatus(attSession?.completed_at ?? null, startTimeParsed, nowMinutes),
       attendance_session: attSession ? {

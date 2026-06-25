@@ -334,12 +334,21 @@ export default function AttendancePage() {
                 key={c.class_id}
                 classData={c}
                 color={activeGroup.color}
+                sessionDays={activeGroup.days}
                 students={getStudents(c)}
                 dirty={isDirty(c.class_id)}
                 isSaving={saving.has(c.class_id)}
                 onSetStatus={(sid, st) => setStudentStatus(c.class_id, sid, st)}
                 onSetNote={(sid, note) => setNote(c.class_id, sid, note)}
                 onSave={() => saveClass(c)}
+                onUpdateDays={async (days) => {
+                  await fetch('/api/campus/attendance/class-days', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ class_id: c.class_id, days }),
+                  })
+                  loadData()
+                }}
               />
             ))}
           </div>
@@ -358,16 +367,25 @@ export default function AttendancePage() {
   )
 }
 
-function ClassCard({ classData, color, students, dirty, isSaving, onSetStatus, onSetNote, onSave }: {
+const DAYS_LIST = ['월','화','수','목','금'] as const
+
+function ClassCard({ classData, color, sessionDays, students, dirty, isSaving, onSetStatus, onSetNote, onSave, onUpdateDays }: {
   classData: ClassWithAttendance
   color: string
+  sessionDays: string | null
   students: StudentLocal[]
   dirty: boolean
   isSaving: boolean
   onSetStatus: (studentId: string, status: LocalStatus) => void
   onSetNote: (studentId: string, note: string) => void
   onSave: () => void
+  onUpdateDays: (days: string | null) => Promise<void>
 }) {
+  const [showDays, setShowDays] = useState(false)
+  const classDays = (classData as any).class_days as string | null
+  // 실제 적용 요일: 반 개별 > 세션 > null(전체)
+  const effectiveDays = classDays ?? sessionDays
+
   const total = students.length
   const absentCount = students.filter(s => s.status === 'absent' || s.status === 'pre_absent').length
   const lateCount = students.filter(s => s.status === 'late').length
@@ -380,7 +398,42 @@ function ClassCard({ classData, color, students, dirty, isSaving, onSetStatus, o
         <div className="flex items-center gap-0.5">
           <span className="font-extrabold text-[11px] leading-tight truncate flex-1">{classData.class_level}</span>
           <span className="text-[9px] font-bold bg-white/30 px-1 py-px rounded flex-shrink-0">{total}</span>
+          {/* 요일 설정 토글 버튼 */}
+          <button
+            onClick={e => { e.stopPropagation(); setShowDays(v => !v) }}
+            className="text-[9px] bg-white/20 hover:bg-white/35 px-1 py-px rounded ml-0.5 flex-shrink-0"
+            title="반별 요일 설정"
+          >요일</button>
         </div>
+        {/* 요일 토글 패널 */}
+        {showDays && (
+          <div className="flex items-center gap-0.5 mt-1 flex-wrap" onClick={e => e.stopPropagation()}>
+            {/* 세션 상속 버튼 */}
+            <button
+              onClick={async () => { await onUpdateDays(null); setShowDays(false) }}
+              className={`text-[8px] font-bold px-1 py-px rounded ${!classDays ? 'bg-white text-gray-700' : 'bg-white/20'}`}
+              title="세션 요일 상속"
+            >{classDays ? '상속' : '✓상속'}</button>
+            {DAYS_LIST.map(d => {
+              const active = effectiveDays ? effectiveDays.includes(d) : true
+              const isOverride = !!classDays
+              return (
+                <button key={d}
+                  onClick={async () => {
+                    const cur = classDays ?? effectiveDays ?? '월화수목금'
+                    const next = active ? cur.replace(d, '') : cur + d
+                    await onUpdateDays(next || null)
+                  }}
+                  className={`text-[8px] font-bold w-5 h-5 rounded transition-colors ${
+                    active
+                      ? isOverride ? 'bg-white text-gray-800' : 'bg-white/40'
+                      : 'bg-white/10 text-white/40'
+                  }`}
+                >{d}</button>
+              )
+            })}
+          </div>
+        )}
         {classData.ui_status !== '미도래' && (
           <span className={`mt-0.5 inline-block text-[8px] font-bold px-1.5 py-px rounded-full ${UI_STATUS_STYLE[classData.ui_status]}`}>
             {classData.ui_status === '완료' ? `완료 ${presentCount}/${total}` : classData.ui_status}
