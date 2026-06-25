@@ -13,19 +13,24 @@ export default async function CampusLayout({ children }: { children: React.React
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
+  // smartboard 계정은 전용 라우트로 분기
+  if (user.user_metadata?.role === 'smartboard') {
+    redirect('/smartboard')
+  }
+
   const serviceClient = createServiceClient()
 
   // id로 먼저 조회, 없으면 email로 조회 (OR 쿼리 대신 개별 쿼리로 안정성 향상)
   const { data: byId } = await serviceClient
     .from('users')
-    .select('name, campus_id, role, position, perm_class_roster, perm_vehicles, perm_vehicles_restricted, perm_analytics')
+    .select('name, campus_id, role, position, perm_class_roster, perm_vehicles, perm_vehicles_restricted, perm_analytics, perm_attendance')
     .eq('id', user.id)
     .maybeSingle()
 
   const { data: byEmail } = (!byId && user.email)
     ? await serviceClient
         .from('users')
-        .select('name, campus_id, role, position, perm_class_roster, perm_vehicles, perm_vehicles_restricted, perm_analytics')
+        .select('name, campus_id, role, position, perm_class_roster, perm_vehicles, perm_vehicles_restricted, perm_analytics, perm_attendance')
         .eq('email', user.email)
         .maybeSingle()
     : { data: null }
@@ -55,6 +60,7 @@ export default async function CampusLayout({ children }: { children: React.React
     perm_vehicles: profile?.perm_vehicles ?? null,
     perm_vehicles_restricted: profile?.perm_vehicles_restricted ?? null,
     perm_analytics: profile?.perm_analytics ?? null,
+    perm_attendance: profile?.perm_attendance ?? null,
   })
 
   return (
@@ -67,6 +73,7 @@ export default async function CampusLayout({ children }: { children: React.React
         permClassRoster={permissions.classRoster}
         permVehicles={permissions.vehicles}
         permAnalytics={permissions.analytics}
+        permAttendance={permissions.attendance}
         staffOnly={isCampusStaffOnly(role, position)}
       />
       <div className="flex-1 flex flex-col min-w-0">
