@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { ClassWithAttendance } from '@/lib/attendance'
 import { PreAbsenceModal } from '@/components/attendance/PreAbsenceModal'
+import { AttendanceAnalytics } from '@/components/attendance/AttendanceAnalytics'
 
 const SESS_COLORS: Record<string, string> = {
   '유치부': '#FF6B35', '유치부 방과후': '#FF9800',
@@ -59,7 +60,7 @@ interface SessionGroup {
 type DraftMap = Map<string, Map<string, { status: LocalStatus; note: string }>>
 
 export default function AttendancePage() {
-  const [pageTab, setPageTab] = useState<'roster' | 'settings'>('roster')
+  const [pageTab, setPageTab] = useState<'roster' | 'analytics' | 'settings'>('roster')
   const [classes, setClasses] = useState<ClassWithAttendance[]>([])
   const [loading, setLoading] = useState(true)
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
@@ -235,7 +236,7 @@ export default function AttendancePage() {
 
       {/* 페이지 탭 */}
       <div className="flex gap-0 border-b border-[#E2E8F0] mb-4">
-        {([['roster','출결 현황'],['settings','세팅']] as const).map(([key, label]) => (
+        {([['roster','당일 출결현황'],['analytics','출결현황 분석'],['settings','세팅']] as const).map(([key, label]) => (
           <button key={key} onClick={() => setPageTab(key)}
             className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${
               pageTab === key ? 'border-[#004EA2] text-[#004EA2]' : 'border-transparent text-[#64748B] hover:text-[#1E293B]'
@@ -379,6 +380,9 @@ export default function AttendancePage() {
         </div>
       )}
       </>)}
+
+      {/* ── 분석 탭 ── */}
+      {pageTab === 'analytics' && <AttendanceAnalytics />}
 
       {/* ── 세팅 탭 ── */}
       {pageTab === 'settings' && <AttendanceSettings />}
