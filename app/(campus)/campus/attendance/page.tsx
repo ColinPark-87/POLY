@@ -246,28 +246,35 @@ export default function AttendancePage() {
       {/* ── 출결 현황 탭 ── */}
       {pageTab === 'roster' && (<>
 
-      {/* 히어로: 전체 세션 요약 */}
-      {sessionGroups.length > 0 && (() => {
-        const todayGroups = sessionGroups.filter(g => g.is_today)
-        const total   = todayGroups.reduce((n, g) => n + g.classes.reduce((m, c) => m + c.students.length, 0), 0)
-        const absent  = todayGroups.reduce((n, g) => n + g.classes.reduce((m, c) => m + c.students.filter(s => s.status === 'absent' && !s.pre_marked).length, 0), 0)
-        const late    = todayGroups.reduce((n, g) => n + g.classes.reduce((m, c) => m + c.late_count, 0), 0)
-        const preAbs  = todayGroups.reduce((n, g) => n + g.classes.reduce((m, c) => m + c.students.filter(s => s.pre_marked && s.status === 'absent').length, 0), 0)
+      {/* 히어로: 선택된 세션 기준 */}
+      {activeGroup && (() => {
+        const g = activeGroup
+        const total   = g.classes.reduce((n, c) => n + c.students.length, 0)
+        const absent  = g.classes.reduce((n, c) => n + c.students.filter(s => s.status === 'absent' && !s.pre_marked).length, 0)
+        const late    = g.classes.reduce((n, c) => n + c.late_count, 0)
+        const preAbs  = g.classes.reduce((n, c) => n + c.students.filter(s => s.pre_marked && s.status === 'absent').length, 0)
         const present = total - absent - late - preAbs
         return (
-          <div className="grid grid-cols-4 gap-3 mb-4">
-            {[
-              { label: '출석', value: present, color: '#10B981', bg: '#F0FDF4' },
-              { label: '결석', value: absent,  color: '#DC2626', bg: '#FEF2F2' },
-              { label: '지각', value: late,    color: '#D97706', bg: '#FFFBEB' },
-              { label: '사전결석', value: preAbs, color: '#7C3AED', bg: '#FDF4FF' },
-            ].map(({ label, value, color, bg }) => (
-              <div key={label} className="rounded-xl px-4 py-3 flex flex-col" style={{ background: bg }}>
-                <span className="text-xs font-medium mb-1" style={{ color }}>{label}</span>
-                <span className="text-2xl font-extrabold" style={{ color }}>{value}</span>
-                <span className="text-[10px] mt-0.5" style={{ color, opacity: 0.7 }}>/ {total}명</span>
-              </div>
-            ))}
+          <div className="mb-4">
+            <p className="text-xs text-[#94A3B8] mb-2">
+              <span className="font-medium" style={{ color: g.color }}>{g.name}</span>
+              {g.time_range && <span className="ml-2">{g.time_range}</span>}
+              <span className="ml-2">· {g.classes.length}반 · 총 {total}명</span>
+            </p>
+            <div className="grid grid-cols-4 gap-3">
+              {[
+                { label: '출석', value: present, color: '#10B981', bg: '#F0FDF4' },
+                { label: '결석', value: absent,  color: '#DC2626', bg: '#FEF2F2' },
+                { label: '지각', value: late,    color: '#D97706', bg: '#FFFBEB' },
+                { label: '사전결석', value: preAbs, color: '#7C3AED', bg: '#FDF4FF' },
+              ].map(({ label, value, color, bg }) => (
+                <div key={label} className="rounded-xl px-4 py-3 flex flex-col" style={{ background: bg }}>
+                  <span className="text-xs font-medium mb-1" style={{ color }}>{label}</span>
+                  <span className="text-2xl font-extrabold" style={{ color }}>{value}</span>
+                  <span className="text-[10px] mt-0.5" style={{ color, opacity: 0.7 }}>/ {total}명</span>
+                </div>
+              ))}
+            </div>
           </div>
         )
       })()}
