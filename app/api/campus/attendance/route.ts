@@ -34,22 +34,60 @@ export async function GET(req: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   const classIds = (classes ?? []).map((c: any) => c.id)
-  const { data: sessions } = classIds.length > 0
-    ? await serviceClient
-        .from('attendance_sessions')
-        .select('*, attendance_records(student_id, status, pre_marked, note, campus_students(name))')
-        .in('class_id', classIds)
-        .eq('session_date', date)
-    : { data: [] }
+  if (classIds.length === 0) return NextResponse.json([])
 
-  const sessionMap = new Map((sessions ?? []).map((s: any) => [s.class_id, s]))
+  // 전체 수강생 조회 (attendance_records 없어도 학생 표시)
+  const { data: enrollments } = await serviceClient
+    .from('class_enrollments')
+    .select('class_id, student_id, sort_order, campus_students(name)')
+    .in('class_id', classIds)
+    .eq('is_waitlist', false)
+    .order('sort_order')
+
+  const enrollmentsByClass = new Map<string, { student_id: string; name: string }[]>()
+  for (const e of (enrollments ?? []) as any[]) {
+    const list = enrollmentsByClass.get(e.class_id) ?? []
+    list.push({ student_id: e.student_id, name: (e.campus_students as any)?.name ?? '' })
+    enrollmentsByClass.set(e.class_id, list)
+  }
+
+  // 오늘 출결 세션 + 기록 조회 (테이블 미생성 시 빈 배열로 폴백)
+  let sessionMap = new Map<string, any>()
+  try {
+    const { data: sessions, error: sessErr } = await serviceClient
+      .from('attendance_sessions')
+      .select('*, attendance_records(student_id, status, pre_marked, note)')
+      .in('class_id', classIds)
+      .eq('session_date', date)
+    if (!sessErr && sessions) {
+      sessionMap = new Map(sessions.map((s: any) => [s.class_id, s]))
+    }
+  } catch {
+    // attendance 테이블 미생성 → 빈 맵 유지
+  }
 
   const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes()
 
   const result = (classes ?? []).map((c: any) => {
     const session = sessionMap.get(c.id) ?? null
     const records: any[] = session?.attendance_records ?? []
+    const recordMap = new Map(records.map((r: any) => [r.student_id, r]))
     const startTimeParsed = parseStartTime(c.class_sessions.time_range)
+    const allStudents = enrollmentsByClass.get(c.id) ?? []
+
+    const students = allStudents.map((s) => {
+      const r = recordMap.get(s.student_id)
+      return {
+        student_id: s.student_id,
+        student_name: s.name,
+        status: r?.status ?? 'present',
+        pre_marked: r?.pre_marked ?? false,
+        note: r?.note ?? null,
+      }
+    })
+
+    const absent_count = students.filter(s => s.status === 'absent').length
+    const late_count = students.filter(s => s.status === 'late').length
 
     return {
       class_id: c.id,
@@ -72,15 +110,9 @@ export async function GET(req: NextRequest) {
         completed_by: session.completed_by,
         created_at: session.created_at,
       } : null,
-      students: records.map((r: any) => ({
-        student_id: r.student_id,
-        student_name: r.campus_students?.name ?? '',
-        status: r.status,
-        pre_marked: r.pre_marked,
-        note: r.note,
-      })),
-      absent_count: records.filter((r: any) => r.status === 'absent').length,
-      late_count: records.filter((r: any) => r.status === 'late').length,
+      students,
+      absent_count,
+      late_count,
     }
   })
 
