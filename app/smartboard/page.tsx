@@ -27,6 +27,7 @@ export default function SmartboardPage() {
   const [changeErr, setChangeErr] = useState('')
   const [changeCode, setChangeCode] = useState('7659')
   const [roomList, setRoomList] = useState<{ num: number; display_name: string }[]>([])
+  const [autoErr, setAutoErr] = useState('')
 
   useEffect(() => {
     async function checkAuth() {
@@ -49,12 +50,17 @@ export default function SmartboardPage() {
         const { data: signInData, error } = await supabase.auth.signInWithPassword({
           email: wantEmail!, password: '7659',
         })
-        if (!error && signInData.user) {
+        if (error) {
+          setAutoErr(`자동로그인 실패 (${wantEmail}): ${error.message}`)
+        } else if (signInData.user) {
           user = signInData.user
         }
       }
 
       if (!user || user.user_metadata?.role !== 'smartboard') {
+        if (user && user.user_metadata?.role !== 'smartboard') {
+          setAutoErr(prev => prev || `로그인됨(${user!.email})이나 스마트보드 계정 아님`)
+        }
         setNotAuthorized(true); setAuthChecked(true); return
       }
       setRoomName(user.user_metadata.display_name ?? '교실')
@@ -122,7 +128,7 @@ export default function SmartboardPage() {
   if (!authChecked) {
     return <div className="flex items-center justify-center min-h-screen text-gray-400 text-xl">로딩 중...</div>
   }
-  if (notAuthorized) return <SmartboardLogin />
+  if (notAuthorized) return <SmartboardLogin autoErr={autoErr} />
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen select-none">
@@ -190,7 +196,7 @@ export default function SmartboardPage() {
   )
 }
 
-function SmartboardLogin() {
+function SmartboardLogin({ autoErr }: { autoErr?: string }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -220,6 +226,7 @@ function SmartboardLogin() {
     <div className="flex items-center justify-center min-h-screen bg-gray-100">
       <form onSubmit={handleLogin} className="bg-white rounded-2xl shadow-lg p-10 w-full max-w-sm space-y-6">
         <h1 className="text-2xl font-bold text-center text-[#004EA2]">스마트보드 로그인</h1>
+        {autoErr && <p className="text-orange-600 text-xs text-center bg-orange-50 rounded-lg p-2">{autoErr}</p>}
         {error && <p className="text-red-600 text-sm text-center">{error}</p>}
         <input
           type="email"
