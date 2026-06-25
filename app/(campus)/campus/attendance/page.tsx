@@ -596,94 +596,105 @@ function AttendanceSettings() {
   const unassigned = classes.filter(c => !c.classroom_id)
 
   return (
-    <div className="space-y-5">
-      <p className="text-xs text-[#64748B]">교실별 스마트보드 계정, 팝업 시간, 배정된 반을 관리합니다.</p>
-
-      {classrooms.length === 0 && (
-        <div className="py-10 text-center text-[#94A3B8] text-sm">
-          교실이 없습니다. Supabase SQL Editor에서 015_classrooms.sql을 실행해 주세요.
+    <div>
+      {/* 교실 테이블 */}
+      <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-sm overflow-hidden mb-4">
+        {/* 헤더 */}
+        <div className="grid grid-cols-[80px_1fr_180px_60px_44px] gap-0 px-3 py-1.5 bg-[#F8FAFC] border-b border-[#E2E8F0] text-[10px] font-bold text-[#94A3B8] uppercase tracking-wide">
+          <span>교실</span><span>배정된 반</span><span>계정</span><span className="text-center">팝업</span><span />
         </div>
-      )}
 
-      {classrooms.map(room => {
-        const roomClasses = classes.filter(c => c.classroom_id === room.id)
-        const isEditing = editingRoom === room.id
-        return (
-          <div key={room.id} className="bg-white rounded-xl border border-[#E2E8F0] shadow-sm overflow-hidden">
-            <div className="px-4 py-3 bg-[#1e3a5f] text-white flex items-center justify-between">
-              <div className="flex items-center gap-3 flex-wrap">
-                <span className="text-base font-extrabold">교실 {room.display_name}</span>
-                {room.account_email
-                  ? <span className="text-xs bg-green-400/30 text-green-200 px-2 py-0.5 rounded-full">{room.account_email}</span>
-                  : <span className="text-xs bg-white/10 text-white/40 px-2 py-0.5 rounded-full">계정 미설정</span>}
-                <span className="text-xs text-white/50">팝업 {room.popup_minutes_before}분 전</span>
-              </div>
-              <button onClick={() => { setEditingRoom(isEditing ? null : room.id); setRoomDraft({ ...room }) }}
-                className="text-xs bg-white/20 hover:bg-white/30 px-3 py-1 rounded transition-colors">
-                {isEditing ? '닫기' : '설정'}
-              </button>
-            </div>
+        {classrooms.length === 0 && (
+          <div className="px-4 py-6 text-xs text-[#94A3B8] text-center">015_classrooms.sql 실행 필요</div>
+        )}
 
-            {isEditing && (
-              <div className="px-4 py-3 bg-[#F8FAFC] border-b border-[#E2E8F0] flex flex-wrap gap-3 items-end">
-                <div>
-                  <label className="text-xs text-[#64748B] block mb-1">계정 이메일</label>
-                  <input value={roomDraft.account_email ?? ''} onChange={e => setRoomDraft(p => ({ ...p, account_email: e.target.value }))}
-                    placeholder="room-a@poly.jungkye"
-                    className="border border-[#E2E8F0] rounded-lg px-3 py-1.5 text-sm w-52 focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]" />
+        {classrooms.map(room => {
+          const roomClasses = classes.filter(c => c.classroom_id === room.id)
+          const isEditing = editingRoom === room.id
+          return (
+            <div key={room.id} className="border-b border-[#F1F5F9] last:border-0">
+              {/* 교실 행 */}
+              <div className="grid grid-cols-[80px_1fr_180px_60px_44px] gap-0 px-3 py-2 items-center hover:bg-[#FAFBFC]">
+                <span className="text-sm font-bold text-[#1E293B]">{room.display_name}</span>
+
+                {/* 배정 반 칩 */}
+                <div className="flex flex-wrap gap-1">
+                  {roomClasses.length === 0
+                    ? <span className="text-[10px] text-[#CBD5E1]">없음</span>
+                    : roomClasses.map(cls => {
+                      const sess = sessMap.get(cls.session_id)
+                      return (
+                        <span key={cls.id}
+                          className="inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full text-white cursor-pointer hover:opacity-80"
+                          style={{ background: cls.color || '#94A3B8' }}
+                          title={`${sess?.name ?? ''} ${sess?.time_range ?? ''}`}
+                          onClick={() => patch({ type: 'class_classroom', class_id: cls.id, classroom_id: null })}
+                        >
+                          {cls.level} ×
+                        </span>
+                      )
+                    })
+                  }
                 </div>
-                <div>
-                  <label className="text-xs text-[#64748B] block mb-1">팝업 시작 (분 전)</label>
-                  <input type="number" min={0} max={30} value={roomDraft.popup_minutes_before ?? 2}
-                    onChange={e => setRoomDraft(p => ({ ...p, popup_minutes_before: Number(e.target.value) }))}
-                    className="border border-[#E2E8F0] rounded-lg px-3 py-1.5 text-sm w-20 focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]" />
-                </div>
-                <button onClick={async () => { await patch({ type: 'classroom', classroom_id: room.id, account_email: roomDraft.account_email, popup_minutes_before: roomDraft.popup_minutes_before }); setEditingRoom(null) }}
-                  className="bg-[#1e3a5f] text-white text-sm px-4 py-1.5 rounded-lg hover:bg-[#2c5f8a]">저장</button>
+
+                {/* 계정 */}
+                <span className="text-[11px] text-[#64748B] truncate">
+                  {room.account_email ?? <span className="text-[#CBD5E1]">미설정</span>}
+                </span>
+
+                {/* 팝업 분 */}
+                <span className="text-[11px] text-[#94A3B8] text-center">{room.popup_minutes_before}분</span>
+
+                {/* 설정 버튼 */}
+                <button
+                  onClick={() => { setEditingRoom(isEditing ? null : room.id); setRoomDraft({ ...room }) }}
+                  className="text-[11px] text-[#004EA2] hover:text-blue-800 font-medium text-center"
+                >{isEditing ? '닫기' : '설정'}</button>
               </div>
-            )}
 
-            <div className="divide-y divide-[#F1F5F9]">
-              {roomClasses.length === 0
-                ? <div className="px-4 py-3 text-xs text-[#CBD5E1]">배정된 반 없음</div>
-                : roomClasses.map(cls => {
-                  const sess = sessMap.get(cls.session_id)
-                  return (
-                    <div key={cls.id} className="px-4 py-2.5 flex items-center gap-3 flex-wrap">
-                      <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: cls.color || '#94A3B8' }} />
-                      <span className="text-sm font-semibold text-[#1E293B] w-20 truncate">{cls.level}</span>
-                      <span className="text-xs text-[#64748B] w-28 truncate">{sess?.name ?? ''}</span>
-                      <span className="text-xs text-[#64748B] bg-[#F1F5F9] px-2 py-0.5 rounded-full">{sess?.time_range ?? '미설정'}</span>
-                      <span className="text-xs text-[#94A3B8]">{cls.days ?? sess?.days ?? '매일'}</span>
-                      {cls.teacher && <span className="text-xs text-[#94A3B8]">{cls.teacher}</span>}
-                      <button onClick={() => patch({ type: 'class_classroom', class_id: cls.id, classroom_id: null })}
-                        className="ml-auto text-xs text-[#EF4444] hover:underline">해제</button>
-                    </div>
-                  )
-                })}
+              {/* 인라인 편집 */}
+              {isEditing && (
+                <div className="px-3 pb-2.5 pt-1 bg-[#F0F7FF] border-t border-[#DBEAFE] flex flex-wrap gap-2 items-end">
+                  <div>
+                    <label className="text-[10px] text-[#64748B] block mb-0.5">계정 이메일</label>
+                    <input value={roomDraft.account_email ?? ''} onChange={e => setRoomDraft(p => ({ ...p, account_email: e.target.value }))}
+                      placeholder="room-america@poly"
+                      className="border border-[#BFDBFE] rounded px-2 py-1 text-xs w-48 focus:outline-none focus:ring-1 focus:ring-[#004EA2]" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-[#64748B] block mb-0.5">팝업 (분 전)</label>
+                    <input type="number" min={0} max={30} value={roomDraft.popup_minutes_before ?? 2}
+                      onChange={e => setRoomDraft(p => ({ ...p, popup_minutes_before: Number(e.target.value) }))}
+                      className="border border-[#BFDBFE] rounded px-2 py-1 text-xs w-16 focus:outline-none focus:ring-1 focus:ring-[#004EA2]" />
+                  </div>
+                  <button onClick={async () => { await patch({ type: 'classroom', classroom_id: room.id, account_email: roomDraft.account_email, popup_minutes_before: roomDraft.popup_minutes_before }); setEditingRoom(null) }}
+                    className="bg-[#004EA2] text-white text-xs px-3 py-1.5 rounded hover:bg-blue-800">저장</button>
+                </div>
+              )}
             </div>
-          </div>
-        )
-      })}
+          )
+        })}
+      </div>
 
+      {/* 미배정 반 */}
       {unassigned.length > 0 && (
-        <div className="bg-white rounded-xl border border-dashed border-[#E2E8F0]">
-          <div className="px-4 py-2 border-b border-[#E2E8F0]">
-            <span className="text-sm font-bold text-[#64748B]">미배정 반 ({unassigned.length})</span>
+        <div className="bg-white rounded-xl border border-dashed border-[#E2E8F0] overflow-hidden">
+          <div className="px-3 py-1.5 border-b border-[#E2E8F0] text-[10px] font-bold text-[#94A3B8] uppercase tracking-wide">
+            미배정 반 ({unassigned.length})
           </div>
-          <div className="divide-y divide-[#F1F5F9]">
+          <div className="divide-y divide-[#F9FAFB]">
             {unassigned.map(cls => {
               const sess = sessMap.get(cls.session_id)
               return (
-                <div key={cls.id} className="px-4 py-2.5 flex items-center gap-3 flex-wrap">
-                  <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: cls.color || '#94A3B8' }} />
-                  <span className="text-sm font-semibold text-[#1E293B] w-20 truncate">{cls.level}</span>
-                  <span className="text-xs text-[#64748B] w-28 truncate">{sess?.name ?? ''}</span>
-                  <span className="text-xs text-[#64748B] bg-[#F1F5F9] px-2 py-0.5 rounded-full">{sess?.time_range ?? '미설정'}</span>
+                <div key={cls.id} className="flex items-center gap-2 px-3 py-1.5">
+                  <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: cls.color || '#94A3B8' }} />
+                  <span className="text-xs font-semibold text-[#1E293B] w-16 truncate">{cls.level}</span>
+                  <span className="text-[10px] text-[#94A3B8] w-24 truncate">{sess?.name ?? ''}</span>
+                  <span className="text-[10px] text-[#94A3B8]">{sess?.time_range ?? ''}</span>
                   <select defaultValue="" onChange={e => { if (e.target.value) patch({ type: 'class_classroom', class_id: cls.id, classroom_id: e.target.value }) }}
-                    className="ml-auto text-xs border border-[#E2E8F0] rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[#1e3a5f]">
+                    className="ml-auto text-xs border border-[#E2E8F0] rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#004EA2]">
                     <option value="">교실 배정...</option>
-                    {classrooms.map(r => <option key={r.id} value={r.id}>교실 {r.display_name}</option>)}
+                    {classrooms.map(r => <option key={r.id} value={r.id}>{r.display_name}</option>)}
                   </select>
                 </div>
               )
