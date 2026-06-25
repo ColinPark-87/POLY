@@ -75,7 +75,23 @@ export default function AttendancePage() {
     if (res.ok) {
       const data: ClassWithAttendance[] = await res.json()
       setClasses(data)
-      setActiveSessionId(prev => prev ?? data[0]?.class_session_id ?? null)
+      // 현재 시간에 가장 가까운 세션 자동 선택
+      setActiveSessionId(prev => {
+        if (prev) return prev
+        const nowMin = new Date().getHours() * 60 + new Date().getMinutes()
+        // 시작 2분 전 ~ 종료 후까지 진행 중인 세션 우선
+        const active = data.find(c => {
+          const t = c.class_session_time_range
+          if (!t) return false
+          const [s, e] = t.split('~').map((x: string) => {
+            const [h, m] = x.trim().split(':').map(Number)
+            const h24 = h < 9 ? h + 12 : h
+            return h24 * 60 + m
+          })
+          return nowMin >= s - 2 && nowMin <= e
+        })
+        return active?.class_session_id ?? data[0]?.class_session_id ?? null
+      })
       // tabOrder 초기화 (서버 sort_order 반영, 이미 있으면 유지)
       setTabOrder(prev => {
         const ids = [...new Set(data.map(c => c.class_session_id))]

@@ -119,16 +119,16 @@ export async function POST(request: NextRequest) {
   await logUsage(service, { event_type: 'edit', area: 'roster', campusId, userId: user.id, userName: changedByName || null, role: profile?.role ?? null })
 
   if (action === 'add_session') {
-    const { name, time_range, month } = body
+    const { name, time_range, month, days } = body
     const { data, error } = await service.from('class_sessions').insert({
-      campus_id: campusId, name, time_range, month,
+      campus_id: campusId, name, time_range, month, days: days ?? null,
     }).select().single()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ session: data })
   }
 
   if (action === 'update_session') {
-    const { session_id, name, time_range } = body
+    const { session_id, name, time_range, days } = body
     if (!session_id) return NextResponse.json({ error: 'session_id 필요' }, { status: 400 })
     const upd: Record<string, unknown> = {}
     if (name !== undefined) {
@@ -137,8 +137,8 @@ export async function POST(request: NextRequest) {
       upd.name = trimmed
     }
     if (time_range !== undefined) upd.time_range = time_range || null
+    if (days !== undefined) upd.days = days || null
     if (Object.keys(upd).length === 0) return NextResponse.json({ error: '변경할 내용이 없습니다' }, { status: 400 })
-    // campus_id 로 소유권 확인하며 업데이트 (cross-campus 무결성 보호)
     const { error } = await service.from('class_sessions').update(upd)
       .eq('id', session_id).eq('campus_id', campusId)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })

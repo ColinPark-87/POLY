@@ -32,17 +32,28 @@ export async function GET(req: NextRequest) {
   })
   const latestMonth = months[0] ?? ''
 
-  // 최신 월의 세션만
-  const { data: sessions, error: sessErr } = await serviceClient
+  // 최신 월의 세션 전체 조회
+  const { data: allSessions, error: sessErr } = await serviceClient
     .from('class_sessions')
-    .select('id, name, time_range, sort_order')
+    .select('id, name, time_range, sort_order, days')
     .eq('campus_id', profile.campus_id)
     .eq('month', latestMonth)
     .order('sort_order')
     .order('created_at')
 
   if (sessErr) return NextResponse.json({ error: sessErr.message }, { status: 500 })
-  if (!sessions?.length) return NextResponse.json([])
+  if (!allSessions?.length) return NextResponse.json([])
+
+  // 오늘 요일 (KST = UTC+9)
+  const kstNow = new Date(Date.now() + 9 * 60 * 60 * 1000)
+  const todayDay = ['일','월','화','수','목','금','토'][kstNow.getUTCDay()]
+
+  // days 설정된 세션은 오늘 요일 포함 여부로 필터, null이면 전체 요일
+  const sessions = allSessions.filter((s: any) =>
+    !s.days || s.days.includes(todayDay)
+  )
+
+  if (!sessions.length) return NextResponse.json([])
 
   const sessionIds = sessions.map(s => s.id)
 
