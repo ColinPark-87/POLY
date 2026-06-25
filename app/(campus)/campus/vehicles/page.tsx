@@ -131,6 +131,19 @@ function getSessPriority(sessName: string, dir?: 'arr'|'dep'): number {
   if (sessName.includes('화목') || sessName.includes('2일')) return 4
   return 9
 }
+// 기존 캠퍼스(중계 등) 학생설정 세션 필터 매칭 — 송파는 동적 라벨 경로 사용(아래 분기)
+function sessMatchesFilter(sessName: string, filter: string, dir?: 'arr'|'dep') {
+  if (filter === '전체') return true
+  // 방과후(유치부 방과후 포함): 하원→매일반 필터, 등원→전체/유치부 필터에서 표시
+  if (sessName.includes('방과후')) {
+    return dir === 'dep' ? filter === '매일반' : (filter === '전체' || filter === '유치부')
+  }
+  if (filter === '유치부') return sessName.includes('유치부')
+  if (filter === '매일반') return sessName.includes('매일반') || sessName.includes('5일')
+  if (filter === '3일반') return sessName.includes('월수금') || sessName.includes('3일')
+  if (filter === '2일반') return sessName.includes('화목') || sessName.includes('2일')
+  return true
+}
 
 interface Bus { id: string; name: string; sort_order: number; capacity?: number; driver?: string; driver_phone?: string; safety?: string; safety_phone?: string; kt_name?: string; kt_phone?: string }
 interface StudentEntry {
@@ -1237,9 +1250,13 @@ export default function VehiclesPage() {
               </button>
             ))}
             <div className="w-px bg-[#E2E8F0] mx-1"/>
-            {/* 세션 타입 필터 — 캠퍼스 실제 세션에서 동적 도출(송파 '26 1st Block' 등 블록 명칭도 모바일·개설반현황과 동일 매칭).
-                getSessPriority 정렬로 중계 등 기존 캠퍼스는 유치부→매일반→3일반→2일반 순서 그대로 유지(동작·외형 무변). */}
-            {['전체', ...[...new Set(mergeGroupsByLabel(masterGroups, masterDir).map(g => sessBaseLabel(g.session_name, masterDir)))].sort((a, b) => getSessPriority(a, masterDir) - getSessPriority(b, masterDir))].map(f => (
+            {/* 세션 타입 필터.
+                송파: 실제 세션에서 동적 도출('26 1st Block' 등 블록 명칭을 모바일·개설반현황과 동일 매칭).
+                그 외 캠퍼스: 기존 하드코딩 그대로 유지(무변). */}
+            {(campusName === '송파'
+              ? ['전체', ...[...new Set(mergeGroupsByLabel(masterGroups, masterDir).map(g => sessBaseLabel(g.session_name, masterDir)))].sort((a, b) => getSessPriority(a, masterDir) - getSessPriority(b, masterDir))]
+              : ['전체','유치부','매일반','3일반','2일반']
+            ).map(f => (
               <button key={f} onClick={() => setSessFilter(f)}
                 className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors border ${
                   sessFilter===f ? 'bg-[#004EA2] text-white border-[#004EA2]' : 'bg-white text-[#64748B] border-[#E2E8F0]'}`}>
@@ -1259,14 +1276,18 @@ export default function VehiclesPage() {
           {masterLoading ? <Spinner /> : (
             <div className="space-y-6">
               {mergeGroupsByLabel(masterGroups, masterDir)
-                .filter(g => sessFilter === '전체' || sessBaseLabel(g.session_name, masterDir) === sessFilter)
+                .filter(g => campusName === '송파'
+                  ? (sessFilter === '전체' || sessBaseLabel(g.session_name, masterDir) === sessFilter)
+                  : sessMatchesFilter(g.session_name, sessFilter, masterDir))
                 .length === 0 ? (
                 <div className="text-center py-16 text-[#94A3B8]">
                   <p className="text-2xl mb-2">🚌</p>
                   <p className="text-sm">데이터가 없습니다.</p>
                 </div>
               ) : mergeGroupsByLabel(masterGroups, masterDir)
-                .filter(g => sessFilter === '전체' || sessBaseLabel(g.session_name, masterDir) === sessFilter)
+                .filter(g => campusName === '송파'
+                  ? (sessFilter === '전체' || sessBaseLabel(g.session_name, masterDir) === sessFilter)
+                  : sessMatchesFilter(g.session_name, sessFilter, masterDir))
                 .sort((a, b) => {
                   const ta = parseTimeMin(getRunTime(a.time_range, masterDir)), tb = parseTimeMin(getRunTime(b.time_range, masterDir))
                   if (ta !== tb) return ta - tb
