@@ -20,6 +20,12 @@ export default function SmartboardPage() {
   const [active, setActive] = useState<ActiveClass | null>(null)
   const [clock, setClock] = useState('')
   const dismissedRef = useRef<Set<string>>(new Set())
+  // 교실 변경 모달
+  const [changeOpen, setChangeOpen] = useState(false)
+  const [codeInput, setCodeInput] = useState('')
+  const [codeOk, setCodeOk] = useState(false)
+  const [changeErr, setChangeErr] = useState('')
+  const CHANGE_CODE = '7659!러'
 
   useEffect(() => {
     async function checkAuth() {
@@ -91,10 +97,12 @@ export default function SmartboardPage() {
     try { window.blur() } catch {}
   }
 
-  async function handleLogout() {
+  async function changeToComputer(num: number) {
     const supabase = createClient()
     await supabase.auth.signOut()
-    window.location.href = '/login'
+    const { error } = await supabase.auth.signInWithPassword({ email: `computer${num}@jungkye.poly`, password: '7659' })
+    if (error) { setChangeErr(`컴퓨터${num} 로그인 실패`); return }
+    window.location.href = '/smartboard'
   }
 
   if (!authChecked) {
@@ -107,11 +115,51 @@ export default function SmartboardPage() {
       <p className="text-[#004EA2] text-3xl font-extrabold mb-2">{roomName}</p>
       <p className="text-gray-300 text-6xl font-mono mb-4">{clock}</p>
       <p className="text-gray-400 text-lg">출석 대기 중...</p>
-      {/* 우하단 교실 변경(로그아웃) — 잘못 설치 시 교정용 */}
-      <button onClick={handleLogout}
+
+      {/* 우하단 교실 변경 — 코드 입력 필요 */}
+      <button onClick={() => { setChangeOpen(true); setCodeInput(''); setCodeOk(false); setChangeErr('') }}
         className="fixed bottom-3 right-3 text-xs text-gray-300 hover:text-gray-500 border border-gray-200 rounded-lg px-3 py-1.5 transition-colors">
         교실 변경 ({roomName})
       </button>
+
+      {/* 교실 변경 모달 */}
+      {changeOpen && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[10000]" onClick={() => setChangeOpen(false)}>
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-[#1E293B]">교실 변경</h3>
+              <button onClick={() => setChangeOpen(false)} className="text-gray-400">✕</button>
+            </div>
+
+            {!codeOk ? (
+              <form onSubmit={e => { e.preventDefault(); if (codeInput === CHANGE_CODE) { setCodeOk(true); setChangeErr('') } else setChangeErr('코드가 틀렸습니다') }}>
+                <label className="text-sm text-gray-600 block mb-1">변경 코드 입력</label>
+                <input type="password" value={codeInput} autoFocus
+                  onChange={e => setCodeInput(e.target.value)}
+                  placeholder="코드"
+                  className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-[#004EA2]" />
+                {changeErr && <p className="text-red-600 text-sm mt-2">{changeErr}</p>}
+                <button type="submit" className="w-full mt-3 bg-[#004EA2] text-white font-bold py-3 rounded-xl">확인</button>
+              </form>
+            ) : (
+              <div>
+                <p className="text-sm text-gray-600 mb-3">변경할 교실 컴퓨터 번호를 선택하세요</p>
+                <div className="grid grid-cols-4 gap-2">
+                  {Array.from({ length: 11 }, (_, i) => i + 1).map(num => (
+                    <button key={num} onClick={() => changeToComputer(num)}
+                      className="flex flex-col items-center py-2.5 rounded-xl border-2 border-gray-200 hover:border-[#004EA2] hover:bg-[#EAF2FB]">
+                      <span className="text-lg font-bold text-[#1E293B]">{num}</span>
+                      <span className="text-[9px] text-gray-400">컴퓨터{num}</span>
+                    </button>
+                  ))}
+                </div>
+                {changeErr && <p className="text-red-600 text-sm mt-2">{changeErr}</p>}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {active && (
         <AttendanceOverlay
           classId={active.class_id}
