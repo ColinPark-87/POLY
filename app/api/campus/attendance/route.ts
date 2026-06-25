@@ -56,16 +56,27 @@ export async function GET(req: NextRequest) {
 
   const sessionIds = sessions.map(s => s.id)
 
-  // 2. 반 목록
-  const { data: classes, error: clsErr } = await serviceClient
-    .from('classes')
-    .select('id, session_id, level, room, teacher, color, sort_order, days')
-    .in('session_id', sessionIds)
-    .order('sort_order')
-    .order('id')
-
-  if (clsErr) return NextResponse.json({ error: clsErr.message }, { status: 500 })
-  if (!classes?.length) return NextResponse.json([])
+  // 2. 반 목록 (days 컬럼 미생성 시 폴백)
+  let classes: any[] = []
+  {
+    const withDays = await serviceClient
+      .from('classes')
+      .select('id, session_id, level, room, teacher, color, sort_order, days')
+      .in('session_id', sessionIds)
+      .order('sort_order').order('id')
+    if (!withDays.error) {
+      classes = withDays.data ?? []
+    } else {
+      const noDays = await serviceClient
+        .from('classes')
+        .select('id, session_id, level, room, teacher, color, sort_order')
+        .in('session_id', sessionIds)
+        .order('sort_order').order('id')
+      if (noDays.error) return NextResponse.json({ error: noDays.error.message }, { status: 500 })
+      classes = (noDays.data ?? []).map(c => ({ ...c, days: null }))
+    }
+  }
+  if (!classes.length) return NextResponse.json([])
 
   const classIds = classes.map(c => c.id)
 
