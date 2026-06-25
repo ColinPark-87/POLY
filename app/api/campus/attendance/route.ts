@@ -137,6 +137,7 @@ export async function GET(req: NextRequest) {
       class_session_id: c.session_id,
       class_session_name: sess.name,
       class_session_time_range: sess.time_range ?? '',
+      class_session_days: sess.days ?? null,
       start_time_parsed: startTimeParsed,
       ui_status: resolveUiStatus(attSession?.completed_at ?? null, startTimeParsed, nowMinutes),
       attendance_session: attSession ? {

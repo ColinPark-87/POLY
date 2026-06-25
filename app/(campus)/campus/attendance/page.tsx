@@ -50,6 +50,7 @@ interface StudentLocal {
 
 interface SessionGroup {
   session_id: string; name: string; time_range: string; color: string
+  days: string | null
   classes: ClassWithAttendance[]
 }
 
@@ -120,6 +121,7 @@ export default function AttendancePage() {
       groupMap.set(c.class_session_id, {
         session_id: c.class_session_id, name: c.class_session_name,
         time_range: c.class_session_time_range,
+        days: (c as any).class_session_days ?? null,
         color: sessColor(c.class_session_name, 0),
         classes: [],
       })
@@ -250,6 +252,35 @@ export default function AttendancePage() {
       {/* 활성 세션 */}
       {activeGroup && (
         <>
+          {/* 요일 토글 */}
+          <div className="flex items-center gap-1.5 mb-3">
+            <span className="text-xs text-[#64748B]">수업 요일</span>
+            {(['월','화','수','목','금'] as const).map(d => {
+              const active = activeGroup.days ? activeGroup.days.includes(d) : false
+              return (
+                <button key={d}
+                  onClick={async () => {
+                    const cur = activeGroup.days ?? ''
+                    const next = active ? cur.replace(d, '') : cur + d
+                    await fetch('/api/campus/class-roster', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ action: 'update_session', session_id: activeGroup.session_id, days: next || null }),
+                    })
+                    loadData()
+                  }}
+                  className={`text-xs font-bold w-8 h-7 rounded transition-colors ${
+                    active ? 'text-white' : 'bg-[#F1F5F9] text-[#CBD5E1]'
+                  }`}
+                  style={active ? { background: activeGroup.color } : {}}
+                >{d}</button>
+              )
+            })}
+            {activeGroup.days && (
+              <span className="text-xs text-[#94A3B8] ml-1">설정된 요일에만 탭 표시됨</span>
+            )}
+          </div>
+
           <div className="flex items-center gap-2 mb-3">
             {activeGroup.time_range && (
               <span className="text-xs text-[#64748B] bg-[#F1F5F9] px-2 py-0.5 rounded-full">{activeGroup.time_range}</span>

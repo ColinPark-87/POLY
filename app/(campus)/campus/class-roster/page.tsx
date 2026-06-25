@@ -997,10 +997,6 @@ export default function ClassRosterPage() {
           onDeleteSession={handleDeleteSession}
           onRenameSession={handleRenameSession}
           onReorderSessions={handleReorderSessions}
-          onUpdateSessionDays={async (sessId, days) => {
-            await post({ action: 'update_session', session_id: sessId, days: days || null })
-            load()
-          }}
         />
       ) : tab === 'students' ? (
         <StudentsTab allStudents={allStudents} enrollments={enrollments} classes={classes} sessions={sessions} month={month} isLatestMonth={month === availableMonths[0]} onWithdrawSuccess={load} />
@@ -1607,7 +1603,7 @@ function RosterTab({
   matchEnrollments, classVisible, getEnrollments, getWaitlist,
   dragEnrId, dragOverClassId, setDragEnrId, setDragOverClassId, onDrop, onBulkDrop,
   onAddClass, onEditClass, onEnroll, onUnenroll, onStudentClick, onStudentMemoMenu, onStudentMemoIcon, onWaitlistAdd, onNewStudent,
-  onReorderClasses, onDeleteSession, onRenameSession, onReorderSessions, onUpdateSessionDays,
+  onReorderClasses, onDeleteSession, onRenameSession, onReorderSessions,
 }: {
   sessions: Session[]; classes: ClassItem[]; enrollments: Enrollment[]; buses: Bus[]
   search: string; setSearch: (s: string) => void; searchLower: string
@@ -1628,7 +1624,6 @@ function RosterTab({
   onDeleteSession: (sess: Session) => void
   onRenameSession: (sess: Session, newName: string) => Promise<boolean>
   onReorderSessions: (orderedIds: string[]) => void
-  onUpdateSessionDays: (sessId: string, days: string) => Promise<void>
 }) {
   const [dragClsId, setDragClsId] = useState<string | null>(null)
   const [dragOverClsId, setDragOverClsId] = useState<string | null>(null)
@@ -1908,26 +1903,6 @@ function RosterTab({
                 {sess.time_range && (
                   <span className="text-[11px] text-[#64748B] bg-[#F1F5F9] px-2 py-0.5 rounded-full">{sess.time_range}</span>
                 )}
-                {/* 요일 토글 */}
-                {(['월','화','수','목','금'] as const).map(d => {
-                  const active = sess.days ? sess.days.includes(d) : true
-                  return (
-                    <button key={d}
-                      title={active ? `${d}요일 제외` : `${d}요일 추가`}
-                      onClick={async () => {
-                        const cur = sess.days ?? '월화수목금'
-                        const next = active ? cur.replace(d, '') : (cur + d)
-                        await onUpdateSessionDays(sess.id, next)
-                      }}
-                      className={`text-[10px] font-bold w-5 h-5 rounded transition-colors ${
-                        active
-                          ? 'text-white'
-                          : 'bg-[#F1F5F9] text-[#CBD5E1]'
-                      }`}
-                      style={active ? { background: color } : {}}
-                    >{d}</button>
-                  )
-                })}
                 <span className="text-[11px] text-[#94A3B8]">{sessClasses.length}반 · {sessEnrollCount}명</span>
               </div>
               <div className="flex items-center gap-1.5">
