@@ -21,12 +21,23 @@ export async function GET(req: NextRequest) {
   const searchParams = req.nextUrl.searchParams
   const date = searchParams.get('date') ?? new Date().toISOString().split('T')[0]
 
-  // 1. 활성 세션 목록 (class-roster 방식과 동일)
+  // 1. 최신 월 파악 (class-roster와 동일하게 월 기준 필터)
+  const { data: allMonthRows } = await serviceClient
+    .from('class_sessions')
+    .select('month')
+    .eq('campus_id', profile.campus_id)
+  const months = [...new Set((allMonthRows ?? []).map((r: any) => r.month as string))].sort((a, b) => {
+    const parse = (m: string) => { const p = m.match(/\d+/g); return p ? Number(p[0]) * 100 + Number(p[1]) : 0 }
+    return parse(b) - parse(a)
+  })
+  const latestMonth = months[0] ?? ''
+
+  // 최신 월의 세션만
   const { data: sessions, error: sessErr } = await serviceClient
     .from('class_sessions')
     .select('id, name, time_range, sort_order')
     .eq('campus_id', profile.campus_id)
-    .eq('is_active', true)
+    .eq('month', latestMonth)
     .order('sort_order')
     .order('created_at')
 
