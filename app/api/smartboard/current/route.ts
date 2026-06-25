@@ -37,24 +37,34 @@ export async function GET(req: Request) {
     const p = (m: string) => { const x = m.match(/\d+/g); return x ? Number(x[0]) * 100 + Number(x[1]) : 0 }
     return p(b) - p(a)
   })
-  const latestMonth = months[0] ?? ''
-
-  const { data: sessions } = await svc
-    .from('class_sessions')
-    .select('id, name, time_range, days')
-    .eq('campus_id', campusId).eq('month', latestMonth)
-  const sessMap = new Map((sessions ?? []).map((s: any) => [s.id, s]))
-  const sessionIds = (sessions ?? []).map((s: any) => s.id)
-  if (!sessionIds.length) return NextResponse.json({ active: null })
-
-  // 이 교실(classroom_id 또는 room 이름 매칭)의 반들
+  // 교실 이름 (반 매칭용)
   const { data: roomMeta } = await svc.from('classrooms').select('display_name').eq('id', classroomId).maybeSingle()
   const roomName = (roomMeta?.display_name ?? '').toLowerCase()
 
-  const { data: classes } = await svc
-    .from('classes')
-    .select('id, session_id, level, room, classroom_id, days, popup_minutes_before, smartboard_time_range')
-    .in('session_id', sessionIds)
+  // 현재 날짜의 월 우선 (오늘이 6월이면 "2026년 6월"), 없으면 반 있는 최신 월
+  const kstM = new Date(Date.now() + 9 * 60 * 60 * 1000)
+  const currentMonthStr = `${kstM.getUTCFullYear()}년 ${kstM.getUTCMonth() + 1}월`
+  const monthOrder = months.includes(currentMonthStr)
+    ? [currentMonthStr, ...months.filter(m => m !== currentMonthStr)]
+    : months
+
+  let latestMonth = ''
+  let sessions: any[] = []
+  let classes: any[] = []
+  for (const m of monthOrder) {
+    const { data: ss } = await svc
+      .from('class_sessions')
+      .select('id, name, time_range, days')
+      .eq('campus_id', campusId).eq('month', m)
+    if (!ss?.length) continue
+    const ids = ss.map((s: any) => s.id)
+    const { data: cc } = await svc
+      .from('classes')
+      .select('id, session_id, level, room, classroom_id, days, popup_minutes_before, smartboard_time_range')
+      .in('session_id', ids)
+    if (cc?.length) { latestMonth = m; sessions = ss; classes = cc; break }
+  }
+  const sessMap = new Map(sessions.map((s: any) => [s.id, s]))
 
   const myClasses = (classes ?? []).filter((c: any) =>
     c.classroom_id === classroomId || (c.room ?? '').toLowerCase() === roomName

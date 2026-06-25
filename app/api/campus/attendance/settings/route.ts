@@ -31,7 +31,9 @@ export async function GET() {
     const p = (m: string) => { const x = m.match(/\d+/g); return x ? Number(x[0]) * 100 + Number(x[1]) : 0 }
     return p(b) - p(a)
   })
-  const latestMonth = months[0] ?? ''
+  const kstM = new Date(Date.now() + 9 * 60 * 60 * 1000)
+  const currentMonthStr = `${kstM.getUTCFullYear()}년 ${kstM.getUTCMonth() + 1}월`
+  const latestMonth = months.includes(currentMonthStr) ? currentMonthStr : (months[0] ?? '')
 
   const { data: sessions } = await serviceClient
     .from('class_sessions')

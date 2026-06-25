@@ -30,7 +30,10 @@ export async function GET(req: NextRequest) {
     const parse = (m: string) => { const p = m.match(/\d+/g); return p ? Number(p[0]) * 100 + Number(p[1]) : 0 }
     return parse(b) - parse(a)
   })
-  const latestMonth = months[0] ?? ''
+  // 현재 날짜의 월 우선 (KST), 없으면 최신 월
+  const kstM = new Date(Date.now() + 9 * 60 * 60 * 1000)
+  const currentMonthStr = `${kstM.getUTCFullYear()}년 ${kstM.getUTCMonth() + 1}월`
+  const latestMonth = months.includes(currentMonthStr) ? currentMonthStr : (months[0] ?? '')
 
   // 최신 월의 세션 전체 조회
   const { data: allSessions, error: sessErr } = await serviceClient
