@@ -64,7 +64,7 @@ export async function GET(req: NextRequest) {
     .from('class_enrollments')
     .select('class_id, student_id, sort_order, campus_students(name)')
     .in('class_id', classIds)
-    .eq('is_waitlist', false)
+    .neq('is_waitlist', true)
     .order('sort_order')
 
   const enrollmentsByClass = new Map<string, { student_id: string; name: string }[]>()
