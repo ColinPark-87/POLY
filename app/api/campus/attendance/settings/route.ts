@@ -47,7 +47,7 @@ export async function GET() {
     // days/classroom_id 컬럼 없을 수 있으므로 폴백
     const full = await serviceClient
       .from('classes')
-      .select('id, session_id, level, room, teacher, color, days, classroom_id')
+      .select('id, session_id, level, room, teacher, color, days, classroom_id, popup_minutes_before')
       .in('session_id', sessionIds)
       .order('sort_order')
     if (!full.error && full.data) {
@@ -58,7 +58,7 @@ export async function GET() {
         .select('id, session_id, level, room, teacher, color')
         .in('session_id', sessionIds)
         .order('sort_order')
-      classes = (basic.data ?? []).map((c: any) => ({ ...c, days: null, classroom_id: null }))
+      classes = (basic.data ?? []).map((c: any) => ({ ...c, days: null, classroom_id: null, popup_minutes_before: null }))
     }
   }
 
@@ -102,6 +102,16 @@ export async function PATCH(req: NextRequest) {
     const { class_id, classroom_id } = body
     const { error } = await serviceClient
       .from('classes').update({ classroom_id: classroom_id || null })
+      .eq('id', class_id)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ ok: true })
+  }
+
+  // 반별 팝업 시간 설정
+  if (body.type === 'class_popup') {
+    const { class_id, popup_minutes_before } = body
+    const { error } = await serviceClient
+      .from('classes').update({ popup_minutes_before: popup_minutes_before === null ? null : Number(popup_minutes_before) })
       .eq('id', class_id)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ ok: true })
