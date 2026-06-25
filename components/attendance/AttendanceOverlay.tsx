@@ -26,9 +26,22 @@ export function AttendanceOverlay({ classId, campusId, students, onComplete }: P
   }, [students])
 
   useEffect(() => {
-    const block = (e: KeyboardEvent) => { if (e.key === 'Escape') e.preventDefault() }
+    // ESC / Alt+F4 / Ctrl+W / F11 등 닫기·이탈 키 차단
+    const block = (e: KeyboardEvent) => {
+      const k = e.key
+      if (k === 'Escape' || k === 'F11'
+        || (e.altKey && k === 'F4')
+        || (e.ctrlKey && (k === 'w' || k === 'W' || k === 'r' || k === 'R'))
+      ) { e.preventDefault(); e.stopPropagation() }
+    }
     window.addEventListener('keydown', block, true)
-    return () => window.removeEventListener('keydown', block, true)
+    // 새로고침·닫기 시도 경고
+    const beforeUnload = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', beforeUnload)
+    return () => {
+      window.removeEventListener('keydown', block, true)
+      window.removeEventListener('beforeunload', beforeUnload)
+    }
   }, [])
 
   function handleStatusChange(studentId: string, status: AttendanceStatus) {

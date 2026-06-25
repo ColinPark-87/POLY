@@ -91,6 +91,11 @@ export default function SmartboardPage() {
     return () => clearInterval(id)
   }, [])
 
+  // 창 제목 — AutoHotkey 도우미가 이 제목으로 창 띄움/숨김 감지
+  useEffect(() => {
+    document.title = active ? 'POLLY_ATTENDANCE_ACTIVE' : 'POLLY_ATTENDANCE_IDLE'
+  }, [active])
+
   function handleComplete() {
     if (active) {
       const today = new Date().toISOString().split('T')[0]

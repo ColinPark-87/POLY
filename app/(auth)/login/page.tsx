@@ -113,6 +113,70 @@ export default function LoginPage() {
     URL.revokeObjectURL(a.href)
   }
 
+  // AutoHotkey 도우미 다운로드 — 평소 최소화, 출석시간엔 전체화면 자동 팝업
+  function downloadAhkFile(num: number) {
+    const url = `${window.location.origin}/smartboard?computer=${num}`
+    const ahk = [
+      `; 폴리 출석 도우미 - 컴퓨터${num}`,
+      `; 필요: AutoHotkey v1.1 설치 (https://www.autohotkey.com)`,
+      `; 사용: 이 파일을 시작프로그램 폴더에 넣기 (Win+R -> shell:startup)`,
+      `#NoTrayIcon`,
+      `#SingleInstance, Force`,
+      `SetTitleMatchMode, 2`,
+      ``,
+      `; 크롬 경로 탐색`,
+      `chromePath := ""`,
+      `for i, p in [A_ProgramFiles "\\Google\\Chrome\\Application\\chrome.exe"`,
+      `  , "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe"`,
+      `  , A_AppData "\\..\\Local\\Google\\Chrome\\Application\\chrome.exe"]`,
+      `  if FileExist(p)`,
+      `  {`,
+      `    chromePath := p`,
+      `    break`,
+      `  }`,
+      `if (chromePath = "")`,
+      `  chromePath := "chrome.exe"`,
+      ``,
+      `; 출석 앱 실행 (앱 모드, 최소화)`,
+      `Run, %chromePath% --app="${url}" --start-minimized, , Min`,
+      `Sleep, 4000`,
+      ``,
+      `; 감시 루프: 출석시간이면 전체화면 팝업, 평소엔 최소화`,
+      `Loop`,
+      `{`,
+      `  if WinExist("POLLY_ATTENDANCE_ACTIVE")`,
+      `  {`,
+      `    WinActivate`,
+      `    WinRestore`,
+      `    WinMaximize`,
+      `    ; 전체화면 (크롬 F11)`,
+      `    if !InStr(prevState, "ACTIVE")`,
+      `      Send, {F11}`,
+      `    prevState := "ACTIVE"`,
+      `  }`,
+      `  else if WinExist("POLLY_ATTENDANCE_IDLE")`,
+      `  {`,
+      `    if InStr(prevState, "ACTIVE")`,
+      `    {`,
+      `      WinActivate`,
+      `      Send, {F11}   ; 전체화면 해제`,
+      `      Sleep, 300`,
+      `    }`,
+      `    WinMinimize, POLLY_ATTENDANCE_IDLE`,
+      `    prevState := "IDLE"`,
+      `  }`,
+      `  Sleep, 2000`,
+      `}`,
+    ].join('\r\n')
+
+    const blob = new Blob([ahk], { type: 'text/plain' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `폴리출석도우미_컴퓨터${num}.ahk`
+    a.click()
+    URL.revokeObjectURL(a.href)
+  }
+
   function saveOrClearId() {
     if (rememberMe) {
       const identifier = mode === 'name' ? form.name : form.email
@@ -302,22 +366,28 @@ export default function LoginPage() {
                         <span className="text-[9px] text-[#94A3B8]">컴퓨터{r.num}</span>
                       </button>
                       <button type="button"
+                        onClick={() => downloadAhkFile(r.num)}
+                        className="text-[9px] text-white bg-[#004EA2] hover:bg-[#003E83] py-1 border-t border-[#E2E8F0]"
+                      >⬇ 자동팝업(권장)</button>
+                      <button type="button"
                         onClick={() => downloadStartupFile(r.num)}
-                        className="text-[9px] text-[#004EA2] bg-[#F8FAFC] hover:bg-[#EAF2FB] py-1 border-t border-[#E2E8F0]"
-                      >⬇ 자동시작</button>
+                        className="text-[9px] text-[#94A3B8] bg-[#F8FAFC] hover:bg-[#EAF2FB] py-1 border-t border-[#E2E8F0]"
+                      >⬇ 단순실행</button>
                     </div>
                   ))}
                 </div>
                 {loading && <p className="text-xs text-[#004EA2] text-center mt-2">로그인 중...</p>}
                 {error && <p className="text-[#EF4444] text-xs text-center mt-2">{error}</p>}
                 <details className="mt-3 text-[11px] text-[#64748B]">
-                  <summary className="cursor-pointer text-[#004EA2]">자동시작 설정 방법</summary>
+                  <summary className="cursor-pointer text-[#004EA2]">자동팝업 설정 방법 (권장)</summary>
                   <ol className="mt-1 space-y-0.5 list-decimal list-inside">
-                    <li>⬇ 자동시작 눌러 파일 받기 (폴리출석_컴퓨터N.vbs)</li>
-                    <li>키보드 <b>Win+R</b> → <b>shell:startup</b> 입력 → Enter</li>
-                    <li>열린 폴더에 받은 파일 넣기</li>
-                    <li>끝. 컴퓨터 켜면 자동 실행 + 최소화 + 자동 로그인</li>
+                    <li><b>AutoHotkey</b> 설치 (autohotkey.com, v1.1, 1회만)</li>
+                    <li>⬇ 자동팝업 눌러 파일 받기 (폴리출석도우미_컴퓨터N.ahk)</li>
+                    <li>키보드 <b>Win+R</b> → <b>shell:startup</b> → Enter</li>
+                    <li>열린 폴더에 받은 .ahk 파일 넣기</li>
+                    <li>끝. 부팅 시 자동 로그인 + 평소 최소화 + 수업시간엔 전체화면 자동 팝업</li>
                   </ol>
+                  <p className="mt-1 text-[#94A3B8]">※ AutoHotkey 설치가 어려우면 「단순실행」 사용 (최소화만, 자동 팝업 없음)</p>
                 </details>
               </div>
             )}
