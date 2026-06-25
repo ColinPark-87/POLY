@@ -11,7 +11,7 @@ function getAvatarColor(name: string) {
   return AVATAR_COLORS[code % AVATAR_COLORS.length]
 }
 
-interface NavDef { href: string; label: string; required?: boolean; employeeOnly?: boolean; staffLeave?: boolean; needsClassRoster?: boolean; needsVehicles?: boolean; needsAnalytics?: boolean }
+interface NavDef { href: string; label: string; required?: boolean; employeeOnly?: boolean; staffLeave?: boolean; needsClassRoster?: boolean; needsVehicles?: boolean; needsAnalytics?: boolean; needsAttendance?: boolean }
 
 const DASHBOARD_NAV: NavDef[] = [
   { href: '/campus/dashboard', label: '캠퍼스 대시보드', required: true },
@@ -31,6 +31,7 @@ const STAFF_LEAVE_NAV: NavDef[] = [
 const TOOLS_NAV: NavDef[] = [
   { href: '/campus/class-roster', label: '개설반 현황', needsClassRoster: true },
   { href: '/campus/vehicles', label: '차량 관리', needsVehicles: true },
+  { href: '/campus/attendance', label: '출결 관리', needsAttendance: true },
   { href: '/campus/calendar', label: '캠퍼스 캘린더' },
 ]
 const UPLOAD_NAV: NavDef[] = [
@@ -55,11 +56,13 @@ const PREFS_KEY = 'campus-sidebar-hidden'
 const STAFF_ONLY_ALLOWED = new Set<string>([
   '/campus/class-roster',
   '/campus/vehicles',
+  '/campus/attendance',
 ])
 
-export default function CampusSidebar({ userName, campusName, role, position, permClassRoster, permVehicles, permAnalytics, staffOnly = false }: {
+export default function CampusSidebar({ userName, campusName, role, position, permClassRoster, permVehicles, permAnalytics, permAttendance, staffOnly = false }: {
   userName: string; campusName: string; role: string; position?: string
   permClassRoster: boolean; permVehicles: boolean; permAnalytics: boolean
+  permAttendance: boolean
   staffOnly?: boolean
 }) {
   const isViceAdmin = (position ?? '').includes('부원장')
@@ -136,7 +139,8 @@ export default function CampusSidebar({ userName, campusName, role, position, pe
       (item.staffLeave ? staffOnly : !(staffOnly && !STAFF_ONLY_ALLOWED.has(item.href))) &&
       !(item.needsClassRoster && !permClassRoster) &&
       !(item.needsVehicles && !permVehicles) &&
-      !(item.needsAnalytics && !permAnalytics)
+      !(item.needsAnalytics && !permAnalytics) &&
+      !(item.needsAttendance && !permAttendance)
     )
     if (visibleItems.length === 0) return null
     const hasActive = visibleItems.some(item => pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href)))
@@ -243,7 +247,8 @@ export default function CampusSidebar({ userName, campusName, role, position, pe
                     (item.staffLeave ? staffOnly : !(staffOnly && !STAFF_ONLY_ALLOWED.has(item.href))) &&
                     !(item.needsClassRoster && !permClassRoster) &&
                     !(item.needsVehicles && !permVehicles) &&
-                    !(item.needsAnalytics && !permAnalytics)
+                    !(item.needsAnalytics && !permAnalytics) &&
+                    !(item.needsAttendance && !permAttendance)
                   ).map(item => {
                     const isHidden = draftHidden.includes(item.href)
                     const isRequired = item.required
