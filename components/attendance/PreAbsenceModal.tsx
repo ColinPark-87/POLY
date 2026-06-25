@@ -13,13 +13,12 @@ export function PreAbsenceModal({ classes, onClose, onSaved }: Props) {
   const [selected, setSelected] = useState<{ student_id: string; name: string; class_id: string; class_label: string } | null>(null)
   const [status, setStatus] = useState<'absent' | 'late'>('absent')
   const [note, setNote] = useState('')
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { inputRef.current?.focus() }, [])
-
-  const today = new Date().toISOString().split('T')[0]
 
   // 전체 학생 플랫 리스트 (반 정보 포함)
   const allStudents = classes.flatMap(c =>
@@ -49,7 +48,7 @@ export function PreAbsenceModal({ classes, onClose, onSaved }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           class_id: selected.class_id,
-          session_date: today,
+          session_date: date,
           student_id: selected.student_id,
           status,
           note: note || undefined,
@@ -106,6 +105,17 @@ export function PreAbsenceModal({ classes, onClose, onSaved }: Props) {
             <button onClick={() => setSelected(null)} className="text-xs text-[#004EA2] font-medium hover:underline">변경</button>
           </div>
         )}
+
+        {/* 날짜 */}
+        <div>
+          <label className="text-xs font-medium text-[#64748B] block mb-1">날짜</label>
+          <input
+            type="date"
+            value={date}
+            onChange={e => setDate(e.target.value)}
+            className="w-full border border-[#E2E8F0] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]"
+          />
+        </div>
 
         {/* 결석/지각 */}
         <div className="flex gap-2">

@@ -66,6 +66,7 @@ export default function AttendancePage() {
   const [drafts, setDrafts] = useState<DraftMap>(new Map())
   const [saving, setSaving] = useState<Set<string>>(new Set())
   const [showPreAbsence, setShowPreAbsence] = useState(false)
+  const [heroList, setHeroList] = useState<{ label: string; students: string[] } | null>(null)
   // Tab drag
   const [dragTabId, setDragTabId] = useState<string | null>(null)
   const [dragOverTabId, setDragOverTabId] = useState<string | null>(null)
@@ -260,14 +261,17 @@ export default function AttendancePage() {
             <span className="text-xs text-[#94A3B8]">총 {total}명</span>
             <div className="flex items-center gap-1.5 ml-auto flex-wrap">
               {[
-                { label: '출석', value: present, color: '#10B981', bg: '#F0FDF4' },
-                { label: '결석', value: absent,  color: '#DC2626', bg: '#FEF2F2' },
-                { label: '지각', value: late,    color: '#D97706', bg: '#FFFBEB' },
-                { label: '사전', value: preAbs,  color: '#7C3AED', bg: '#FDF4FF' },
-              ].map(({ label, value, color, bg }) => (
-                <span key={label} className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold" style={{ background: bg, color }}>
+                { label: '출석', value: present, color: '#10B981', bg: '#F0FDF4', students: g.classes.flatMap(c => c.students.filter(s => !s.pre_marked && s.status === 'present').map(s => s.student_name)) },
+                { label: '결석', value: absent,  color: '#DC2626', bg: '#FEF2F2', students: g.classes.flatMap(c => c.students.filter(s => !s.pre_marked && s.status === 'absent').map(s => s.student_name)) },
+                { label: '지각', value: late,    color: '#D97706', bg: '#FFFBEB', students: g.classes.flatMap(c => c.students.filter(s => s.status === 'late').map(s => s.student_name)) },
+                { label: '사전', value: preAbs,  color: '#7C3AED', bg: '#FDF4FF', students: g.classes.flatMap(c => c.students.filter(s => s.pre_marked && s.status === 'absent').map(s => s.student_name)) },
+              ].map(({ label, value, color, bg, students }) => (
+                <button key={label}
+                  onClick={() => setHeroList({ label, students })}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold hover:opacity-80 transition-opacity"
+                  style={{ background: bg, color }}>
                   {label} {value}
-                </span>
+                </button>
               ))}
             </div>
           </div>
@@ -348,6 +352,31 @@ export default function AttendancePage() {
       {showPreAbsence && (
         <PreAbsenceModal classes={classes} onClose={() => setShowPreAbsence(false)}
           onSaved={() => { setShowPreAbsence(false); loadData() }} />
+      )}
+
+      {/* 히어로 명단 팝업 */}
+      {heroList && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setHeroList(null)}>
+          <div className="bg-white rounded-2xl shadow-xl p-5 w-full max-w-xs max-h-[70vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-base font-bold text-[#1E293B]">{heroList.label} 명단 ({heroList.students.length}명)</h3>
+              <button onClick={() => setHeroList(null)} className="text-[#94A3B8] hover:text-[#64748B]">✕</button>
+            </div>
+            <div className="overflow-y-auto flex-1">
+              {heroList.students.length === 0
+                ? <p className="text-sm text-[#CBD5E1] text-center py-4">없음</p>
+                : <div className="space-y-0.5">
+                    {heroList.students.map((name, i) => (
+                      <div key={i} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-[#F8FAFC]">
+                        <span className="text-[10px] text-[#CBD5E1] w-5 text-right">{i + 1}</span>
+                        <span className="text-sm text-[#1E293B]">{name}</span>
+                      </div>
+                    ))}
+                  </div>
+              }
+            </div>
+          </div>
+        </div>
       )}
       </>)}
 
@@ -725,17 +754,43 @@ function SettingsClassGrid({ roomClasses, sessMap, roomDefault, selectedClassId,
                 )}
               </div>
               <p className="text-[7px] text-[#94A3B8] truncate leading-tight">{cls.days ?? sess?.days ?? '매일'}</p>
+              {/* 팝업 시간 HH:MM 직접 입력 */}
               <div className="flex items-center gap-0.5" onClick={e => e.stopPropagation()}>
-                <input type="number" min={0} max={30}
-                  value={cls.popup_minutes_before ?? ''}
-                  placeholder={String(roomDefault)}
+                <span className="text-[7px] text-[#94A3B8]">팝업</span>
+                <input type="text"
+                  value={cls.popup_minutes_before !== null ? (() => {
+                    const tr = cls.smartboard_time_range ?? sess?.time_range ?? ''
+                    const s = tr.split('~')[0]?.trim() ?? ''
+                    const [h, m] = s.split(':').map(Number)
+                    if (!h && h !== 0) return ''
+                    const h24 = h < 9 ? h + 12 : h
+                    const totalMin = h24 * 60 + (m || 0) - (cls.popup_minutes_before ?? roomDefault)
+                    return `${String(Math.floor(totalMin/60)).padStart(2,'0')}:${String(totalMin%60).padStart(2,'0')}`
+                  })() : ''}
+                  placeholder={(() => {
+                    const tr = cls.smartboard_time_range ?? sess?.time_range ?? ''
+                    const s = tr.split('~')[0]?.trim() ?? ''
+                    const [h, m] = s.split(':').map(Number)
+                    if (!h && h !== 0) return '자동'
+                    const h24 = h < 9 ? h + 12 : h
+                    const totalMin = h24 * 60 + (m || 0) - roomDefault
+                    return `${String(Math.floor(totalMin/60)).padStart(2,'0')}:${String(totalMin%60).padStart(2,'0')}`
+                  })()}
                   onChange={async e => {
-                    const val = e.target.value === '' ? null : Number(e.target.value)
-                    await onPatch({ type: 'class_popup', class_id: cls.id, popup_minutes_before: val })
+                    const val = e.target.value
+                    if (!val) { await onPatch({ type: 'class_popup', class_id: cls.id, popup_minutes_before: null }); return }
+                    const [ph, pm] = val.split(':').map(Number)
+                    if (isNaN(ph) || isNaN(pm)) return
+                    const tr = cls.smartboard_time_range ?? sess?.time_range ?? ''
+                    const s = tr.split('~')[0]?.trim() ?? ''
+                    const [sh, sm] = s.split(':').map(Number)
+                    if (isNaN(sh)) return
+                    const sh24 = sh < 9 ? sh + 12 : sh
+                    const diff = (sh24 * 60 + (sm || 0)) - (ph * 60 + pm)
+                    await onPatch({ type: 'class_popup', class_id: cls.id, popup_minutes_before: diff })
                   }}
-                  className="w-7 text-[7px] border border-[#E2E8F0] rounded px-0.5 focus:outline-none"
+                  className="w-10 text-[7px] border border-[#E2E8F0] rounded px-0.5 focus:outline-none focus:border-[#004EA2]"
                 />
-                <span className="text-[7px] text-[#94A3B8]">분</span>
               </div>
             </div>
           </div>
