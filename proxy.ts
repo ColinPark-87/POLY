@@ -71,10 +71,11 @@ export async function proxy(request: NextRequest) {
         return NextResponse.redirect(new URL('/dashboard', request.url))
       }
       if (staffOnly) {
-        // 상담부/관리자 등 — 개설반 현황, 차량 관리만 허용 → 그 외 캠퍼스 경로는 홈(개설반)으로
+        // 상담부/관리자 등 — 허용된 캠퍼스 경로 목록
         const allowed =
           path.startsWith('/campus/class-roster') ||
-          path.startsWith('/campus/vehicles')
+          path.startsWith('/campus/vehicles') ||
+          path.startsWith('/campus/attendance')
         if (!allowed) {
           return NextResponse.redirect(new URL(home, request.url))
         }
