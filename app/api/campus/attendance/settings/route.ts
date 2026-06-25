@@ -13,12 +13,16 @@ export async function GET() {
     .from('users').select('campus_id').eq('id', user.id).maybeSingle()
   if (!profile?.campus_id) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
-  // 교실 목록
-  const { data: classrooms } = await serviceClient
+  // 교실 목록 (campus_id 일치 우선, 없으면 전체)
+  let { data: classrooms } = await serviceClient
     .from('classrooms')
     .select('id, display_name, account_email, popup_minutes_before')
     .eq('campus_id', profile.campus_id)
-    .order('id')
+    .order('display_name')
+  if (!classrooms?.length) {
+    const fb = await serviceClient.from('classrooms').select('id, display_name, account_email, popup_minutes_before').order('display_name')
+    classrooms = fb.data
+  }
 
   // 최신 월 세션
   const { data: monthRows } = await serviceClient
@@ -48,7 +52,14 @@ export async function GET() {
     classes = data ?? []
   }
 
-  return NextResponse.json({ classrooms: classrooms ?? [], sessions: sessions ?? [], classes })
+  // classroom_id가 없으면 classes.room 텍스트로 자동 매칭
+  const roomNameToId = new Map((classrooms ?? []).map((r: any) => [r.display_name.toLowerCase(), r.id]))
+  const classesWithRoom = classes.map((c: any) => ({
+    ...c,
+    classroom_id: c.classroom_id ?? roomNameToId.get((c.room ?? '').toLowerCase()) ?? null,
+  }))
+
+  return NextResponse.json({ classrooms: classrooms ?? [], sessions: sessions ?? [], classes: classesWithRoom })
 }
 
 export async function PATCH(req: NextRequest) {

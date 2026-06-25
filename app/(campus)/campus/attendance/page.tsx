@@ -595,7 +595,13 @@ function AttendanceSettings() {
   if (loading) return <div className="p-8 text-gray-400">로딩 중...</div>
 
   const sessMap = new Map(sessions.map(s => [s.id, s]))
-  const unassigned = classes.filter(c => !c.classroom_id)
+  // classes.room 텍스트로 교실 자동 매칭
+  const roomByName = new Map(classrooms.map(r => [r.display_name.toLowerCase(), r.id]))
+  const classesWithRoom = classes.map(c => ({
+    ...c,
+    classroom_id: c.classroom_id ?? roomByName.get((c.room ?? '').toLowerCase()) ?? null,
+  }))
+  const unassigned = classesWithRoom.filter(c => !c.classroom_id)
 
   return (
     <div>
@@ -611,7 +617,7 @@ function AttendanceSettings() {
         )}
 
         {classrooms.map(room => {
-          const roomClasses = classes.filter(c => c.classroom_id === room.id)
+          const roomClasses = classesWithRoom.filter(c => c.classroom_id === room.id)
           const isEditing = editingRoom === room.id
           return (
             <div key={room.id} className="border-b border-[#F1F5F9] last:border-0">
@@ -685,7 +691,7 @@ function AttendanceSettings() {
 
       {/* 선택된 반 세팅 패널 */}
       {selectedClassId && (() => {
-        const cls = classes.find(c => c.id === selectedClassId)
+        const cls = classesWithRoom.find(c => c.id === selectedClassId)
         if (!cls) return null
         const sess = sessMap.get(cls.session_id)
         const room = classrooms.find(r => r.id === cls.classroom_id)
