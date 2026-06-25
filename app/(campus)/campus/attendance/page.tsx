@@ -314,28 +314,28 @@ function ClassCard({ classData, color, students, dirty, isSaving, onCycleStatus,
             <div key={s.student_id}>
               <div
                 onClick={() => onCycleStatus(s.student_id)}
-                className="flex items-center gap-0.5 px-1 border-b border-[#f0f0f0] cursor-pointer hover:brightness-95"
-                style={{ backgroundColor: i % 2 === 0 ? '#fafafa' : '#ffffff', minHeight: '20px' }}
+                className="flex items-center gap-1 px-1.5 border-b border-[#f0f0f0] cursor-pointer hover:brightness-95"
+                style={{ backgroundColor: i % 2 === 0 ? '#fafafa' : '#ffffff', minHeight: '28px' }}
               >
-                <span className="text-[8px] text-[#ccc] w-2.5 text-right flex-shrink-0">{i + 1}</span>
-                <span className="flex-1 text-[10px] font-semibold text-[#1a1a1a] truncate leading-tight px-0.5">{s.name}</span>
+                <span className="text-[9px] text-[#ccc] w-3 text-right flex-shrink-0">{i + 1}</span>
+                <span className="flex-1 text-xs font-semibold text-[#1a1a1a] truncate leading-tight">{s.name}</span>
                 {badge ? (
-                  <span className="text-[8px] font-bold px-1 py-px rounded border flex-shrink-0 self-center whitespace-nowrap"
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded border flex-shrink-0 self-center whitespace-nowrap"
                     style={{ background: badge.bg, borderColor: badge.bd, color: badge.tx }}>
                     {badge.label}
                   </span>
                 ) : (
-                  <span className="text-[8px] text-[#10B981] flex-shrink-0 px-0.5">출</span>
+                  <span className="text-[10px] font-bold text-[#10B981] flex-shrink-0 px-1 py-0.5 rounded border border-[#A7F3D0] bg-[#F0FDF4]">출석</span>
                 )}
               </div>
               {/* 사전결석 메모 인라인 */}
               {s.status === 'pre_absent' && (
-                <div className="px-1.5 pb-1 bg-[#FAF5FF]" onClick={e => e.stopPropagation()}>
+                <div className="px-1.5 pb-1.5 bg-[#FAF5FF]" onClick={e => e.stopPropagation()}>
                   <input
                     value={s.note}
                     onChange={e => onSetNote(s.student_id, e.target.value)}
                     placeholder="사유 (선택)"
-                    className="w-full text-[9px] border border-[#D8B4FE] rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#7C3AED] bg-white"
+                    className="w-full text-[10px] border border-[#D8B4FE] rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#7C3AED] bg-white"
                   />
                 </div>
               )}
@@ -343,7 +343,7 @@ function ClassCard({ classData, color, students, dirty, isSaving, onCycleStatus,
           )
         })}
         {total === 0 && (
-          <div className="h-[18px] flex items-center justify-center text-[#CBD5E1] text-[9px]">수강생 없음</div>
+          <div className="h-[28px] flex items-center justify-center text-[#CBD5E1] text-[10px]">수강생 없음</div>
         )}
       </div>
 
