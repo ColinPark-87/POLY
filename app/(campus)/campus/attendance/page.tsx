@@ -622,46 +622,60 @@ function AttendanceSettings() {
           return (
             <div key={room.id} className="border-b border-[#F1F5F9] last:border-0">
               {/* 교실 행 */}
-              <div className="grid grid-cols-[80px_1fr_180px_60px_44px] gap-0 px-3 py-2 items-center hover:bg-[#FAFBFC]">
-                <span className="text-sm font-bold text-[#1E293B]">{room.display_name}</span>
+              <div className="grid grid-cols-[80px_1fr_180px_60px_44px] gap-0 px-3 py-2 items-start hover:bg-[#FAFBFC]">
+                <span className="text-sm font-bold text-[#1E293B] pt-0.5">{room.display_name}</span>
 
-                {/* 배정 반 칩 */}
-                <div className="flex flex-wrap gap-1">
+                {/* 세션별 그룹 */}
+                <div className="flex flex-col gap-1">
                   {roomClasses.length === 0
                     ? <span className="text-[10px] text-[#CBD5E1]">없음</span>
-                    : roomClasses.map(cls => {
-                      const sess = sessMap.get(cls.session_id)
-                      const isSelected = selectedClassId === cls.id
-                      return (
-                        <span key={cls.id}
-                          className={`inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full text-white cursor-pointer transition-opacity ${isSelected ? 'ring-2 ring-offset-1 ring-[#004EA2]' : 'hover:opacity-80'}`}
-                          style={{ background: cls.color || '#94A3B8' }}
-                          title={`${sess?.name ?? ''} ${sess?.time_range ?? ''}`}
-                          onClick={() => {
-                            if (selectedClassId === cls.id) { setSelectedClassId(null); return }
-                            setSelectedClassId(cls.id)
-                            setClassDraft({ days: cls.days ?? sess?.days ?? '', time_range: sess?.time_range ?? '', classroom_id: cls.classroom_id ?? '' })
-                          }}
-                        >
-                          {cls.level}
-                        </span>
-                      )
-                    })
+                    : (() => {
+                        // 세션별 그룹핑
+                        const grouped = new Map<string, { sess: SettingsSession | undefined; classes: SettingsClass[] }>()
+                        roomClasses.forEach(cls => {
+                          const sid = cls.session_id
+                          if (!grouped.has(sid)) grouped.set(sid, { sess: sessMap.get(sid), classes: [] })
+                          grouped.get(sid)!.classes.push(cls)
+                        })
+                        return [...grouped.values()].map(({ sess, classes: gc }) => (
+                          <div key={sess?.id ?? 'unknown'} className="flex items-center gap-1.5">
+                            <span className="text-[9px] text-[#94A3B8] w-24 truncate flex-shrink-0">
+                              {sess?.time_range ?? ''} {sess?.name ?? ''}
+                            </span>
+                            <div className="flex flex-wrap gap-0.5">
+                              {gc.map(cls => {
+                                const isSelected = selectedClassId === cls.id
+                                return (
+                                  <span key={cls.id}
+                                    className={`inline-flex items-center text-[10px] font-medium px-1.5 py-0.5 rounded-full text-white cursor-pointer ${isSelected ? 'ring-2 ring-offset-1 ring-[#004EA2]' : 'hover:opacity-80'}`}
+                                    style={{ background: cls.color || '#94A3B8' }}
+                                    onClick={() => {
+                                      if (selectedClassId === cls.id) { setSelectedClassId(null); return }
+                                      setSelectedClassId(cls.id)
+                                      setClassDraft({ days: cls.days ?? sess?.days ?? '', time_range: sess?.time_range ?? '', classroom_id: cls.classroom_id ?? '' })
+                                    }}
+                                  >{cls.level}</span>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        ))
+                      })()
                   }
                 </div>
 
                 {/* 계정 */}
-                <span className="text-[11px] text-[#64748B] truncate">
+                <span className="text-[11px] text-[#64748B] truncate pt-0.5">
                   {room.account_email ?? <span className="text-[#CBD5E1]">미설정</span>}
                 </span>
 
                 {/* 팝업 분 */}
-                <span className="text-[11px] text-[#94A3B8] text-center">{room.popup_minutes_before}분</span>
+                <span className="text-[11px] text-[#94A3B8] text-center pt-0.5">{room.popup_minutes_before}분</span>
 
                 {/* 설정 버튼 */}
                 <button
                   onClick={() => { setEditingRoom(isEditing ? null : room.id); setRoomDraft({ ...room }) }}
-                  className="text-[11px] text-[#004EA2] hover:text-blue-800 font-medium text-center"
+                  className="text-[11px] text-[#004EA2] hover:text-blue-800 font-medium text-center pt-0.5"
                 >{isEditing ? '닫기' : '설정'}</button>
               </div>
 
