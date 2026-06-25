@@ -32,19 +32,25 @@ export default function SmartboardPage() {
     async function checkAuth() {
       const supabase = createClient()
       let { data: { user } } = await supabase.auth.getUser()
+      const params = new URLSearchParams(window.location.search)
+      const num = params.get('computer')
 
       // ?computer=N 쿼리 → 자동 로그인 (부팅 자동시작용)
-      if (!user || user.user_metadata?.role !== 'smartboard') {
-        const params = new URLSearchParams(window.location.search)
-        const num = params.get('computer')
-        if (num && /^\d+$/.test(num)) {
-          const { error } = await supabase.auth.signInWithPassword({
-            email: `computer${num}@jungkye.poly`, password: '7659',
-          })
-          if (!error) {
-            const r = await supabase.auth.getUser()
-            user = r.data.user
-          }
+      // 이미 smartboard 계정이어도, 쿼리 번호와 다른 계정이면 교체
+      const wantEmail = num && /^\d+$/.test(num) ? `computer${num}@jungkye.poly` : null
+      const currentEmail = user?.email ?? null
+      const needLogin = wantEmail && (
+        !user || user.user_metadata?.role !== 'smartboard' || currentEmail !== wantEmail
+      )
+
+      if (needLogin) {
+        // 기존 세션 정리 후 재로그인 (안정성)
+        if (user && currentEmail !== wantEmail) { await supabase.auth.signOut() }
+        const { data: signInData, error } = await supabase.auth.signInWithPassword({
+          email: wantEmail!, password: '7659',
+        })
+        if (!error && signInData.user) {
+          user = signInData.user
         }
       }
 
