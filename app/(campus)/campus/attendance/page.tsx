@@ -1,34 +1,32 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import type { ClassWithAttendance, AttendanceStatus } from '@/lib/attendance'
-import { StudentStatusToggle } from '@/components/attendance/StudentStatusToggle'
+import type { ClassWithAttendance } from '@/lib/attendance'
 import { PreAbsenceModal } from '@/components/attendance/PreAbsenceModal'
 
 const SESS_COLORS: Record<string, string> = {
-  '유치부': '#FF6B35',
-  '유치부 방과후': '#FF9800',
-  '초등부 매일반': '#2196F3',
-  '초등부 월수금': '#4CAF50',
-  '초등부 화목': '#9C27B0',
-  '초등부': '#2196F3',
-  '중등부': '#2E7D32',
-  '고등부': '#6A1B9A',
+  '유치부': '#FF6B35', '유치부 방과후': '#FF9800',
+  '초등부 매일반': '#2196F3', '초등부 월수금': '#4CAF50',
+  '초등부 화목': '#9C27B0', '초등부': '#2196F3',
+  '중등부': '#2E7D32', '고등부': '#6A1B9A',
 }
 const FALLBACK_COLORS = ['#FF6B35','#2196F3','#4CAF50','#9C27B0','#E53935','#00897B','#F57C00','#607D8B']
 function sessColor(name: string, idx: number) {
   if (SESS_COLORS[name]) return SESS_COLORS[name]
-  for (const key of Object.keys(SESS_COLORS)) {
-    if (name.includes(key)) return SESS_COLORS[key]
-  }
+  for (const key of Object.keys(SESS_COLORS)) { if (name.includes(key)) return SESS_COLORS[key] }
   return FALLBACK_COLORS[idx % FALLBACK_COLORS.length]
 }
 
-// 호차 자리에 들어갈 출결 배지 스타일
-const STATUS_BADGE: Record<string, { bg: string; bd: string; tx: string; label: string } | null> = {
-  present: null,
-  absent:  { bg: '#FEF2F2', bd: '#FCA5A5', tx: '#DC2626', label: '결' },
-  late:    { bg: '#FFFBEB', bd: '#FCD34D', tx: '#D97706', label: '지' },
+// 4-state cycle: present → absent → late → pre_absent → present
+type LocalStatus = 'present' | 'absent' | 'late' | 'pre_absent'
+const CYCLE: LocalStatus[] = ['present', 'absent', 'late', 'pre_absent']
+const STATUS_NEXT = (s: LocalStatus): LocalStatus => CYCLE[(CYCLE.indexOf(s) + 1) % CYCLE.length]
+
+const STATUS_BADGE: Record<LocalStatus, { bg: string; bd: string; tx: string; label: string } | null> = {
+  present:    null,
+  absent:     { bg: '#FEF2F2', bd: '#FCA5A5', tx: '#DC2626',  label: '결석' },
+  late:       { bg: '#FFFBEB', bd: '#FCD34D', tx: '#D97706',  label: '지각' },
+  pre_absent: { bg: '#FDF4FF', bd: '#D8B4FE', tx: '#7C3AED',  label: '사전결석' },
 }
 
 const UI_STATUS_STYLE: Record<string, string> = {
@@ -37,22 +35,32 @@ const UI_STATUS_STYLE: Record<string, string> = {
   '완료':   'bg-green-100 text-green-700',
 }
 
-interface SessionGroup {
-  session_id: string
+interface StudentLocal {
+  student_id: string
   name: string
-  time_range: string
-  color: string
+  status: LocalStatus
+  note: string
+}
+
+interface SessionGroup {
+  session_id: string; name: string; time_range: string; color: string
   classes: ClassWithAttendance[]
 }
+
+// classId → map<studentId → {status, note}>
+type DraftMap = Map<string, Map<string, { status: LocalStatus; note: string }>>
 
 export default function AttendancePage() {
   const [classes, setClasses] = useState<ClassWithAttendance[]>([])
   const [loading, setLoading] = useState(true)
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
-  const [selectedClass, setSelectedClass] = useState<ClassWithAttendance | null>(null)
-  const [editStatuses, setEditStatuses] = useState<Record<string, AttendanceStatus>>({})
-  const [saving, setSaving] = useState(false)
+  const [drafts, setDrafts] = useState<DraftMap>(new Map())
+  const [saving, setSaving] = useState<Set<string>>(new Set())
   const [showPreAbsence, setShowPreAbsence] = useState(false)
+  // Tab drag
+  const [dragTabId, setDragTabId] = useState<string | null>(null)
+  const [dragOverTabId, setDragOverTabId] = useState<string | null>(null)
+  const [tabOrder, setTabOrder] = useState<string[]>([])
 
   const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' })
 
@@ -62,6 +70,12 @@ export default function AttendancePage() {
       const data: ClassWithAttendance[] = await res.json()
       setClasses(data)
       setActiveSessionId(prev => prev ?? data[0]?.class_session_id ?? null)
+      // tabOrder 초기화 (서버 sort_order 반영, 이미 있으면 유지)
+      setTabOrder(prev => {
+        const ids = [...new Set(data.map(c => c.class_session_id))]
+        if (prev.length === ids.length && prev.every(id => ids.includes(id))) return prev
+        return ids
+      })
     }
     setLoading(false)
   }, [])
@@ -69,8 +83,7 @@ export default function AttendancePage() {
   useEffect(() => {
     loadData()
     const supabase = createClient()
-    const channel = supabase
-      .channel('attendance-tab')
+    const channel = supabase.channel('attendance-tab')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_sessions' }, loadData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_records' }, loadData)
       .subscribe()
@@ -78,48 +91,95 @@ export default function AttendancePage() {
     return () => { supabase.removeChannel(channel); clearInterval(interval) }
   }, [loadData])
 
-  // 세션 그룹 (순서 유지)
-  const sessionGroups: SessionGroup[] = []
-  const seenIds = new Set<string>()
+  // 세션 그룹 (tabOrder 순서 적용)
+  const groupMap = new Map<string, SessionGroup>()
   classes.forEach(c => {
-    if (!seenIds.has(c.class_session_id)) {
-      seenIds.add(c.class_session_id)
-      sessionGroups.push({
-        session_id: c.class_session_id,
-        name: c.class_session_name,
+    if (!groupMap.has(c.class_session_id)) {
+      groupMap.set(c.class_session_id, {
+        session_id: c.class_session_id, name: c.class_session_name,
         time_range: c.class_session_time_range,
-        color: sessColor(c.class_session_name, sessionGroups.length),
+        color: sessColor(c.class_session_name, 0),
         classes: [],
       })
     }
-    sessionGroups.find(g => g.session_id === c.class_session_id)!.classes.push(c)
+    groupMap.get(c.class_session_id)!.classes.push(c)
   })
+  // 색상 순서 재계산
+  let colorIdx = 0
+  for (const g of groupMap.values()) { g.color = sessColor(g.name, colorIdx++) }
 
+  const sessionGroups = tabOrder.map(id => groupMap.get(id)).filter(Boolean) as SessionGroup[]
   const activeGroup = sessionGroups.find(g => g.session_id === activeSessionId) ?? sessionGroups[0] ?? null
 
-  function handleCardClick(classData: ClassWithAttendance) {
-    setSelectedClass(classData)
-    const init: Record<string, AttendanceStatus> = {}
-    classData.students.forEach(s => { init[s.student_id] = s.status })
-    setEditStatuses(init)
+  // 학생 로컬 상태 (draft 없으면 서버값 사용)
+  function getStudents(classData: ClassWithAttendance): StudentLocal[] {
+    const classMap = drafts.get(classData.class_id)
+    return classData.students.map(s => {
+      const d = classMap?.get(s.student_id)
+      const raw = d?.status ?? (s.pre_marked && s.status === 'absent' ? 'pre_absent' : s.status as LocalStatus)
+      return { student_id: s.student_id, name: s.student_name, status: raw, note: d?.note ?? s.note ?? '' }
+    })
   }
 
-  async function handleSaveAttendance() {
-    if (!selectedClass) return
-    setSaving(true)
+  function isDirty(classId: string) { return drafts.has(classId) }
+
+  function setStudentStatus(classId: string, studentId: string, status: LocalStatus, note?: string) {
+    setDrafts(prev => {
+      const next = new Map(prev)
+      const classMap = new Map(next.get(classId) ?? [])
+      const existing = classMap.get(studentId) ?? { status, note: '' }
+      classMap.set(studentId, { status, note: note !== undefined ? note : existing.note })
+      next.set(classId, classMap)
+      return next
+    })
+  }
+
+  function setNote(classId: string, studentId: string, note: string) {
+    setDrafts(prev => {
+      const next = new Map(prev)
+      const classMap = new Map(next.get(classId) ?? [])
+      const existing = classMap.get(studentId) ?? { status: 'pre_absent' as LocalStatus, note: '' }
+      classMap.set(studentId, { ...existing, note })
+      next.set(classId, classMap)
+      return next
+    })
+  }
+
+  async function saveClass(classData: ClassWithAttendance) {
+    const students = getStudents(classData)
+    setSaving(prev => new Set(prev).add(classData.class_id))
     const todayStr = new Date().toISOString().split('T')[0]
-    const records = selectedClass.students.map(s => ({
+    const records = students.map(s => ({
       student_id: s.student_id,
-      status: editStatuses[s.student_id] ?? 'present',
+      status: s.status === 'pre_absent' ? 'absent' : s.status,
+      pre_marked: s.status === 'pre_absent',
+      note: s.note || undefined,
     }))
     await fetch('/api/campus/attendance/records', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ class_id: selectedClass.class_id, session_date: todayStr, records, mark_complete: true }),
+      body: JSON.stringify({ class_id: classData.class_id, session_date: todayStr, records, mark_complete: true }),
     })
-    setSaving(false)
-    setSelectedClass(null)
+    setSaving(prev => { const n = new Set(prev); n.delete(classData.class_id); return n })
+    setDrafts(prev => { const n = new Map(prev); n.delete(classData.class_id); return n })
     loadData()
+  }
+
+  // 탭 드래그 순서 변경
+  async function dropTab(targetId: string) {
+    if (!dragTabId || dragTabId === targetId) { setDragTabId(null); setDragOverTabId(null); return }
+    const newOrder = [...tabOrder]
+    const from = newOrder.indexOf(dragTabId)
+    const to = newOrder.indexOf(targetId)
+    newOrder.splice(from, 1); newOrder.splice(to, 0, dragTabId)
+    setTabOrder(newOrder)
+    setDragTabId(null); setDragOverTabId(null)
+    // DB 업데이트 (class-roster 동일 엔드포인트)
+    await fetch('/api/campus/class-roster', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'reorder_sessions', orders: newOrder.map((id, i) => ({ id, sort_order: i })) }),
+    })
   }
 
   if (loading) return <div className="p-8 text-gray-400">로딩 중...</div>
@@ -132,34 +192,34 @@ export default function AttendancePage() {
           <h1 className="text-xl font-bold text-[#1E293B]">출결 관리</h1>
           <p className="text-[#64748B] text-xs mt-0.5">{today}</p>
         </div>
-        <button
-          onClick={() => setShowPreAbsence(true)}
-          className="bg-[#004EA2] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 transition-colors"
-        >
+        <button onClick={() => setShowPreAbsence(true)}
+          className="bg-[#004EA2] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 transition-colors">
           사전 결석 등록
         </button>
       </div>
 
-      {/* 세션 탭 */}
+      {/* 세션 탭 (드래그로 순서 변경) */}
       <div className="flex gap-0 border-b border-[#E2E8F0] mb-4 overflow-x-auto">
         {sessionGroups.map(g => (
-          <button
-            key={g.session_id}
+          <button key={g.session_id}
+            draggable
+            onDragStart={() => setDragTabId(g.session_id)}
+            onDragOver={e => { e.preventDefault(); setDragOverTabId(g.session_id) }}
+            onDragLeave={() => setDragOverTabId(null)}
+            onDrop={() => dropTab(g.session_id)}
+            onDragEnd={() => { setDragTabId(null); setDragOverTabId(null) }}
             onClick={() => setActiveSessionId(g.session_id)}
-            className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
-              activeSessionId === g.session_id
-                ? 'border-current'
-                : 'border-transparent text-[#64748B] hover:text-[#1E293B]'
-            }`}
-            style={activeSessionId === g.session_id ? { color: g.color, borderColor: g.color } : {}}
-          >
+            className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors cursor-grab active:cursor-grabbing ${
+              dragOverTabId === g.session_id ? 'bg-[#F1F5F9]' : ''
+            } ${activeSessionId === g.session_id ? 'border-current' : 'border-transparent text-[#64748B] hover:text-[#1E293B]'}`}
+            style={activeSessionId === g.session_id ? { color: g.color, borderColor: g.color } : {}}>
             {g.name}
             <span className="ml-1.5 text-xs opacity-60">{g.classes.length}반</span>
           </button>
         ))}
       </div>
 
-      {/* 활성 세션 요약 */}
+      {/* 활성 세션 */}
       {activeGroup && (
         <>
           <div className="flex items-center gap-2 mb-3">
@@ -179,7 +239,20 @@ export default function AttendancePage() {
           {/* 5열 그리드 */}
           <div className="grid gap-[6px]" style={{ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}>
             {activeGroup.classes.map(c => (
-              <ClassCard key={c.class_id} classData={c} color={activeGroup.color} onClick={handleCardClick} />
+              <ClassCard
+                key={c.class_id}
+                classData={c}
+                color={activeGroup.color}
+                students={getStudents(c)}
+                dirty={isDirty(c.class_id)}
+                isSaving={saving.has(c.class_id)}
+                onCycleStatus={(sid) => {
+                  const cur = getStudents(c).find(s => s.student_id === sid)!
+                  setStudentStatus(c.class_id, sid, STATUS_NEXT(cur.status))
+                }}
+                onSetNote={(sid, note) => setNote(c.class_id, sid, note)}
+                onSave={() => saveClass(c)}
+              />
             ))}
           </div>
         </>
@@ -189,73 +262,37 @@ export default function AttendancePage() {
         <div className="py-16 text-center text-gray-400">오늘 등록된 수업이 없습니다</div>
       )}
 
-      {/* 출결 편집 모달 */}
-      {selectedClass && (
-        <div className="fixed inset-0 bg-black/40 flex items-end md:items-center justify-center z-50" onClick={() => setSelectedClass(null)}>
-          <div className="bg-white rounded-t-2xl md:rounded-2xl shadow-xl p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-5">
-              <div>
-                <h3 className="text-xl font-bold">
-                  {selectedClass.class_level}{selectedClass.class_room ? ` / ${selectedClass.class_room}` : ''}
-                </h3>
-                {selectedClass.class_teacher && <p className="text-sm text-gray-500 mt-0.5">{selectedClass.class_teacher}</p>}
-              </div>
-              <button onClick={() => setSelectedClass(null)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
-              {selectedClass.students.map(s => (
-                <StudentStatusToggle
-                  key={s.student_id}
-                  studentId={s.student_id}
-                  name={s.student_name}
-                  status={editStatuses[s.student_id] ?? s.status}
-                  preMarked={s.pre_marked}
-                  onStatusChange={(id, st) => setEditStatuses(prev => ({ ...prev, [id]: st }))}
-                />
-              ))}
-            </div>
-            <div className="flex gap-3">
-              <button onClick={() => setSelectedClass(null)} className="flex-1 py-3 border border-gray-300 rounded-xl text-gray-600">닫기</button>
-              <button onClick={handleSaveAttendance} disabled={saving}
-                className="flex-1 py-3 bg-[#004EA2] text-white rounded-xl font-bold disabled:opacity-50">
-                {saving ? '저장 중...' : '출석 완료 처리'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {showPreAbsence && (
-        <PreAbsenceModal
-          classes={classes}
-          onClose={() => setShowPreAbsence(false)}
-          onSaved={() => { setShowPreAbsence(false); loadData() }}
-        />
+        <PreAbsenceModal classes={classes} onClose={() => setShowPreAbsence(false)}
+          onSaved={() => { setShowPreAbsence(false); loadData() }} />
       )}
     </div>
   )
 }
 
-function ClassCard({ classData, color, onClick }: {
+function ClassCard({ classData, color, students, dirty, isSaving, onCycleStatus, onSetNote, onSave }: {
   classData: ClassWithAttendance
   color: string
-  onClick: (c: ClassWithAttendance) => void
+  students: StudentLocal[]
+  dirty: boolean
+  isSaving: boolean
+  onCycleStatus: (studentId: string) => void
+  onSetNote: (studentId: string, note: string) => void
+  onSave: () => void
 }) {
-  const total = classData.students.length
-  const presentCount = total - classData.absent_count - classData.late_count
+  const total = students.length
+  const absentCount = students.filter(s => s.status === 'absent' || s.status === 'pre_absent').length
+  const lateCount = students.filter(s => s.status === 'late').length
+  const presentCount = total - absentCount - lateCount
 
   return (
-    <div
-      onClick={() => onClick(classData)}
-      className="rounded-[9px] border-[1.5px] border-[#E0E0E0] bg-white shadow-sm overflow-hidden cursor-pointer hover:border-[#004EA2] hover:shadow-md transition-all"
-    >
-      {/* 카드 헤더 — 개설반현황 동일 스타일 */}
+    <div className="rounded-[9px] border-[1.5px] border-[#E0E0E0] bg-white shadow-sm overflow-hidden">
+      {/* 카드 헤더 */}
       <div className="px-1.5 py-1 text-white select-none" style={{ background: color }}>
         <div className="flex items-center gap-0.5">
           <span className="font-extrabold text-[11px] leading-tight truncate flex-1">{classData.class_level}</span>
           <span className="text-[9px] font-bold bg-white/30 px-1 py-px rounded flex-shrink-0">{total}</span>
         </div>
-        {/* 출결 상태 배지 */}
         {classData.ui_status !== '미도래' && (
           <span className={`mt-0.5 inline-block text-[8px] font-bold px-1.5 py-px rounded-full ${UI_STATUS_STYLE[classData.ui_status]}`}>
             {classData.ui_status === '완료' ? `완료 ${presentCount}/${total}` : classData.ui_status}
@@ -263,41 +300,44 @@ function ClassCard({ classData, color, onClick }: {
         )}
         {(classData.class_room || classData.class_teacher) && (
           <div className="mt-0.5 space-y-px">
-            {classData.class_room && (
-              <div className="text-[7.5px] opacity-75 flex gap-0.5 truncate">
-                <span className="opacity-60">교</span>
-                <span className="bg-white/15 px-0.5 rounded truncate">{classData.class_room}</span>
-              </div>
-            )}
-            {classData.class_teacher && (
-              <div className="text-[7.5px] opacity-75 flex gap-0.5 truncate">
-                <span className="opacity-60">강</span>
-                <span className="bg-white/15 px-0.5 rounded truncate">{classData.class_teacher}</span>
-              </div>
-            )}
+            {classData.class_room && <div className="text-[7.5px] opacity-75 flex gap-0.5 truncate"><span className="opacity-60">교</span><span className="bg-white/15 px-0.5 rounded truncate">{classData.class_room}</span></div>}
+            {classData.class_teacher && <div className="text-[7.5px] opacity-75 flex gap-0.5 truncate"><span className="opacity-60">강</span><span className="bg-white/15 px-0.5 rounded truncate">{classData.class_teacher}</span></div>}
           </div>
         )}
       </div>
 
-      {/* 학생 rows — 호차 자리에 결석/지각 배지 */}
+      {/* 학생 rows — 클릭으로 상태 순환 */}
       <div>
-        {classData.students.map((s, i) => {
+        {students.map((s, i) => {
           const badge = STATUS_BADGE[s.status]
           return (
-            <div
-              key={s.student_id}
-              className="flex items-center gap-0.5 px-1 border-b border-[#f0f0f0]"
-              style={{ backgroundColor: i % 2 === 0 ? '#fafafa' : '#ffffff', minHeight: '18px' }}
-            >
-              <span className="text-[8px] text-[#ccc] w-2.5 text-right flex-shrink-0">{i + 1}</span>
-              <span className="flex-1 text-[10px] font-semibold text-[#1a1a1a] truncate leading-tight px-0.5">{s.student_name}</span>
-              {badge && (
-                <span
-                  className="text-[8px] font-bold px-0.5 rounded border flex-shrink-0 self-center"
-                  style={{ background: badge.bg, borderColor: badge.bd, color: badge.tx }}
-                >
-                  {badge.label}
-                </span>
+            <div key={s.student_id}>
+              <div
+                onClick={() => onCycleStatus(s.student_id)}
+                className="flex items-center gap-0.5 px-1 border-b border-[#f0f0f0] cursor-pointer hover:brightness-95"
+                style={{ backgroundColor: i % 2 === 0 ? '#fafafa' : '#ffffff', minHeight: '20px' }}
+              >
+                <span className="text-[8px] text-[#ccc] w-2.5 text-right flex-shrink-0">{i + 1}</span>
+                <span className="flex-1 text-[10px] font-semibold text-[#1a1a1a] truncate leading-tight px-0.5">{s.name}</span>
+                {badge ? (
+                  <span className="text-[8px] font-bold px-1 py-px rounded border flex-shrink-0 self-center whitespace-nowrap"
+                    style={{ background: badge.bg, borderColor: badge.bd, color: badge.tx }}>
+                    {badge.label}
+                  </span>
+                ) : (
+                  <span className="text-[8px] text-[#10B981] flex-shrink-0 px-0.5">출</span>
+                )}
+              </div>
+              {/* 사전결석 메모 인라인 */}
+              {s.status === 'pre_absent' && (
+                <div className="px-1.5 pb-1 bg-[#FAF5FF]" onClick={e => e.stopPropagation()}>
+                  <input
+                    value={s.note}
+                    onChange={e => onSetNote(s.student_id, e.target.value)}
+                    placeholder="사유 (선택)"
+                    className="w-full text-[9px] border border-[#D8B4FE] rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#7C3AED] bg-white"
+                  />
+                </div>
               )}
             </div>
           )
@@ -306,6 +346,19 @@ function ClassCard({ classData, color, onClick }: {
           <div className="h-[18px] flex items-center justify-center text-[#CBD5E1] text-[9px]">수강생 없음</div>
         )}
       </div>
+
+      {/* 저장 버튼 (변경 있을 때만) */}
+      {dirty && (
+        <div className="px-1.5 py-1.5 border-t border-[#f0f0f0]">
+          <button
+            onClick={onSave}
+            disabled={isSaving}
+            className="w-full text-[10px] font-bold py-1 rounded bg-[#004EA2] text-white disabled:opacity-50 hover:bg-blue-800 transition-colors"
+          >
+            {isSaving ? '저장 중...' : '출석 완료 저장'}
+          </button>
+        </div>
+      )}
     </div>
   )
 }
