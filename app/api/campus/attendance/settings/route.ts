@@ -14,14 +14,20 @@ export async function GET() {
   if (!profile?.campus_id) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   // 교실 목록 (campus_id 일치 우선, 없으면 전체)
-  let { data: classrooms } = await serviceClient
-    .from('classrooms')
-    .select('id, display_name, account_email, popup_minutes_before')
-    .eq('campus_id', profile.campus_id)
-    .order('display_name')
-  if (!classrooms?.length) {
-    const fb = await serviceClient.from('classrooms').select('id, display_name, account_email, popup_minutes_before').order('display_name')
-    classrooms = fb.data
+  const ROOM_COLS = 'id, display_name, account_email, popup_minutes_before, force_popup_class_id'
+  let classrooms: any[] | null = null
+  {
+    const r = await serviceClient.from('classrooms').select(ROOM_COLS).eq('campus_id', profile.campus_id).order('display_name')
+    if (!r.error && r.data?.length) classrooms = r.data
+    else {
+      const fb = await serviceClient.from('classrooms').select(ROOM_COLS).order('display_name')
+      if (!fb.error) classrooms = fb.data
+      else {
+        // force_popup_class_id 컬럼 미생성 폴백
+        const b = await serviceClient.from('classrooms').select('id, display_name, account_email, popup_minutes_before').order('display_name')
+        classrooms = (b.data ?? []).map((c: any) => ({ ...c, force_popup_class_id: null }))
+      }
+    }
   }
 
   // 최신 월 세션

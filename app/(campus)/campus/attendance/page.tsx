@@ -533,7 +533,7 @@ function ClassCard({ classData, color, sessionDays, students, dirty, isSaving, o
 // ──────────────────────────────────────────────
 // 세팅 탭
 // ──────────────────────────────────────────────
-interface Classroom { id: string; display_name: string; account_email: string | null; popup_minutes_before: number }
+interface Classroom { id: string; display_name: string; account_email: string | null; popup_minutes_before: number; force_popup_class_id: string | null }
 interface SettingsSession { id: string; name: string; time_range: string | null; days: string | null }
 interface SettingsClass { id: string; session_id: string; level: string; room: string | null; teacher: string | null; color: string; days: string | null; classroom_id: string | null; popup_minutes_before: number | null; smartboard_time_range: string | null }
 
@@ -710,6 +710,7 @@ function AttendanceSettings() {
               : <SettingsClassGrid
                   roomClasses={roomClasses}
                   classroomId={room.id}
+                  forcePopupClassId={room.force_popup_class_id}
                   sessMap={sessMap}
                   roomDefault={room.popup_minutes_before}
                   selectedClassId={selectedClassId}
@@ -719,6 +720,7 @@ function AttendanceSettings() {
                     setClassDraft({ days: cls.days ?? sess?.days ?? '', time_range: sess?.time_range ?? '', classroom_id: cls.classroom_id ?? '' })
                   }}
                   onPatch={patch}
+                  onReload={load}
                 />
             }
           </div>
@@ -729,29 +731,31 @@ function AttendanceSettings() {
   )
 }
 
-function SettingsClassGrid({ roomClasses, classroomId, sessMap, roomDefault, selectedClassId, onSelect, onPatch }: {
+function SettingsClassGrid({ roomClasses, classroomId, forcePopupClassId, sessMap, roomDefault, selectedClassId, onSelect, onPatch, onReload }: {
   roomClasses: SettingsClass[]
   classroomId: string
+  forcePopupClassId: string | null
   sessMap: Map<string, SettingsSession>
   roomDefault: number
   selectedClassId: string | null
   onSelect: (cls: SettingsClass, sess: SettingsSession | undefined) => void
   onPatch: (body: object) => Promise<void>
+  onReload: () => void
 }) {
   const [order, setOrder] = useState<string[]>(() => roomClasses.map(c => c.id))
   const [dragId, setDragId] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState<string | null>(null)
   const [editingTimeId, setEditingTimeId] = useState<string | null>(null)
   const [timeDraft, setTimeDraft] = useState('')
-  const [popping, setPopping] = useState<string | null>(null)
 
-  async function forcePopup(classId: string) {
-    setPopping(classId)
+  // 토글: 현재 켜진 반이면 끄기(null), 아니면 켜기
+  async function toggleForcePopup(classId: string) {
+    const next = forcePopupClassId === classId ? null : classId
     await fetch('/api/campus/attendance/force-popup', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ classroom_id: classroomId, class_id: classId }),
+      body: JSON.stringify({ classroom_id: classroomId, class_id: next }),
     })
-    setTimeout(() => setPopping(null), 2000)
+    onReload()
   }
 
   const sorted = order.map(id => roomClasses.find(c => c.id === id)).filter(Boolean) as SettingsClass[]
@@ -813,13 +817,13 @@ function SettingsClassGrid({ roomClasses, classroomId, sessMap, roomDefault, sel
                 roomDefault={roomDefault}
                 onSave={async (mins) => onPatch({ type: 'class_popup', class_id: cls.id, popup_minutes_before: mins })}
               />
-              {/* 임시 팝업 버튼 */}
+              {/* 임시 팝업 토글 버튼 */}
               <button
-                onClick={e => { e.stopPropagation(); forcePopup(cls.id) }}
+                onClick={e => { e.stopPropagation(); toggleForcePopup(cls.id) }}
                 className={`mt-0.5 w-full text-[7px] font-bold rounded py-0.5 transition-colors ${
-                  popping === cls.id ? 'bg-[#10B981] text-white' : 'bg-[#FFF3E0] text-[#E65100] hover:bg-[#FFE0B2]'
+                  forcePopupClassId === cls.id ? 'bg-[#DC2626] text-white' : 'bg-[#FFF3E0] text-[#E65100] hover:bg-[#FFE0B2]'
                 }`}
-              >{popping === cls.id ? '✓ 전송됨' : '🔔 지금 팝업'}</button>
+              >{forcePopupClassId === cls.id ? '⏹ 팝업 끄기' : '🔔 지금 팝업'}</button>
             </div>
           </div>
         )
