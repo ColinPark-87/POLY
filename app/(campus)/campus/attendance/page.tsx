@@ -51,6 +51,7 @@ interface StudentLocal {
 interface SessionGroup {
   session_id: string; name: string; time_range: string; color: string
   days: string | null
+  is_today: boolean
   classes: ClassWithAttendance[]
 }
 
@@ -76,12 +77,12 @@ export default function AttendancePage() {
     if (res.ok) {
       const data: ClassWithAttendance[] = await res.json()
       setClasses(data)
-      // 현재 시간에 가장 가까운 세션 자동 선택
+      // 오늘 수업 중 현재 시간에 가장 가까운 세션 자동 선택
       setActiveSessionId(prev => {
         if (prev) return prev
         const nowMin = new Date().getHours() * 60 + new Date().getMinutes()
-        // 시작 2분 전 ~ 종료 후까지 진행 중인 세션 우선
-        const active = data.find(c => {
+        const todayClasses = data.filter(c => (c as any).class_session_is_today)
+        const active = todayClasses.find(c => {
           const t = c.class_session_time_range
           if (!t) return false
           const [s, e] = t.split('~').map((x: string) => {
@@ -91,7 +92,7 @@ export default function AttendancePage() {
           })
           return nowMin >= s - 2 && nowMin <= e
         })
-        return active?.class_session_id ?? data[0]?.class_session_id ?? null
+        return active?.class_session_id ?? todayClasses[0]?.class_session_id ?? data[0]?.class_session_id ?? null
       })
       // tabOrder 초기화 (서버 sort_order 반영, 이미 있으면 유지)
       setTabOrder(prev => {
@@ -122,6 +123,7 @@ export default function AttendancePage() {
         session_id: c.class_session_id, name: c.class_session_name,
         time_range: c.class_session_time_range,
         days: (c as any).class_session_days ?? null,
+        is_today: (c as any).class_session_is_today ?? true,
         color: sessColor(c.class_session_name, 0),
         classes: [],
       })
@@ -230,23 +232,37 @@ export default function AttendancePage() {
 
       {/* 세션 탭 (드래그로 순서 변경) */}
       <div className="flex gap-0 border-b border-[#E2E8F0] mb-4 overflow-x-auto">
-        {sessionGroups.map(g => (
-          <button key={g.session_id}
-            draggable
-            onDragStart={() => setDragTabId(g.session_id)}
-            onDragOver={e => { e.preventDefault(); setDragOverTabId(g.session_id) }}
-            onDragLeave={() => setDragOverTabId(null)}
-            onDrop={() => dropTab(g.session_id)}
-            onDragEnd={() => { setDragTabId(null); setDragOverTabId(null) }}
-            onClick={() => setActiveSessionId(g.session_id)}
-            className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors cursor-grab active:cursor-grabbing ${
-              dragOverTabId === g.session_id ? 'bg-[#F1F5F9]' : ''
-            } ${activeSessionId === g.session_id ? 'border-current' : 'border-transparent text-[#64748B] hover:text-[#1E293B]'}`}
-            style={activeSessionId === g.session_id ? { color: g.color, borderColor: g.color } : {}}>
-            {g.name}
-            <span className="ml-1.5 text-xs opacity-60">{g.classes.length}반</span>
-          </button>
-        ))}
+        {sessionGroups.map(g => {
+          const isActive = activeSessionId === g.session_id
+          const isToday = g.is_today
+          return (
+            <button key={g.session_id}
+              draggable
+              onDragStart={() => setDragTabId(g.session_id)}
+              onDragOver={e => { e.preventDefault(); setDragOverTabId(g.session_id) }}
+              onDragLeave={() => setDragOverTabId(null)}
+              onDrop={() => dropTab(g.session_id)}
+              onDragEnd={() => { setDragTabId(null); setDragOverTabId(null) }}
+              onClick={() => setActiveSessionId(g.session_id)}
+              title={!isToday ? '오늘 수업 없는 세션 (클릭해 사전결석 등록 가능)' : ''}
+              className={`relative px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-all cursor-grab active:cursor-grabbing ${
+                dragOverTabId === g.session_id ? 'bg-[#F1F5F9]' : ''
+              } ${isActive ? 'border-current' : 'border-transparent'} ${
+                isToday ? '' : 'opacity-35 grayscale'
+              }`}
+              style={isActive
+                ? { color: g.color, borderColor: g.color }
+                : isToday ? { color: g.color } : {}
+              }>
+              {/* 오늘 수업 세션: 탭 이름 아래 컬러 도트 */}
+              {isToday && !isActive && (
+                <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full mb-0.5" style={{ background: g.color }} />
+              )}
+              {g.name}
+              <span className="ml-1.5 text-xs opacity-60">{g.classes.length}반</span>
+            </button>
+          )
+        })}
       </div>
 
       {/* 활성 세션 */}

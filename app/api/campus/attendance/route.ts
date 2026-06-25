@@ -44,16 +44,15 @@ export async function GET(req: NextRequest) {
   if (sessErr) return NextResponse.json({ error: sessErr.message }, { status: 500 })
   if (!allSessions?.length) return NextResponse.json([])
 
-  // 오늘 요일 (KST = UTC+9)
+  // 오늘 요일 (KST = UTC+9) — 필터링 아닌 메타 전달용
   const kstNow = new Date(Date.now() + 9 * 60 * 60 * 1000)
   const todayDay = ['일','월','화','수','목','금','토'][kstNow.getUTCDay()]
 
-  // days 설정된 세션은 오늘 요일 포함 여부로 필터, null이면 전체 요일
-  const sessions = allSessions.filter((s: any) =>
-    !s.days || s.days.includes(todayDay)
-  )
-
-  if (!sessions.length) return NextResponse.json([])
+  // 전체 세션 표시 (필터 없음) — 오늘 해당 여부는 is_today 플래그로 전달
+  const sessions = allSessions.map((s: any) => ({
+    ...s,
+    is_today: !s.days || s.days.includes(todayDay),
+  }))
 
   const sessionIds = sessions.map(s => s.id)
 
@@ -138,6 +137,7 @@ export async function GET(req: NextRequest) {
       class_session_name: sess.name,
       class_session_time_range: sess.time_range ?? '',
       class_session_days: sess.days ?? null,
+      class_session_is_today: sess.is_today as boolean,
       start_time_parsed: startTimeParsed,
       ui_status: resolveUiStatus(attSession?.completed_at ?? null, startTimeParsed, nowMinutes),
       attendance_session: attSession ? {
