@@ -79,6 +79,35 @@ export default function LoginPage() {
     window.location.href = '/smartboard'
   }
 
+  // 부팅 자동시작 파일(.vbs) 다운로드 — cmd창 없이 크롬 최소화 + 자동로그인 실행
+  function downloadStartupFile(num: number) {
+    const url = `${window.location.origin}/smartboard?computer=${num}`
+    const vbs = [
+      `' 폴리 출석 시스템 자동시작 - 컴퓨터${num}`,
+      `' 사용법: 이 파일을 시작프로그램 폴더에 넣으세요 (Win+R -> shell:startup)`,
+      `Set ws = CreateObject("WScript.Shell")`,
+      `chromePath = ""`,
+      `paths = Array( _`,
+      `  "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe", _`,
+      `  "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe", _`,
+      `  ws.ExpandEnvironmentStrings("%LOCALAPPDATA%") & "\\Google\\Chrome\\Application\\chrome.exe" )`,
+      `Set fso = CreateObject("Scripting.FileSystemObject")`,
+      `For Each p In paths`,
+      `  If fso.FileExists(p) Then chromePath = p : Exit For`,
+      `Next`,
+      `If chromePath = "" Then chromePath = "chrome.exe"`,
+      `' 2 = 최소화 상태로 실행 (창 안 보임)`,
+      `ws.Run """" & chromePath & """ --app=""${url}"" --start-minimized", 2, False`,
+    ].join('\r\n')
+
+    const blob = new Blob([vbs], { type: 'text/vbscript' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `폴리출석_컴퓨터${num}.vbs`
+    a.click()
+    URL.revokeObjectURL(a.href)
+  }
+
   function saveOrClearId() {
     if (rememberMe) {
       const identifier = mode === 'name' ? form.name : form.email
@@ -255,21 +284,36 @@ export default function LoginPage() {
             {/* 컴퓨터 로그인: 1~11 선택 */}
             {isCampus && mode === 'computer' && (
               <div>
-                <p className="text-xs text-[#64748B] mb-2">교실 컴퓨터 번호를 선택하세요</p>
-                <div className="grid grid-cols-4 gap-2">
+                <p className="text-xs text-[#64748B] mb-2">번호 클릭 = 바로 로그인 · ⬇ = 자동시작 파일 받기</p>
+                <div className="grid grid-cols-3 gap-2">
                   {Array.from({ length: 11 }, (_, i) => i + 1).map(num => (
-                    <button key={num} type="button"
-                      onClick={() => handleComputerLogin(num)}
-                      disabled={loading}
-                      className="flex flex-col items-center py-2.5 rounded-xl border-2 border-[#E2E8F0] hover:border-[#004EA2] hover:bg-[#EAF2FB] transition-all disabled:opacity-50"
-                    >
-                      <span className="text-lg font-bold text-[#1E293B]">{num}</span>
-                      <span className="text-[9px] text-[#94A3B8]">컴퓨터{num}</span>
-                    </button>
+                    <div key={num} className="flex flex-col rounded-xl border-2 border-[#E2E8F0] overflow-hidden">
+                      <button type="button"
+                        onClick={() => handleComputerLogin(num)}
+                        disabled={loading}
+                        className="flex flex-col items-center py-2 hover:bg-[#EAF2FB] transition-all disabled:opacity-50"
+                      >
+                        <span className="text-base font-bold text-[#1E293B]">{num}</span>
+                        <span className="text-[9px] text-[#94A3B8]">컴퓨터{num}</span>
+                      </button>
+                      <button type="button"
+                        onClick={() => downloadStartupFile(num)}
+                        className="text-[9px] text-[#004EA2] bg-[#F8FAFC] hover:bg-[#EAF2FB] py-1 border-t border-[#E2E8F0]"
+                      >⬇ 자동시작</button>
+                    </div>
                   ))}
                 </div>
                 {loading && <p className="text-xs text-[#004EA2] text-center mt-2">로그인 중...</p>}
                 {error && <p className="text-[#EF4444] text-xs text-center mt-2">{error}</p>}
+                <details className="mt-3 text-[11px] text-[#64748B]">
+                  <summary className="cursor-pointer text-[#004EA2]">자동시작 설정 방법</summary>
+                  <ol className="mt-1 space-y-0.5 list-decimal list-inside">
+                    <li>⬇ 자동시작 눌러 파일 받기 (폴리출석_컴퓨터N.vbs)</li>
+                    <li>키보드 <b>Win+R</b> → <b>shell:startup</b> 입력 → Enter</li>
+                    <li>열린 폴더에 받은 파일 넣기</li>
+                    <li>끝. 컴퓨터 켜면 자동 실행 + 최소화 + 자동 로그인</li>
+                  </ol>
+                </details>
               </div>
             )}
 
