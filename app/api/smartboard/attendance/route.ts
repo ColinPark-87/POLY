@@ -13,13 +13,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const class_id: string = user.user_metadata.class_id
   const campus_id: string = user.user_metadata.campus_id
   const session_date = new Date().toISOString().split('T')[0]
 
-  const { records } = await req.json() as {
+  const { class_id, records } = await req.json() as {
+    class_id: string
     records: { student_id: string; status: AttendanceStatus }[]
   }
+  if (!class_id) return NextResponse.json({ error: 'class_id 필요' }, { status: 400 })
 
   const serviceClient = createServiceClient()
 
@@ -55,12 +56,14 @@ export async function POST(req: NextRequest) {
     .update({ completed_at: new Date().toISOString(), completed_by: 'teacher' })
     .eq('id', session.id)
 
-  await serviceClient
-    .from('smartboard_devices')
-    .upsert(
-      { class_id, campus_id, last_seen: new Date().toISOString() },
-      { onConflict: 'class_id' }
-    )
+  try {
+    await serviceClient
+      .from('smartboard_devices')
+      .upsert(
+        { class_id, campus_id, last_seen: new Date().toISOString() },
+        { onConflict: 'class_id' }
+      )
+  } catch { /* 비핵심 */ }
 
   return NextResponse.json({ ok: true, session_id: session.id })
 }

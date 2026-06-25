@@ -1,50 +1,96 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useAttendanceTimer } from '@/hooks/useAttendanceTimer'
 import { AttendanceOverlay } from '@/components/attendance/AttendanceOverlay'
+import type { StudentForOverlay } from '@/hooks/useAttendanceTimer'
+
+interface ActiveClass {
+  class_id: string
+  class_level: string
+  session_name: string
+  time_range: string
+  students: StudentForOverlay[]
+}
 
 export default function SmartboardPage() {
-  const [classId, setClassId] = useState<string>('')
-  const [campusId, setCampusId] = useState<string>('')
   const [authChecked, setAuthChecked] = useState(false)
   const [notAuthorized, setNotAuthorized] = useState(false)
+  const [roomName, setRoomName] = useState('')
+  const [campusId, setCampusId] = useState('')
+  const [active, setActive] = useState<ActiveClass | null>(null)
+  const [clock, setClock] = useState('')
+  const dismissedRef = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     async function checkAuth() {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user || user.user_metadata?.role !== 'smartboard') {
-        setNotAuthorized(true)
-        setAuthChecked(true)
-        return
+        setNotAuthorized(true); setAuthChecked(true); return
       }
-      setClassId(user.user_metadata.class_id ?? '')
+      setRoomName(user.user_metadata.display_name ?? '교실')
       setCampusId(user.user_metadata.campus_id ?? '')
       setAuthChecked(true)
     }
     checkAuth()
   }, [])
 
-  const { showOverlay, students, dismissOverlay } = useAttendanceTimer(classId, campusId)
+  // 현재 팝업 대상 폴링 (30초)
+  const poll = useCallback(async () => {
+    const res = await fetch('/api/smartboard/current')
+    if (!res.ok) return
+    const { active: a } = await res.json() as { active: ActiveClass | null }
+    if (!a) { setActive(null); return }
+    const today = new Date().toISOString().split('T')[0]
+    const key = `${today}-${a.class_id}`
+    if (dismissedRef.current.has(key)) return // 이번 세션에서 이미 완료/닫음
+    setActive(a)
+    try { window.focus() } catch {}
+  }, [])
+
+  useEffect(() => {
+    if (!authChecked || notAuthorized) return
+    poll()
+    const id = setInterval(poll, 30_000)
+    return () => clearInterval(id)
+  }, [authChecked, notAuthorized, poll])
+
+  // 시계
+  useEffect(() => {
+    const tick = () => {
+      const n = new Date()
+      setClock(`${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}:${String(n.getSeconds()).padStart(2,'0')}`)
+    }
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [])
+
+  function handleComplete() {
+    if (active) {
+      const today = new Date().toISOString().split('T')[0]
+      dismissedRef.current.add(`${today}-${active.class_id}`)
+    }
+    setActive(null)
+    try { window.blur() } catch {}
+  }
 
   if (!authChecked) {
     return <div className="flex items-center justify-center min-h-screen text-gray-400 text-xl">로딩 중...</div>
   }
-
-  if (notAuthorized) {
-    return <SmartboardLogin />
-  }
+  if (notAuthorized) return <SmartboardLogin />
 
   return (
-    <div className="flex items-center justify-center min-h-screen">
-      <p className="text-gray-400 text-xl select-none">대기 중...</p>
-      {showOverlay && classId && (
+    <div className="flex flex-col items-center justify-center min-h-screen select-none">
+      <p className="text-[#004EA2] text-3xl font-extrabold mb-2">{roomName}</p>
+      <p className="text-gray-300 text-6xl font-mono mb-4">{clock}</p>
+      <p className="text-gray-400 text-lg">출석 대기 중...</p>
+      {active && (
         <AttendanceOverlay
-          classId={classId}
+          classId={active.class_id}
           campusId={campusId}
-          students={students}
-          onComplete={dismissOverlay}
+          students={active.students}
+          onComplete={handleComplete}
         />
       )}
     </div>

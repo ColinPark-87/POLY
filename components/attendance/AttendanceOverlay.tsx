@@ -44,7 +44,7 @@ export function AttendanceOverlay({ classId, campusId, students, onComplete }: P
       const res = await fetch('/api/smartboard/attendance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ records }),
+        body: JSON.stringify({ class_id: classId, records }),
       })
       if (!res.ok) throw new Error('저장 실패')
       onComplete()
