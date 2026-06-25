@@ -5,7 +5,7 @@ import dayGridPlugin from '@fullcalendar/daygrid'
 import interactionPlugin from '@fullcalendar/interaction'
 import koLocale from '@fullcalendar/core/locales/ko'
 
-interface AbsentEntry { name: string; label: string; pre: boolean; late: boolean }
+interface AbsentEntry { name: string; sessionName: string; level: string; timeRange: string; startMin: number; pre: boolean }
 interface DateStat { present: number; absent: number; late: number; absentList: AbsentEntry[]; lateList: AbsentEntry[] }
 interface Analytics {
   ym: string
@@ -17,8 +17,18 @@ interface Analytics {
 
 // 톤다운 색상 (적대적이지 않게)
 const ABSENT = '#E8927C'  // 부드러운 코랄
-const LATE = '#E0B252'    // 부드러운 골드
 const PRESENT = '#7CB89A' // 부드러운 세이지
+
+// 세션별 그룹 + 시간순 정렬
+function groupBySession(list: AbsentEntry[]) {
+  const map = new Map<string, { key: string; sessionName: string; level: string; timeRange: string; startMin: number; items: AbsentEntry[] }>()
+  for (const a of list) {
+    const key = `${a.startMin}-${a.sessionName}-${a.level}`
+    if (!map.has(key)) map.set(key, { key, sessionName: a.sessionName, level: a.level, timeRange: a.timeRange, startMin: a.startMin, items: [] })
+    map.get(key)!.items.push(a)
+  }
+  return [...map.values()].sort((a, b) => a.startMin - b.startMin)
+}
 
 export function AttendanceAnalytics() {
   const kst = new Date(Date.now() + 9 * 60 * 60 * 1000)
@@ -110,32 +120,45 @@ export function AttendanceAnalytics() {
               <p className="text-2xl font-extrabold" style={{ color: '#C8674E' }}>{sel.absent}</p>
             </div>
           </div>
-          {/* 결석 명단 (반/타임 포함) */}
+          {/* 결석 명단 — 세션별 그룹 + 시간순 + 5열 */}
           {sel.absentList.length > 0 && (
             <div className="mb-3">
-              <p className="text-xs font-bold mb-1" style={{ color: '#C8674E' }}>결석 {sel.absent}명</p>
-              <div className="space-y-1">
-                {sel.absentList.map((a, i) => (
-                  <div key={i} className="text-sm flex items-baseline gap-2">
-                    <span className="font-semibold text-[#1E293B]">{a.name}{a.pre ? ' (사전)' : ''}</span>
-                    <span className="text-[11px] text-[#94A3B8]">{a.label}</span>
+              <p className="text-xs font-bold mb-1.5" style={{ color: '#C8674E' }}>결석 {sel.absent}명</p>
+              {groupBySession(sel.absentList).map(g => (
+                <div key={g.key} className="mb-2">
+                  <p className="text-[11px] text-[#64748B] mb-0.5">
+                    {g.timeRange && <span className="font-semibold">{g.timeRange}</span>} {g.sessionName} · {g.level}
+                  </p>
+                  <div className="grid grid-cols-5 gap-1">
+                    {g.items.map((a, i) => (
+                      <span key={i} className="text-xs px-1.5 py-1 rounded text-center truncate" style={{ background: '#FCEEEA', color: '#C8674E' }}>
+                        {a.name}{a.pre ? '*' : ''}
+                      </span>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </div>
+              ))}
+              <p className="text-[10px] text-[#CBD5E1]">* = 사전결석</p>
             </div>
           )}
-          {/* 지각 명단 */}
+          {/* 지각 명단 — 세션별 그룹 + 5열 */}
           {sel.lateList.length > 0 && (
             <div>
-              <p className="text-xs font-bold mb-1" style={{ color: '#B8902E' }}>지각 {sel.late}명 (출석 인정)</p>
-              <div className="space-y-1">
-                {sel.lateList.map((a, i) => (
-                  <div key={i} className="text-sm flex items-baseline gap-2">
-                    <span className="font-semibold text-[#1E293B]">{a.name}</span>
-                    <span className="text-[11px] text-[#94A3B8]">{a.label}</span>
+              <p className="text-xs font-bold mb-1.5" style={{ color: '#B8902E' }}>지각 {sel.late}명 (출석 인정)</p>
+              {groupBySession(sel.lateList).map(g => (
+                <div key={g.key} className="mb-2">
+                  <p className="text-[11px] text-[#64748B] mb-0.5">
+                    {g.timeRange && <span className="font-semibold">{g.timeRange}</span>} {g.sessionName} · {g.level}
+                  </p>
+                  <div className="grid grid-cols-5 gap-1">
+                    {g.items.map((a, i) => (
+                      <span key={i} className="text-xs px-1.5 py-1 rounded text-center truncate" style={{ background: '#FBF3E0', color: '#B8902E' }}>
+                        {a.name}
+                      </span>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </div>
+              ))}
             </div>
           )}
           {sel.absentList.length === 0 && sel.lateList.length === 0 && (
@@ -162,22 +185,18 @@ export function AttendanceAnalytics() {
         </div>
       </div>
 
-      {/* 세션별 표 */}
+      {/* 세션별 표 — 간결 */}
       <div className="bg-white rounded-xl border border-[#E2E8F0] p-4">
         <h3 className="font-bold text-[#1E293B] text-sm mb-3">세션별 집계 (월 누적)</h3>
-        <div className="space-y-1.5">
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1">
           {Object.entries(data.bySession).map(([name, s]) => {
             const total = s.present + s.absent
             const rate = total > 0 ? Math.round(s.present / total * 100) : 0
             return (
               <div key={name} className="flex items-center gap-2 text-xs">
-                <span className="w-28 truncate text-[#1E293B] font-medium">{name}</span>
-                <span style={{ color: '#4A9E7A' }}>출 {s.present}</span>
+                <span className="flex-1 truncate text-[#1E293B] font-medium">{name}</span>
                 <span style={{ color: '#C8674E' }}>결 {s.absent}</span>
-                <div className="flex-1 h-1.5 bg-[#F1F5F9] rounded-full overflow-hidden ml-1">
-                  <div className="h-full rounded-full" style={{ width: `${rate}%`, background: PRESENT }} />
-                </div>
-                <span className="text-[#94A3B8] w-10 text-right">{rate}%</span>
+                <span className="text-[#94A3B8] w-9 text-right">{rate}%</span>
               </div>
             )
           })}

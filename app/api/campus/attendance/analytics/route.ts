@@ -57,8 +57,17 @@ export async function GET(req: NextRequest) {
 
   const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토']
 
+  // 시간 → 분 (정렬용)
+  function startMinOf(tr: string): number {
+    const s = (tr.split('~')[0] ?? '').trim()
+    const [h, m] = s.split(':').map(Number)
+    if (isNaN(h)) return 9999
+    const h24 = h < 9 ? h + 12 : h
+    return h24 * 60 + (m || 0)
+  }
+
   // 집계 — 결석 외 전부 출석으로 처리, 지각은 출석에 포함하되 별도 카운트
-  interface AbsentEntry { name: string; label: string; pre: boolean; late: boolean }
+  interface AbsentEntry { name: string; sessionName: string; level: string; timeRange: string; startMin: number; pre: boolean }
   const byDate: Record<string, { present: number; absent: number; late: number; absentList: AbsentEntry[]; lateList: AbsentEntry[] }> = {}
   const bySession: Record<string, { present: number; absent: number; late: number }> = {}
   const byWeekday: Record<string, { present: number; absent: number; late: number }> = {}
@@ -68,7 +77,9 @@ export async function GET(req: NextRequest) {
     const wd = WEEKDAYS[new Date(date + 'T00:00:00+09:00').getUTCDay()]
     const ci = classMap.get(s.class_id)
     const sessName = ci?.sessionName || '기타'
-    const label = ci ? `${ci.sessionName} · ${ci.level}${ci.timeRange ? ` (${ci.timeRange})` : ''}` : ''
+    const level = ci?.level ?? ''
+    const timeRange = ci?.timeRange ?? ''
+    const startMin = startMinOf(timeRange)
     const recs: any[] = s.attendance_records ?? []
 
     byDate[date] ??= { present: 0, absent: 0, late: 0, absentList: [], lateList: [] }
@@ -77,14 +88,14 @@ export async function GET(req: NextRequest) {
 
     for (const r of recs) {
       const name = (r.campus_students as any)?.name ?? ''
+      const entry: AbsentEntry = { name, sessionName: sessName, level, timeRange, startMin, pre: !!r.pre_marked }
       if (r.status === 'absent') {
         byDate[date].absent++; bySession[sessName].absent++; byWeekday[wd].absent++
-        byDate[date].absentList.push({ name, label, pre: !!r.pre_marked, late: false })
+        byDate[date].absentList.push(entry)
       } else if (r.status === 'late') {
-        // 지각: 출석으로 카운트 + 지각 명단에 별도
         byDate[date].present++; bySession[sessName].present++; byWeekday[wd].present++
         byDate[date].late++; bySession[sessName].late++; byWeekday[wd].late++
-        byDate[date].lateList.push({ name, label, pre: false, late: true })
+        byDate[date].lateList.push({ ...entry, pre: false })
       } else {
         byDate[date].present++; bySession[sessName].present++; byWeekday[wd].present++
       }

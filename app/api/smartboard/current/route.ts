@@ -30,6 +30,13 @@ export async function GET(req: Request) {
     return NextResponse.json({ active: null, ...(debug ? { debug: { reason: 'no campus_id on classroom', classroomId } } : {}) })
   }
 
+  // 교실 변경 코드 (campus 설정)
+  let changeCode = '7659'
+  try {
+    const { data: campusRow } = await svc.from('campuses').select('smartboard_change_code').eq('id', campusId).maybeSingle()
+    if (campusRow?.smartboard_change_code) changeCode = campusRow.smartboard_change_code
+  } catch { /* 컬럼 미생성 */ }
+
   // 최신 월 세션
   const { data: monthRows } = await svc
     .from('class_sessions').select('month').eq('campus_id', campusId)
@@ -117,7 +124,7 @@ export async function GET(req: Request) {
       const timeRange = cls.smartboard_time_range ?? sess?.time_range ?? ''
       const { data: existing } = await svc
         .from('attendance_sessions').select('id').eq('class_id', cls.id).eq('session_date', today).maybeSingle()
-      return NextResponse.json({ active: await buildActive(cls, sess ?? {}, timeRange, existing?.id ?? null, true) })
+      return NextResponse.json({ active: await buildActive(cls, sess ?? {}, timeRange, existing?.id ?? null, true), changeCode })
     }
   }
 
@@ -141,11 +148,12 @@ export async function GET(req: Request) {
       .eq('class_id', cls.id).eq('session_date', today).maybeSingle()
     if (existing?.completed_at) continue
 
-    return NextResponse.json({ active: await buildActive(cls, sess, timeRange, existing?.id ?? null, false) })
+    return NextResponse.json({ active: await buildActive(cls, sess, timeRange, existing?.id ?? null, false), changeCode })
   }
 
   return NextResponse.json({
     active: null,
+    changeCode,
     ...(debug ? { debug: {
       classroomId, campusId, roomName, latestMonth, months, todayDay, nowMin, forcePopupClassId,
       totalClasses: (classes ?? []).length,

@@ -548,6 +548,11 @@ function AttendanceSettings() {
   const [classDraft, setClassDraft] = useState<{ days: string; time_range: string; classroom_id: string }>({ days: '', time_range: '', classroom_id: '' })
   const [creatingAccounts, setCreatingAccounts] = useState(false)
   const [accountResults, setAccountResults] = useState<{ email: string; classroom: string; status: string }[] | null>(null)
+  // 교실 변경 코드
+  const [changeCode, setChangeCode] = useState('')
+  const [codeDraft, setCodeDraft] = useState('')
+  const [codeSaving, setCodeSaving] = useState(false)
+  const [codeSaved, setCodeSaved] = useState(false)
 
   const load = useCallback(async () => {
     const res = await fetch('/api/campus/attendance/settings')
@@ -557,6 +562,8 @@ function AttendanceSettings() {
       setSessions(d.sessions ?? [])
       setClasses(d.classes ?? [])
     }
+    const cr = await fetch('/api/campus/attendance/change-code')
+    if (cr.ok) { const d = await cr.json(); setChangeCode(d.code); setCodeDraft(d.code) }
     setLoading(false)
   }, [])
 
@@ -593,25 +600,54 @@ function AttendanceSettings() {
 
   return (
     <div>
-      {/* 컴퓨터 계정 일괄 생성 */}
-      <div className="flex items-center gap-3 p-3 bg-[#F8FAFC] rounded-xl border border-[#E2E8F0] mb-2">
-        <div className="flex-1">
-          <p className="text-xs font-medium text-[#1E293B]">컴퓨터 계정 자동 생성</p>
-          <p className="text-[10px] text-[#94A3B8]">computer1~11 계정 생성 (비밀번호: 7659) + 교실 자동 연결</p>
+      {/* 계정 생성 + 교실 변경 코드 */}
+      <div className="grid grid-cols-2 gap-2 mb-2">
+        {/* 컴퓨터 계정 일괄 생성 */}
+        <div className="flex items-center gap-2 p-3 bg-[#F8FAFC] rounded-xl border border-[#E2E8F0]">
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium text-[#1E293B]">컴퓨터 계정 자동 생성</p>
+            <p className="text-[10px] text-[#94A3B8] truncate">computer1~11 (비번 7659) + 교실 연결</p>
+          </div>
+          <button
+            onClick={async () => {
+              if (!confirm('컴퓨터 1~11 계정을 생성하고 교실에 연결합니다. 계속하시겠습니까?')) return
+              setCreatingAccounts(true)
+              const res = await fetch('/api/campus/attendance/create-computer-accounts', { method: 'POST' })
+              const d = await res.json()
+              setAccountResults(d.results)
+              setCreatingAccounts(false)
+              load()
+            }}
+            disabled={creatingAccounts}
+            className="bg-[#1e3a5f] text-white text-xs px-3 py-2 rounded-lg hover:bg-[#2c5f8a] disabled:opacity-50 flex-shrink-0"
+          >{creatingAccounts ? '생성 중...' : '계정 생성'}</button>
         </div>
-        <button
-          onClick={async () => {
-            if (!confirm('컴퓨터 1~11 계정을 생성하고 교실에 연결합니다. 계속하시겠습니까?')) return
-            setCreatingAccounts(true)
-            const res = await fetch('/api/campus/attendance/create-computer-accounts', { method: 'POST' })
-            const d = await res.json()
-            setAccountResults(d.results)
-            setCreatingAccounts(false)
-            load()
-          }}
-          disabled={creatingAccounts}
-          className="bg-[#1e3a5f] text-white text-xs px-4 py-2 rounded-lg hover:bg-[#2c5f8a] disabled:opacity-50 flex-shrink-0"
-        >{creatingAccounts ? '생성 중...' : '계정 생성'}</button>
+
+        {/* 교실 변경 코드 설정 */}
+        <div className="flex items-center gap-2 p-3 bg-[#F8FAFC] rounded-xl border border-[#E2E8F0]">
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium text-[#1E293B]">교실 변경 코드</p>
+            <p className="text-[10px] text-[#94A3B8] truncate">스마트보드 교실 변경 시 입력</p>
+          </div>
+          <input
+            value={codeDraft}
+            onChange={e => { setCodeDraft(e.target.value); setCodeSaved(false) }}
+            placeholder="7659"
+            className="w-20 border border-[#E2E8F0] rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[#004EA2]"
+          />
+          <button
+            onClick={async () => {
+              setCodeSaving(true)
+              await fetch('/api/campus/attendance/change-code', {
+                method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ code: codeDraft }),
+              })
+              setChangeCode(codeDraft); setCodeSaving(false); setCodeSaved(true)
+            }}
+            disabled={codeSaving || codeDraft === changeCode}
+            className="bg-[#1e3a5f] text-white text-xs px-3 py-2 rounded-lg hover:bg-[#2c5f8a] disabled:opacity-40 flex-shrink-0"
+          >{codeSaving ? '...' : codeSaved ? '✓' : '저장'}</button>
+        </div>
       </div>
       {accountResults && (
         <div className="mb-3 p-3 bg-white rounded-xl border border-[#E2E8F0] text-[10px] space-y-0.5">

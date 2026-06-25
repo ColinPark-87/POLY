@@ -25,7 +25,7 @@ export default function SmartboardPage() {
   const [codeInput, setCodeInput] = useState('')
   const [codeOk, setCodeOk] = useState(false)
   const [changeErr, setChangeErr] = useState('')
-  const CHANGE_CODE = '7659!러'
+  const [changeCode, setChangeCode] = useState('7659')
 
   useEffect(() => {
     async function checkAuth() {
@@ -61,7 +61,9 @@ export default function SmartboardPage() {
   const poll = useCallback(async () => {
     const res = await fetch('/api/smartboard/current')
     if (!res.ok) return
-    const { active: a } = await res.json() as { active: ActiveClass | null }
+    const json = await res.json() as { active: ActiveClass | null; changeCode?: string }
+    if (json.changeCode) setChangeCode(json.changeCode)
+    const a = json.active
     if (!a) { setActive(null); return }
     const today = new Date().toISOString().split('T')[0]
     const key = `${today}-${a.class_id}`
@@ -132,7 +134,7 @@ export default function SmartboardPage() {
             </div>
 
             {!codeOk ? (
-              <form onSubmit={e => { e.preventDefault(); if (codeInput === CHANGE_CODE) { setCodeOk(true); setChangeErr('') } else setChangeErr('코드가 틀렸습니다') }}>
+              <form onSubmit={e => { e.preventDefault(); if (codeInput === changeCode) { setCodeOk(true); setChangeErr('') } else setChangeErr('코드가 틀렸습니다') }}>
                 <label className="text-sm text-gray-600 block mb-1">변경 코드 입력</label>
                 <input type="password" value={codeInput} autoFocus
                   onChange={e => setCodeInput(e.target.value)}
