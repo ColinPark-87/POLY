@@ -21,22 +21,34 @@ export async function GET(req: NextRequest) {
   const searchParams = req.nextUrl.searchParams
   const date = searchParams.get('date') ?? new Date().toISOString().split('T')[0]
 
-  const { data: classes, error } = await serviceClient
-    .from('classes')
-    .select(`
-      id, level, room, teacher, color,
-      class_sessions!inner(id, name, time_range, is_active)
-    `)
+  // 1. 활성 세션 목록 (class-roster 방식과 동일)
+  const { data: sessions, error: sessErr } = await serviceClient
+    .from('class_sessions')
+    .select('id, name, time_range, sort_order')
     .eq('campus_id', profile.campus_id)
-    .eq('class_sessions.is_active', true)
+    .eq('is_active', true)
     .order('sort_order')
+    .order('created_at')
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (sessErr) return NextResponse.json({ error: sessErr.message }, { status: 500 })
+  if (!sessions?.length) return NextResponse.json([])
 
-  const classIds = (classes ?? []).map((c: any) => c.id)
-  if (classIds.length === 0) return NextResponse.json([])
+  const sessionIds = sessions.map(s => s.id)
 
-  // 전체 수강생 조회 (attendance_records 없어도 학생 표시)
+  // 2. 반 목록
+  const { data: classes, error: clsErr } = await serviceClient
+    .from('classes')
+    .select('id, session_id, level, room, teacher, color, sort_order')
+    .in('session_id', sessionIds)
+    .order('sort_order')
+    .order('id')
+
+  if (clsErr) return NextResponse.json({ error: clsErr.message }, { status: 500 })
+  if (!classes?.length) return NextResponse.json([])
+
+  const classIds = classes.map(c => c.id)
+
+  // 3. 전체 수강생 (class_enrollments → campus_students)
   const { data: enrollments } = await serviceClient
     .from('class_enrollments')
     .select('class_id, student_id, sort_order, campus_students(name)')
@@ -51,31 +63,33 @@ export async function GET(req: NextRequest) {
     enrollmentsByClass.set(e.class_id, list)
   }
 
-  // 오늘 출결 세션 + 기록 조회 (테이블 미생성 시 빈 배열로 폴백)
+  // 4. 오늘 출결 기록 (테이블 미생성 시 빈 맵으로 폴백)
   let sessionMap = new Map<string, any>()
   try {
-    const { data: sessions, error: sessErr } = await serviceClient
+    const { data: attSessions, error: attErr } = await serviceClient
       .from('attendance_sessions')
       .select('*, attendance_records(student_id, status, pre_marked, note)')
       .in('class_id', classIds)
       .eq('session_date', date)
-    if (!sessErr && sessions) {
-      sessionMap = new Map(sessions.map((s: any) => [s.class_id, s]))
+    if (!attErr && attSessions) {
+      sessionMap = new Map(attSessions.map((s: any) => [s.class_id, s]))
     }
   } catch {
-    // attendance 테이블 미생성 → 빈 맵 유지
+    // attendance 테이블 미생성 → 빈 맵
   }
 
+  const sessMap = new Map(sessions.map(s => [s.id, s]))
   const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes()
 
   const result = (classes ?? []).map((c: any) => {
-    const session = sessionMap.get(c.id) ?? null
-    const records: any[] = session?.attendance_records ?? []
+    const sess = sessMap.get(c.session_id)!
+    const attSession = sessionMap.get(c.id) ?? null
+    const records: any[] = attSession?.attendance_records ?? []
     const recordMap = new Map(records.map((r: any) => [r.student_id, r]))
-    const startTimeParsed = parseStartTime(c.class_sessions.time_range)
     const allStudents = enrollmentsByClass.get(c.id) ?? []
+    const startTimeParsed = sess.time_range ? parseStartTime(sess.time_range) : '00:00'
 
-    const students = allStudents.map((s) => {
+    const students = allStudents.map(s => {
       const r = recordMap.get(s.student_id)
       return {
         student_id: s.student_id,
@@ -86,9 +100,6 @@ export async function GET(req: NextRequest) {
       }
     })
 
-    const absent_count = students.filter(s => s.status === 'absent').length
-    const late_count = students.filter(s => s.status === 'late').length
-
     return {
       class_id: c.id,
       campus_id: profile.campus_id,
@@ -96,23 +107,23 @@ export async function GET(req: NextRequest) {
       class_room: c.room,
       class_teacher: c.teacher,
       class_color: c.color ?? '#3b82f6',
-      class_session_id: c.class_sessions.id,
-      class_session_name: c.class_sessions.name,
-      class_session_time_range: c.class_sessions.time_range,
+      class_session_id: c.session_id,
+      class_session_name: sess.name,
+      class_session_time_range: sess.time_range ?? '',
       start_time_parsed: startTimeParsed,
-      ui_status: resolveUiStatus(session?.completed_at ?? null, startTimeParsed, nowMinutes),
-      attendance_session: session ? {
-        id: session.id,
-        class_id: session.class_id,
-        campus_id: session.campus_id,
-        session_date: session.session_date,
-        completed_at: session.completed_at,
-        completed_by: session.completed_by,
-        created_at: session.created_at,
+      ui_status: resolveUiStatus(attSession?.completed_at ?? null, startTimeParsed, nowMinutes),
+      attendance_session: attSession ? {
+        id: attSession.id,
+        class_id: attSession.class_id,
+        campus_id: attSession.campus_id,
+        session_date: attSession.session_date,
+        completed_at: attSession.completed_at,
+        completed_by: attSession.completed_by,
+        created_at: attSession.created_at,
       } : null,
       students,
-      absent_count,
-      late_count,
+      absent_count: students.filter(s => s.status === 'absent').length,
+      late_count: students.filter(s => s.status === 'late').length,
     }
   })
 
