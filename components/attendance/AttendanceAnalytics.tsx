@@ -1,7 +1,12 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
+import FullCalendar from '@fullcalendar/react'
+import dayGridPlugin from '@fullcalendar/daygrid'
+import interactionPlugin from '@fullcalendar/interaction'
+import koLocale from '@fullcalendar/core/locales/ko'
 
-interface DateStat { present: number; absent: number; late: number; absentNames: string[]; lateNames: string[] }
+interface AbsentEntry { name: string; label: string; pre: boolean; late: boolean }
+interface DateStat { present: number; absent: number; late: number; absentList: AbsentEntry[]; lateList: AbsentEntry[] }
 interface Analytics {
   ym: string
   availableMonths: string[]
@@ -9,6 +14,11 @@ interface Analytics {
   bySession: Record<string, { present: number; absent: number; late: number }>
   byWeekday: Record<string, { present: number; absent: number; late: number }>
 }
+
+// 톤다운 색상 (적대적이지 않게)
+const ABSENT = '#E8927C'  // 부드러운 코랄
+const LATE = '#E0B252'    // 부드러운 골드
+const PRESENT = '#7CB89A' // 부드러운 세이지
 
 export function AttendanceAnalytics() {
   const kst = new Date(Date.now() + 9 * 60 * 60 * 1000)
@@ -28,19 +38,19 @@ export function AttendanceAnalytics() {
 
   if (loading || !data) return <div className="p-8 text-gray-400">로딩 중...</div>
 
-  const [y, mo] = ym.split('-').map(Number)
-  const firstDow = new Date(Date.UTC(y, mo - 1, 1)).getUTCDay()
-  const daysInMonth = new Date(Date.UTC(y, mo, 0)).getUTCDate()
-  const cells: (number | null)[] = [...Array(firstDow).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)]
-
   const months = [...new Set([ym, ...data.availableMonths])].sort().reverse()
   const sel = selectedDate ? data.byDate[selectedDate] : null
-  const maxBar = Math.max(1, ...['월','화','수','목','금'].map(wd => {
-    const w = data.byWeekday[wd]; return w ? w.absent + w.late : 0
-  }))
+  const maxBar = Math.max(1, ...['월','화','수','목','금'].map(wd => data.byWeekday[wd]?.absent ?? 0))
+
+  // FullCalendar 이벤트: 결석 있는 날만 표시
+  const events = Object.entries(data.byDate).flatMap(([date, st]) => {
+    const evs: object[] = []
+    if (st.absent > 0) evs.push({ start: date, display: 'background', color: '#FCE9E4' })
+    return evs
+  })
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {/* 월 탭바 */}
       <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
         {months.map(m => (
@@ -51,38 +61,36 @@ export function AttendanceAnalytics() {
         ))}
       </div>
 
-      {/* 캘린더 */}
-      <div className="bg-white rounded-xl border border-[#E2E8F0] p-3">
-        <div className="grid grid-cols-7 gap-1 mb-1">
-          {['일','월','화','수','목','금','토'].map((d, i) => (
-            <div key={d} className={`text-center text-[10px] font-bold py-1 ${i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-500' : 'text-[#94A3B8]'}`}>{d}</div>
-          ))}
-        </div>
-        <div className="grid grid-cols-7 gap-1">
-          {cells.map((day, i) => {
-            if (day === null) return <div key={i} />
-            const dateStr = `${ym}-${String(day).padStart(2, '0')}`
+      {/* 캘린더 (작게, 캠퍼스 캘린더 양식) */}
+      <div className="bg-white rounded-xl border border-[#E2E8F0] p-2 attendance-cal">
+        <FullCalendar
+          plugins={[dayGridPlugin, interactionPlugin]}
+          initialView="dayGridMonth"
+          locale={koLocale}
+          initialDate={`${ym}-01`}
+          key={ym}
+          headerToolbar={{ left: '', center: 'title', right: '' }}
+          height="auto"
+          contentHeight="auto"
+          aspectRatio={1.8}
+          fixedWeekCount={false}
+          showNonCurrentDates={false}
+          events={events}
+          dayCellContent={(arg) => {
+            const dateStr = `${ym}-${String(arg.date.getDate()).padStart(2, '0')}`
             const st = data.byDate[dateStr]
-            const hasData = !!st
-            const issues = st ? st.absent + st.late : 0
             return (
-              <button key={i}
-                onClick={() => hasData && setSelectedDate(dateStr)}
-                disabled={!hasData}
-                className={`aspect-square rounded-lg border flex flex-col items-center justify-center transition-colors ${
-                  selectedDate === dateStr ? 'border-[#004EA2] bg-[#EAF2FB]'
-                    : hasData ? 'border-[#E2E8F0] hover:border-[#004EA2] bg-white' : 'border-transparent bg-[#FAFBFC]'
-                }`}>
-                <span className={`text-xs ${hasData ? 'font-bold text-[#1E293B]' : 'text-[#CBD5E1]'}`}>{day}</span>
-                {hasData && (
-                  <span className={`text-[8px] mt-0.5 ${issues > 0 ? 'text-red-500 font-bold' : 'text-green-600'}`}>
-                    {issues > 0 ? `결${st.absent} 지${st.late}` : '✓'}
-                  </span>
-                )}
-              </button>
+              <div className="flex flex-col items-center leading-none">
+                <span className="text-[11px]">{arg.date.getDate()}</span>
+                {st && st.absent > 0 && <span className="text-[9px] font-bold" style={{ color: ABSENT }}>결{st.absent}</span>}
+                {st && st.absent === 0 && <span className="text-[8px]" style={{ color: PRESENT }}>✓</span>}
+              </div>
             )
-          })}
-        </div>
+          }}
+          dateClick={(info: { dateStr: string }) => {
+            if (data.byDate[info.dateStr]) setSelectedDate(info.dateStr)
+          }}
+        />
       </div>
 
       {/* 선택 날짜 상세 */}
@@ -92,77 +100,100 @@ export function AttendanceAnalytics() {
             <h3 className="font-bold text-[#1E293B]">{selectedDate.replace(/-/g, '.')} 출결</h3>
             <button onClick={() => setSelectedDate(null)} className="text-[#94A3B8] text-sm">✕</button>
           </div>
-          <div className="grid grid-cols-3 gap-3 mb-3">
-            <div className="rounded-lg bg-[#F0FDF4] px-3 py-2">
-              <p className="text-[10px] text-[#16A34A]">출석</p>
-              <p className="text-xl font-extrabold text-[#16A34A]">{sel.present}</p>
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <div className="rounded-lg px-3 py-2" style={{ background: '#EEF6F1' }}>
+              <p className="text-[10px]" style={{ color: PRESENT }}>출석</p>
+              <p className="text-2xl font-extrabold" style={{ color: '#4A9E7A' }}>{sel.present}</p>
             </div>
-            <div className="rounded-lg bg-[#FEF2F2] px-3 py-2">
-              <p className="text-[10px] text-[#DC2626]">결석</p>
-              <p className="text-xl font-extrabold text-[#DC2626]">{sel.absent}</p>
-            </div>
-            <div className="rounded-lg bg-[#FFFBEB] px-3 py-2">
-              <p className="text-[10px] text-[#D97706]">지각</p>
-              <p className="text-xl font-extrabold text-[#D97706]">{sel.late}</p>
+            <div className="rounded-lg px-3 py-2" style={{ background: '#FCEEEA' }}>
+              <p className="text-[10px]" style={{ color: ABSENT }}>결석</p>
+              <p className="text-2xl font-extrabold" style={{ color: '#C8674E' }}>{sel.absent}</p>
             </div>
           </div>
-          {sel.absentNames.length > 0 && (
-            <p className="text-sm text-[#1E293B] mb-1"><span className="text-[#DC2626] font-bold">결석</span> {sel.absentNames.join(', ')}</p>
+          {/* 결석 명단 (반/타임 포함) */}
+          {sel.absentList.length > 0 && (
+            <div className="mb-3">
+              <p className="text-xs font-bold mb-1" style={{ color: '#C8674E' }}>결석 {sel.absent}명</p>
+              <div className="space-y-1">
+                {sel.absentList.map((a, i) => (
+                  <div key={i} className="text-sm flex items-baseline gap-2">
+                    <span className="font-semibold text-[#1E293B]">{a.name}{a.pre ? ' (사전)' : ''}</span>
+                    <span className="text-[11px] text-[#94A3B8]">{a.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
-          {sel.lateNames.length > 0 && (
-            <p className="text-sm text-[#1E293B]"><span className="text-[#D97706] font-bold">지각</span> {sel.lateNames.join(', ')}</p>
+          {/* 지각 명단 */}
+          {sel.lateList.length > 0 && (
+            <div>
+              <p className="text-xs font-bold mb-1" style={{ color: '#B8902E' }}>지각 {sel.late}명 (출석 인정)</p>
+              <div className="space-y-1">
+                {sel.lateList.map((a, i) => (
+                  <div key={i} className="text-sm flex items-baseline gap-2">
+                    <span className="font-semibold text-[#1E293B]">{a.name}</span>
+                    <span className="text-[11px] text-[#94A3B8]">{a.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
-          {sel.absentNames.length === 0 && sel.lateNames.length === 0 && (
-            <p className="text-sm text-[#16A34A]">전원 출석</p>
+          {sel.absentList.length === 0 && sel.lateList.length === 0 && (
+            <p className="text-sm" style={{ color: PRESENT }}>전원 출석</p>
           )}
         </div>
       )}
 
-      {/* 요일별 그래프 */}
+      {/* 요일별 결석 그래프 */}
       <div className="bg-white rounded-xl border border-[#E2E8F0] p-4">
-        <h3 className="font-bold text-[#1E293B] text-sm mb-3">요일별 결석·지각</h3>
-        <div className="flex items-end gap-2 h-32">
+        <h3 className="font-bold text-[#1E293B] text-sm mb-3">요일별 결석</h3>
+        <div className="flex items-end gap-2 h-28">
           {['월','화','수','목','금'].map(wd => {
             const w = data.byWeekday[wd] ?? { present: 0, absent: 0, late: 0 }
-            const total = w.absent + w.late
-            const h = (total / maxBar) * 100
+            const h = (w.absent / maxBar) * 100
             return (
               <div key={wd} className="flex-1 flex flex-col items-center justify-end h-full">
-                <span className="text-[10px] text-[#64748B] mb-0.5">{total}</span>
-                <div className="w-full rounded-t overflow-hidden flex flex-col justify-end" style={{ height: `${h}%`, minHeight: total > 0 ? '4px' : '0' }}>
-                  <div className="bg-[#D97706] w-full" style={{ height: total > 0 ? `${(w.late / total) * 100}%` : '0' }} />
-                  <div className="bg-[#DC2626] w-full" style={{ height: total > 0 ? `${(w.absent / total) * 100}%` : '0' }} />
-                </div>
+                <span className="text-[10px] text-[#64748B] mb-0.5">{w.absent}</span>
+                <div className="w-full rounded-t" style={{ height: `${h}%`, minHeight: w.absent > 0 ? '4px' : '0', background: ABSENT }} />
                 <span className="text-[10px] text-[#94A3B8] mt-1">{wd}</span>
               </div>
             )
           })}
-        </div>
-        <div className="flex gap-3 mt-2 text-[10px] text-[#94A3B8]">
-          <span><span className="inline-block w-2 h-2 bg-[#DC2626] rounded-sm mr-1" />결석</span>
-          <span><span className="inline-block w-2 h-2 bg-[#D97706] rounded-sm mr-1" />지각</span>
         </div>
       </div>
 
       {/* 세션별 표 */}
       <div className="bg-white rounded-xl border border-[#E2E8F0] p-4">
         <h3 className="font-bold text-[#1E293B] text-sm mb-3">세션별 집계 (월 누적)</h3>
-        <div className="space-y-1">
+        <div className="space-y-1.5">
           {Object.entries(data.bySession).map(([name, s]) => {
-            const total = s.present + s.absent + s.late
+            const total = s.present + s.absent
+            const rate = total > 0 ? Math.round(s.present / total * 100) : 0
             return (
               <div key={name} className="flex items-center gap-2 text-xs">
                 <span className="w-28 truncate text-[#1E293B] font-medium">{name}</span>
-                <span className="text-[#16A34A]">출 {s.present}</span>
-                <span className="text-[#DC2626]">결 {s.absent}</span>
-                <span className="text-[#D97706]">지 {s.late}</span>
-                <span className="ml-auto text-[#94A3B8]">{total > 0 ? Math.round(s.present / total * 100) : 0}% 출석</span>
+                <span style={{ color: '#4A9E7A' }}>출 {s.present}</span>
+                <span style={{ color: '#C8674E' }}>결 {s.absent}</span>
+                <div className="flex-1 h-1.5 bg-[#F1F5F9] rounded-full overflow-hidden ml-1">
+                  <div className="h-full rounded-full" style={{ width: `${rate}%`, background: PRESENT }} />
+                </div>
+                <span className="text-[#94A3B8] w-10 text-right">{rate}%</span>
               </div>
             )
           })}
           {Object.keys(data.bySession).length === 0 && <p className="text-xs text-[#CBD5E1]">데이터 없음</p>}
         </div>
       </div>
+
+      <style jsx global>{`
+        .attendance-cal .fc { font-size: 11px; }
+        .attendance-cal .fc .fc-toolbar-title { font-size: 14px; font-weight: 700; color: #1E293B; }
+        .attendance-cal .fc .fc-daygrid-day-frame { min-height: 38px; padding: 1px; }
+        .attendance-cal .fc .fc-daygrid-day-top { justify-content: center; }
+        .attendance-cal .fc .fc-col-header-cell-cushion { font-size: 10px; color: #94A3B8; padding: 2px; }
+        .attendance-cal .fc .fc-daygrid-day-number { padding: 0; }
+        .attendance-cal .fc-day-today { background: #EAF2FB !important; }
+      `}</style>
     </div>
   )
 }

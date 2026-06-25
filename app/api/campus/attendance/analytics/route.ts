@@ -38,33 +38,40 @@ export async function GET(req: NextRequest) {
     .gte('session_date', start)
     .lte('session_date', end)
 
-  // class_id → 세션명 매핑 (현재 활성 반)
+  // class_id → {세션명, 반레벨, 시간} 매핑
   const classIds = [...new Set((sessions ?? []).map((s: any) => s.class_id))]
-  const classMap = new Map<string, string>()
+  const classMap = new Map<string, { sessionName: string; level: string; timeRange: string }>()
   if (classIds.length) {
     const { data: classes } = await svc
       .from('classes')
-      .select('id, level, class_sessions(name)')
+      .select('id, level, smartboard_time_range, class_sessions(name, time_range)')
       .in('id', classIds)
     for (const c of (classes ?? []) as any[]) {
-      classMap.set(c.id, (c.class_sessions as any)?.name ?? c.level)
+      classMap.set(c.id, {
+        sessionName: (c.class_sessions as any)?.name ?? '',
+        level: c.level ?? '',
+        timeRange: c.smartboard_time_range ?? (c.class_sessions as any)?.time_range ?? '',
+      })
     }
   }
 
   const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토']
 
-  // 집계
-  const byDate: Record<string, { present: number; absent: number; late: number; absentNames: string[]; lateNames: string[] }> = {}
+  // 집계 — 결석 외 전부 출석으로 처리, 지각은 출석에 포함하되 별도 카운트
+  interface AbsentEntry { name: string; label: string; pre: boolean; late: boolean }
+  const byDate: Record<string, { present: number; absent: number; late: number; absentList: AbsentEntry[]; lateList: AbsentEntry[] }> = {}
   const bySession: Record<string, { present: number; absent: number; late: number }> = {}
   const byWeekday: Record<string, { present: number; absent: number; late: number }> = {}
 
   for (const s of (sessions ?? []) as any[]) {
     const date = s.session_date as string
     const wd = WEEKDAYS[new Date(date + 'T00:00:00+09:00').getUTCDay()]
-    const sessName = classMap.get(s.class_id) ?? '기타'
+    const ci = classMap.get(s.class_id)
+    const sessName = ci?.sessionName || '기타'
+    const label = ci ? `${ci.sessionName} · ${ci.level}${ci.timeRange ? ` (${ci.timeRange})` : ''}` : ''
     const recs: any[] = s.attendance_records ?? []
 
-    byDate[date] ??= { present: 0, absent: 0, late: 0, absentNames: [], lateNames: [] }
+    byDate[date] ??= { present: 0, absent: 0, late: 0, absentList: [], lateList: [] }
     bySession[sessName] ??= { present: 0, absent: 0, late: 0 }
     byWeekday[wd] ??= { present: 0, absent: 0, late: 0 }
 
@@ -72,10 +79,12 @@ export async function GET(req: NextRequest) {
       const name = (r.campus_students as any)?.name ?? ''
       if (r.status === 'absent') {
         byDate[date].absent++; bySession[sessName].absent++; byWeekday[wd].absent++
-        byDate[date].absentNames.push(name + (r.pre_marked ? '(사전)' : ''))
+        byDate[date].absentList.push({ name, label, pre: !!r.pre_marked, late: false })
       } else if (r.status === 'late') {
+        // 지각: 출석으로 카운트 + 지각 명단에 별도
+        byDate[date].present++; bySession[sessName].present++; byWeekday[wd].present++
         byDate[date].late++; bySession[sessName].late++; byWeekday[wd].late++
-        byDate[date].lateNames.push(name)
+        byDate[date].lateList.push({ name, label, pre: false, late: true })
       } else {
         byDate[date].present++; bySession[sessName].present++; byWeekday[wd].present++
       }
