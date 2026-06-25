@@ -24,15 +24,17 @@ function sessColor(name: string, idx: number) {
   return FALLBACK_COLORS[idx % FALLBACK_COLORS.length]
 }
 
-const UI_BADGE: Record<string, string> = {
-  '미도래': 'bg-gray-100 text-gray-500',
+// 호차 자리에 들어갈 출결 배지 스타일
+const STATUS_BADGE: Record<string, { bg: string; bd: string; tx: string; label: string } | null> = {
+  present: null,
+  absent:  { bg: '#FEF2F2', bd: '#FCA5A5', tx: '#DC2626', label: '결' },
+  late:    { bg: '#FFFBEB', bd: '#FCD34D', tx: '#D97706', label: '지' },
+}
+
+const UI_STATUS_STYLE: Record<string, string> = {
+  '미도래': 'bg-white/20 text-white/70',
   '대기중': 'bg-blue-100 text-blue-700',
   '완료':   'bg-green-100 text-green-700',
-}
-const STATUS_CHIP: Record<string, string> = {
-  present: 'bg-[#F0FDF4] text-[#16A34A]',
-  absent:  'bg-[#FEF2F2] text-[#DC2626]',
-  late:    'bg-[#FFFBEB] text-[#D97706]',
 }
 
 interface SessionGroup {
@@ -59,12 +61,7 @@ export default function AttendancePage() {
     if (res.ok) {
       const data: ClassWithAttendance[] = await res.json()
       setClasses(data)
-      // 첫 로드 시 첫 세션 자동 선택
-      setActiveSessionId(prev => {
-        if (prev) return prev
-        const first = data[0]?.class_session_id ?? null
-        return first
-      })
+      setActiveSessionId(prev => prev ?? data[0]?.class_session_id ?? null)
     }
     setLoading(false)
   }, [])
@@ -81,10 +78,10 @@ export default function AttendancePage() {
     return () => { supabase.removeChannel(channel); clearInterval(interval) }
   }, [loadData])
 
-  // 세션 그룹 빌드
+  // 세션 그룹 (순서 유지)
   const sessionGroups: SessionGroup[] = []
   const seenIds = new Set<string>()
-  classes.forEach((c, i) => {
+  classes.forEach(c => {
     if (!seenIds.has(c.class_session_id)) {
       seenIds.add(c.class_session_id)
       sessionGroups.push({
@@ -151,7 +148,7 @@ export default function AttendancePage() {
             onClick={() => setActiveSessionId(g.session_id)}
             className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
               activeSessionId === g.session_id
-                ? 'border-current text-current'
+                ? 'border-current'
                 : 'border-transparent text-[#64748B] hover:text-[#1E293B]'
             }`}
             style={activeSessionId === g.session_id ? { color: g.color, borderColor: g.color } : {}}
@@ -166,27 +163,24 @@ export default function AttendancePage() {
       {activeGroup && (
         <>
           <div className="flex items-center gap-2 mb-3">
-            <span className="text-xs font-bold" style={{ color: activeGroup.color }}>{activeGroup.name}</span>
             {activeGroup.time_range && (
               <span className="text-xs text-[#64748B] bg-[#F1F5F9] px-2 py-0.5 rounded-full">{activeGroup.time_range}</span>
             )}
             <span className="text-xs text-[#94A3B8]">
               {activeGroup.classes.length}반 · {activeGroup.classes.reduce((n, c) => n + c.students.length, 0)}명
             </span>
-            <span className="ml-auto text-xs text-[#DC2626] font-medium">
-              {activeGroup.classes.reduce((n, c) => n + c.absent_count, 0) > 0
-                ? `결석 ${activeGroup.classes.reduce((n, c) => n + c.absent_count, 0)}명`
-                : ''}
-            </span>
+            {activeGroup.classes.reduce((n, c) => n + c.absent_count, 0) > 0 && (
+              <span className="text-xs text-[#DC2626] font-medium">
+                결석 {activeGroup.classes.reduce((n, c) => n + c.absent_count, 0)}명
+              </span>
+            )}
           </div>
 
-          {/* 반 카드 — 개설반 현황 스타일 (가로 흐름) */}
-          <div className="overflow-x-auto -mx-1 px-1 pb-2">
-            <div className="flex flex-wrap gap-[6px]" style={{ minWidth: 'max-content' }}>
-              {activeGroup.classes.map(c => (
-                <ClassCard key={c.class_id} classData={c} color={activeGroup.color} onClick={handleCardClick} />
-              ))}
-            </div>
+          {/* 5열 그리드 */}
+          <div className="grid gap-[6px]" style={{ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}>
+            {activeGroup.classes.map(c => (
+              <ClassCard key={c.class_id} classData={c} color={activeGroup.color} onClick={handleCardClick} />
+            ))}
           </div>
         </>
       )}
@@ -253,43 +247,64 @@ function ClassCard({ classData, color, onClick }: {
   return (
     <div
       onClick={() => onClick(classData)}
-      className="flex-shrink-0 rounded-[9px] border-[1.5px] border-[#E0E0E0] bg-white shadow-sm overflow-hidden cursor-pointer hover:border-[#004EA2] hover:shadow-md transition-all"
-      style={{ width: '160px', minWidth: '160px' }}
+      className="rounded-[9px] border-[1.5px] border-[#E0E0E0] bg-white shadow-sm overflow-hidden cursor-pointer hover:border-[#004EA2] hover:shadow-md transition-all"
     >
-      {/* 세션 컬러 상단 바 */}
-      <div className="h-[3px]" style={{ backgroundColor: color }} />
-
-      <div className="px-2.5 py-2 space-y-1.5">
-        {/* 반 이름 + 상태 배지 */}
-        <div className="flex items-start justify-between gap-1">
-          <div className="min-w-0">
-            <p className="text-[12px] font-bold text-[#1E293B] leading-tight truncate">{classData.class_level}</p>
+      {/* 카드 헤더 — 개설반현황 동일 스타일 */}
+      <div className="px-1.5 py-1 text-white select-none" style={{ background: color }}>
+        <div className="flex items-center gap-0.5">
+          <span className="font-extrabold text-[11px] leading-tight truncate flex-1">{classData.class_level}</span>
+          <span className="text-[9px] font-bold bg-white/30 px-1 py-px rounded flex-shrink-0">{total}</span>
+        </div>
+        {/* 출결 상태 배지 */}
+        {classData.ui_status !== '미도래' && (
+          <span className={`mt-0.5 inline-block text-[8px] font-bold px-1.5 py-px rounded-full ${UI_STATUS_STYLE[classData.ui_status]}`}>
+            {classData.ui_status === '완료' ? `완료 ${presentCount}/${total}` : classData.ui_status}
+          </span>
+        )}
+        {(classData.class_room || classData.class_teacher) && (
+          <div className="mt-0.5 space-y-px">
             {classData.class_room && (
-              <p className="text-[10px] text-[#94A3B8] leading-tight truncate">{classData.class_room}</p>
+              <div className="text-[7.5px] opacity-75 flex gap-0.5 truncate">
+                <span className="opacity-60">교</span>
+                <span className="bg-white/15 px-0.5 rounded truncate">{classData.class_room}</span>
+              </div>
+            )}
+            {classData.class_teacher && (
+              <div className="text-[7.5px] opacity-75 flex gap-0.5 truncate">
+                <span className="opacity-60">강</span>
+                <span className="bg-white/15 px-0.5 rounded truncate">{classData.class_teacher}</span>
+              </div>
             )}
           </div>
-          <span className={`flex-shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${UI_BADGE[classData.ui_status]}`}>
-            {classData.ui_status === '완료' ? `${presentCount}/${total}` : classData.ui_status}
-          </span>
-        </div>
-
-        {/* 선생님 */}
-        {classData.class_teacher && (
-          <p className="text-[10px] text-[#64748B] truncate">{classData.class_teacher}</p>
         )}
+      </div>
 
-        {/* 학생 칩 */}
-        <div className="flex flex-wrap gap-1">
-          {classData.students.map(s => (
-            <span
+      {/* 학생 rows — 호차 자리에 결석/지각 배지 */}
+      <div>
+        {classData.students.map((s, i) => {
+          const badge = STATUS_BADGE[s.status]
+          return (
+            <div
               key={s.student_id}
-              className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${STATUS_CHIP[s.status]}`}
+              className="flex items-center gap-0.5 px-1 border-b border-[#f0f0f0]"
+              style={{ backgroundColor: i % 2 === 0 ? '#fafafa' : '#ffffff', minHeight: '18px' }}
             >
-              {s.student_name}{s.status === 'absent' ? ' 결' : s.status === 'late' ? ' 지' : ''}
-            </span>
-          ))}
-          {total === 0 && <span className="text-[10px] text-[#CBD5E1]">수강생 없음</span>}
-        </div>
+              <span className="text-[8px] text-[#ccc] w-2.5 text-right flex-shrink-0">{i + 1}</span>
+              <span className="flex-1 text-[10px] font-semibold text-[#1a1a1a] truncate leading-tight px-0.5">{s.student_name}</span>
+              {badge && (
+                <span
+                  className="text-[8px] font-bold px-0.5 rounded border flex-shrink-0 self-center"
+                  style={{ background: badge.bg, borderColor: badge.bd, color: badge.tx }}
+                >
+                  {badge.label}
+                </span>
+              )}
+            </div>
+          )
+        })}
+        {total === 0 && (
+          <div className="h-[18px] flex items-center justify-center text-[#CBD5E1] text-[9px]">수강생 없음</div>
+        )}
       </div>
     </div>
   )
