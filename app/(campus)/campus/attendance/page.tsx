@@ -253,14 +253,30 @@ export default function AttendancePage() {
       {activeGroup && (
         <>
           {/* 요일 토글 */}
-          <div className="flex items-center gap-1.5 mb-3">
+          <div className="flex items-center gap-1.5 mb-3 flex-wrap">
             <span className="text-xs text-[#64748B]">수업 요일</span>
+            {/* 전체 리셋 버튼 */}
+            <button
+              onClick={async () => {
+                await fetch('/api/campus/class-roster', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ action: 'update_session', session_id: activeGroup.session_id, days: null }),
+                })
+                loadData()
+              }}
+              className={`text-xs font-bold px-2 h-7 rounded transition-colors ${
+                !activeGroup.days ? 'text-white' : 'bg-[#F1F5F9] text-[#94A3B8]'
+              }`}
+              style={!activeGroup.days ? { background: activeGroup.color } : {}}
+            >전체</button>
             {(['월','화','수','목','금'] as const).map(d => {
+              // null(전체) 일 때는 모두 활성, 설정된 경우만 개별 체크
               const active = activeGroup.days ? activeGroup.days.includes(d) : false
               return (
                 <button key={d}
                   onClick={async () => {
-                    const cur = activeGroup.days ?? ''
+                    const cur = activeGroup.days ?? '월화수목금'
                     const next = active ? cur.replace(d, '') : cur + d
                     await fetch('/api/campus/class-roster', {
                       method: 'POST',
@@ -276,9 +292,9 @@ export default function AttendancePage() {
                 >{d}</button>
               )
             })}
-            {activeGroup.days && (
-              <span className="text-xs text-[#94A3B8] ml-1">설정된 요일에만 탭 표시됨</span>
-            )}
+            <span className="text-xs text-[#94A3B8] ml-1">
+              {activeGroup.days ? `${activeGroup.days} 요일만 표시` : '매일 표시'}
+            </span>
           </div>
 
           <div className="flex items-center gap-2 mb-3">
