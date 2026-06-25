@@ -58,10 +58,21 @@ export async function GET(req: Request) {
       .eq('campus_id', campusId).eq('month', m)
     if (!ss?.length) continue
     const ids = ss.map((s: any) => s.id)
-    const { data: cc } = await svc
+    let cc: any[] | null = null
+    const full = await svc
       .from('classes')
       .select('id, session_id, level, room, classroom_id, days, popup_minutes_before, smartboard_time_range')
       .in('session_id', ids)
+    if (!full.error) {
+      cc = full.data
+    } else {
+      // 일부 컬럼 미생성 시 폴백
+      const basic = await svc
+        .from('classes')
+        .select('id, session_id, level, room')
+        .in('session_id', ids)
+      cc = (basic.data ?? []).map((c: any) => ({ ...c, classroom_id: null, days: null, popup_minutes_before: null, smartboard_time_range: null }))
+    }
     if (cc?.length) { latestMonth = m; sessions = ss; classes = cc; break }
   }
   const sessMap = new Map(sessions.map((s: any) => [s.id, s]))
@@ -136,7 +147,7 @@ export async function GET(req: Request) {
   return NextResponse.json({
     active: null,
     ...(debug ? { debug: {
-      classroomId, campusId, roomName, latestMonth, todayDay, nowMin, forcePopupClassId,
+      classroomId, campusId, roomName, latestMonth, months, todayDay, nowMin, forcePopupClassId,
       totalClasses: (classes ?? []).length,
       myClassCount: myClasses.length,
       myClasses: myClasses.map((c: any) => {
