@@ -9,7 +9,9 @@ interface Campus {
   name: string
 }
 
-type LoginMode = 'name' | 'email'
+type LoginMode = 'name' | 'email' | 'computer'
+
+const JUNGKYE_CAMPUS_ID = 'ebb499c6-8fb4-4207-9f34-a75c1d29d973'
 
 export default function LoginPage() {
   const [campuses, setCampuses] = useState<Campus[]>([])
@@ -61,6 +63,20 @@ export default function LoginPage() {
     setMode(val === 'hq' ? 'email' : 'name')
     setForm({ name: '', email: '', password: '' })
     setError('')
+  }
+
+  async function handleComputerLogin(num: number) {
+    setLoading(true)
+    setError('')
+    const email = `computer${num}@jungkye.poly`
+    const supabase = createBrowserClient()
+    const { error: authErr } = await supabase.auth.signInWithPassword({ email, password: '7659' })
+    if (authErr) {
+      setError(`컴퓨터${num} 로그인 실패: 계정이 없거나 비밀번호 오류`)
+      setLoading(false)
+      return
+    }
+    window.location.href = '/smartboard'
   }
 
   function saveOrClearId() {
@@ -180,6 +196,7 @@ export default function LoginPage() {
   }
 
   const isCampus = selected !== 'hq'
+  const isJungkye = selected === JUNGKYE_CAMPUS_ID
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#00152F] via-[#002149] to-[#003E83] px-4">
@@ -209,35 +226,48 @@ export default function LoginPage() {
               </select>
             </div>
 
-            {/* 캠퍼스: 직원 / 원장 구분 탭 */}
+            {/* 캠퍼스: 직원 / 원장 / 컴퓨터 탭 */}
             {isCampus && (
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => { setMode('name'); setError('') }}
-                  className={`flex flex-col items-center gap-1 py-3 px-2 rounded-xl border-2 transition-all text-sm font-semibold ${
-                    mode === 'name'
-                      ? 'border-[#004EA2] bg-[#EAF2FB] text-[#002F65]'
-                      : 'border-[#E2E8F0] bg-white text-[#94A3B8] hover:border-[#94A3B8]'
-                  }`}
-                >
-                  <span className="text-xl">👤</span>
-                  <span>직원</span>
-                  <span className="text-[10px] font-normal opacity-70">이름으로 로그인</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setMode('email'); setError('') }}
-                  className={`flex flex-col items-center gap-1 py-3 px-2 rounded-xl border-2 transition-all text-sm font-semibold ${
-                    mode === 'email'
-                      ? 'border-[#004EA2] bg-[#EAF2FB] text-[#002F65]'
-                      : 'border-[#E2E8F0] bg-white text-[#94A3B8] hover:border-[#94A3B8]'
-                  }`}
-                >
-                  <span className="text-xl">🏫</span>
-                  <span>원장</span>
-                  <span className="text-[10px] font-normal opacity-70">이메일로 로그인</span>
-                </button>
+              <div className={`grid gap-2 ${isJungkye ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                {[
+                  { key: 'name' as LoginMode, icon: '👤', label: '직원', sub: '이름으로 로그인' },
+                  { key: 'email' as LoginMode, icon: '🏫', label: '원장', sub: '이메일로 로그인' },
+                  ...(isJungkye ? [{ key: 'computer' as LoginMode, icon: '🖥️', label: '컴퓨터', sub: '교실 PC' }] : []),
+                ].map(({ key, icon, label, sub }) => (
+                  <button key={key} type="button"
+                    onClick={() => { setMode(key); setError('') }}
+                    className={`flex flex-col items-center gap-1 py-3 px-2 rounded-xl border-2 transition-all text-sm font-semibold ${
+                      mode === key
+                        ? 'border-[#004EA2] bg-[#EAF2FB] text-[#002F65]'
+                        : 'border-[#E2E8F0] bg-white text-[#94A3B8] hover:border-[#94A3B8]'
+                    }`}
+                  >
+                    <span className="text-xl">{icon}</span>
+                    <span>{label}</span>
+                    <span className="text-[10px] font-normal opacity-70">{sub}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* 컴퓨터 로그인: 1~11 선택 */}
+            {isCampus && mode === 'computer' && (
+              <div>
+                <p className="text-xs text-[#64748B] mb-2">교실 컴퓨터 번호를 선택하세요</p>
+                <div className="grid grid-cols-4 gap-2">
+                  {Array.from({ length: 11 }, (_, i) => i + 1).map(num => (
+                    <button key={num} type="button"
+                      onClick={() => handleComputerLogin(num)}
+                      disabled={loading}
+                      className="flex flex-col items-center py-2.5 rounded-xl border-2 border-[#E2E8F0] hover:border-[#004EA2] hover:bg-[#EAF2FB] transition-all disabled:opacity-50"
+                    >
+                      <span className="text-lg font-bold text-[#1E293B]">{num}</span>
+                      <span className="text-[9px] text-[#94A3B8]">컴퓨터{num}</span>
+                    </button>
+                  ))}
+                </div>
+                {loading && <p className="text-xs text-[#004EA2] text-center mt-2">로그인 중...</p>}
+                {error && <p className="text-[#EF4444] text-xs text-center mt-2">{error}</p>}
               </div>
             )}
 
@@ -273,46 +303,34 @@ export default function LoginPage() {
               </div>
             )}
 
-            {/* 비밀번호 */}
-            <div>
-              <label className="block text-sm font-medium text-[#1E293B] mb-1">비밀번호</label>
-              <input
-                type="password"
-                required
-                value={form.password}
-                onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-                className={`w-full border border-[#E2E8F0] rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 ${
-                  isCampus && mode === 'email' ? 'focus:ring-[#004EA2]' : 'focus:ring-[#004EA2]'
-                }`}
-                placeholder="••••••••"
-                autoComplete="current-password"
-              />
-            </div>
+            {/* 비밀번호 + 아이디저장 + 오류 — 컴퓨터 모드 제외 */}
+            {mode !== 'computer' && <>
+              <div>
+                <label className="block text-sm font-medium text-[#1E293B] mb-1">비밀번호</label>
+                <input
+                  type="password"
+                  required
+                  value={form.password}
+                  onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
+                  className="w-full border border-[#E2E8F0] rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]"
+                  placeholder="••••••••"
+                  autoComplete="current-password"
+                />
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input type="checkbox" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)}
+                  className="w-4 h-4 rounded border-[#CBD5E1] text-[#004EA2] accent-[#004EA2]" />
+                <span className="text-xs text-[#64748B]">아이디 저장</span>
+              </label>
+              {error && <p className="text-[#EF4444] text-sm text-center">{error}</p>}
+            </>}
 
-            {/* 아이디 저장 */}
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={rememberMe}
-                onChange={e => setRememberMe(e.target.checked)}
-                className="w-4 h-4 rounded border-[#CBD5E1] text-[#004EA2] accent-[#004EA2]"
-              />
-              <span className="text-xs text-[#64748B]">아이디 저장</span>
-            </label>
-
-            {error && <p className="text-[#EF4444] text-sm text-center">{error}</p>}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className={`w-full text-white font-semibold py-3 rounded-xl transition-colors disabled:opacity-50 text-sm ${
-                isCampus && mode === 'email'
-                  ? 'bg-[#004EA2] hover:bg-[#003E83]'
-                  : 'bg-[#004EA2] hover:bg-[#003E83]'
-              }`}
-            >
-              {loading ? '로그인 중...' : isCampus && mode === 'email' ? '원장 로그인' : '로그인'}
-            </button>
+            {mode !== 'computer' && (
+              <button type="submit" disabled={loading}
+                className="w-full text-white font-semibold py-3 rounded-xl transition-colors disabled:opacity-50 text-sm bg-[#004EA2] hover:bg-[#003E83]">
+                {loading ? '로그인 중...' : mode === 'email' ? '원장 로그인' : '로그인'}
+              </button>
+            )}
           </form>
 
           <div className="mt-4 text-center">
