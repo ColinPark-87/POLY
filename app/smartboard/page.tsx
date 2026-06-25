@@ -24,7 +24,23 @@ export default function SmartboardPage() {
   useEffect(() => {
     async function checkAuth() {
       const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
+      let { data: { user } } = await supabase.auth.getUser()
+
+      // ?computer=N 쿼리 → 자동 로그인 (부팅 자동시작용)
+      if (!user || user.user_metadata?.role !== 'smartboard') {
+        const params = new URLSearchParams(window.location.search)
+        const num = params.get('computer')
+        if (num && /^\d+$/.test(num)) {
+          const { error } = await supabase.auth.signInWithPassword({
+            email: `computer${num}@jungkye.poly`, password: '7659',
+          })
+          if (!error) {
+            const r = await supabase.auth.getUser()
+            user = r.data.user
+          }
+        }
+      }
+
       if (!user || user.user_metadata?.role !== 'smartboard') {
         setNotAuthorized(true); setAuthChecked(true); return
       }
@@ -51,7 +67,7 @@ export default function SmartboardPage() {
   useEffect(() => {
     if (!authChecked || notAuthorized) return
     poll()
-    const id = setInterval(poll, 30_000)
+    const id = setInterval(poll, 10_000)
     return () => clearInterval(id)
   }, [authChecked, notAuthorized, poll])
 

@@ -56,6 +56,16 @@ export async function POST(req: NextRequest) {
     .update({ completed_at: new Date().toISOString(), completed_by: 'teacher' })
     .eq('id', session.id)
 
+  // 강제 팝업이었으면 클리어
+  try {
+    const classroomId = user.user_metadata?.classroom_id
+    if (classroomId) {
+      await serviceClient.from('classrooms')
+        .update({ force_popup_class_id: null })
+        .eq('id', classroomId).eq('force_popup_class_id', class_id)
+    }
+  } catch { /* 비핵심 */ }
+
   try {
     await serviceClient
       .from('smartboard_devices')

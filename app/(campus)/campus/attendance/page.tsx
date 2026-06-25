@@ -669,6 +669,7 @@ function AttendanceSettings() {
               ? <p className="text-xs text-[#CBD5E1] py-1">배정된 반 없음</p>
               : <SettingsClassGrid
                   roomClasses={roomClasses}
+                  classroomId={room.id}
                   sessMap={sessMap}
                   roomDefault={room.popup_minutes_before}
                   selectedClassId={selectedClassId}
@@ -688,8 +689,9 @@ function AttendanceSettings() {
   )
 }
 
-function SettingsClassGrid({ roomClasses, sessMap, roomDefault, selectedClassId, onSelect, onPatch }: {
+function SettingsClassGrid({ roomClasses, classroomId, sessMap, roomDefault, selectedClassId, onSelect, onPatch }: {
   roomClasses: SettingsClass[]
+  classroomId: string
   sessMap: Map<string, SettingsSession>
   roomDefault: number
   selectedClassId: string | null
@@ -701,6 +703,16 @@ function SettingsClassGrid({ roomClasses, sessMap, roomDefault, selectedClassId,
   const [dragOver, setDragOver] = useState<string | null>(null)
   const [editingTimeId, setEditingTimeId] = useState<string | null>(null)
   const [timeDraft, setTimeDraft] = useState('')
+  const [popping, setPopping] = useState<string | null>(null)
+
+  async function forcePopup(classId: string) {
+    setPopping(classId)
+    await fetch('/api/campus/attendance/force-popup', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ classroom_id: classroomId, class_id: classId }),
+    })
+    setTimeout(() => setPopping(null), 2000)
+  }
 
   const sorted = order.map(id => roomClasses.find(c => c.id === id)).filter(Boolean) as SettingsClass[]
 
@@ -761,6 +773,13 @@ function SettingsClassGrid({ roomClasses, sessMap, roomDefault, selectedClassId,
                 roomDefault={roomDefault}
                 onSave={async (mins) => onPatch({ type: 'class_popup', class_id: cls.id, popup_minutes_before: mins })}
               />
+              {/* 임시 팝업 버튼 */}
+              <button
+                onClick={e => { e.stopPropagation(); forcePopup(cls.id) }}
+                className={`mt-0.5 w-full text-[7px] font-bold rounded py-0.5 transition-colors ${
+                  popping === cls.id ? 'bg-[#10B981] text-white' : 'bg-[#FFF3E0] text-[#E65100] hover:bg-[#FFE0B2]'
+                }`}
+              >{popping === cls.id ? '✓ 전송됨' : '🔔 지금 팝업'}</button>
             </div>
           </div>
         )
