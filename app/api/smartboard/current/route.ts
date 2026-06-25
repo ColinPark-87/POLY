@@ -14,18 +14,21 @@ export async function GET(req: Request) {
 
   const debug = new URL(req.url).searchParams.get('debug') === '1'
   const classroomId: string = user.user_metadata.classroom_id ?? ''
-  const campusId: string = user.user_metadata.campus_id ?? ''
-  if (!classroomId || !campusId) {
-    return NextResponse.json({ active: null, ...(debug ? { debug: { reason: 'no classroom_id/campus_id in account', metadata: user.user_metadata } } : {}) })
+  if (!classroomId) {
+    return NextResponse.json({ active: null, ...(debug ? { debug: { reason: 'no classroom_id in account', metadata: user.user_metadata } } : {}) })
   }
 
   const svc = createServiceClient()
 
-  // 교실 기본 팝업 분 + 강제 팝업
+  // 교실 정보 — campus_id는 교실 기준(metadata보다 권위 있음)
   const { data: room } = await svc
-    .from('classrooms').select('popup_minutes_before, force_popup_class_id').eq('id', classroomId).maybeSingle()
+    .from('classrooms').select('popup_minutes_before, force_popup_class_id, campus_id').eq('id', classroomId).maybeSingle()
   const roomDefault = room?.popup_minutes_before ?? 2
   const forcePopupClassId = room?.force_popup_class_id ?? null
+  const campusId: string = room?.campus_id ?? user.user_metadata.campus_id ?? ''
+  if (!campusId) {
+    return NextResponse.json({ active: null, ...(debug ? { debug: { reason: 'no campus_id on classroom', classroomId } } : {}) })
+  }
 
   // 최신 월 세션
   const { data: monthRows } = await svc
@@ -123,7 +126,7 @@ export async function GET(req: Request) {
   return NextResponse.json({
     active: null,
     ...(debug ? { debug: {
-      classroomId, roomName, latestMonth, todayDay, nowMin, forcePopupClassId,
+      classroomId, campusId, roomName, latestMonth, todayDay, nowMin, forcePopupClassId,
       totalClasses: (classes ?? []).length,
       myClassCount: myClasses.length,
       myClasses: myClasses.map((c: any) => {
