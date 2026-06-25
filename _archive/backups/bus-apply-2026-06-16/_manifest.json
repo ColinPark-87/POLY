@@ -1,0 +1,66 @@
+{
+  "generatedAt": "2026-06-16T03:20:07.956Z",
+  "stamp": "2026-06-16",
+  "campuses": {
+    "중계": {
+      "id": "ebb499c6-8fb4-4207-9f34-a75c1d29d973",
+      "code": "JK",
+      "file": "JK_중계.json",
+      "counts": {
+        "campus_students": 344,
+        "class_sessions": 20,
+        "classes": 171,
+        "class_enrollments": 1453,
+        "campus_buses": 7,
+        "campus_stop_coords": 177,
+        "campus_registered_stops": 3,
+        "pickup_overrides": 97
+      }
+    },
+    "목동매그넷": {
+      "id": "1fae6953-f99f-40c2-823b-2fad8e1c2303",
+      "code": "MM",
+      "file": "MM_목동매그넷.json",
+      "counts": {
+        "campus_students": 355,
+        "class_sessions": 4,
+        "classes": 33,
+        "class_enrollments": 355,
+        "campus_buses": 0,
+        "campus_stop_coords": 1,
+        "campus_registered_stops": 0,
+        "pickup_overrides": 0
+      }
+    },
+    "송도": {
+      "id": "1002b08a-e627-4d45-baea-f65ef50f219e",
+      "code": "SD",
+      "file": "SD_송도.json",
+      "counts": {
+        "campus_students": 400,
+        "class_sessions": 5,
+        "classes": 42,
+        "class_enrollments": 400,
+        "campus_buses": 0,
+        "campus_stop_coords": 1,
+        "campus_registered_stops": 0,
+        "pickup_overrides": 0
+      }
+    },
+    "송파": {
+      "id": "431ced03-e450-49b8-a396-dceb436d1c63",
+      "code": "SP",
+      "file": "SP_송파.json",
+      "counts": {
+        "campus_students": 489,
+        "class_sessions": 4,
+        "classes": 47,
+        "class_enrollments": 489,
+        "campus_buses": 0,
+        "campus_stop_coords": 1,
+        "campus_registered_stops": 0,
+        "pickup_overrides": 0
+      }
+    }
+  }
+}

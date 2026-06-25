@@ -15,9 +15,9 @@ const navItems = [
 const staffNavItems = [
   { href: '/dashboard', label: '내연차', icon: '🌴' },
   { href: '/apply', label: '신청', icon: '✏️' },
-  { href: '/history', label: '내역', icon: '🕐' },
   { href: '/campus/class-roster', label: '반편성', icon: '🏫' },
   { href: '/campus/vehicles', label: '등하원', icon: '🚌' },
+  { href: '/campus/attendance', label: '출결', icon: '✅' },
 ]
 
 export default function CampusBottomNav({ staffOnly = false }: { staffOnly?: boolean }) {

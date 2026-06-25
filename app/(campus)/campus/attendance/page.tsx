@@ -514,6 +514,8 @@ function AttendanceSettings() {
   const [roomDraft, setRoomDraft] = useState<Partial<Classroom>>({})
   const [selectedClassId, setSelectedClassId] = useState<string | null>(null)
   const [classDraft, setClassDraft] = useState<{ days: string; time_range: string; classroom_id: string }>({ days: '', time_range: '', classroom_id: '' })
+  const [creatingAccounts, setCreatingAccounts] = useState(false)
+  const [accountResults, setAccountResults] = useState<{ email: string; classroom: string; status: string }[] | null>(null)
 
   const load = useCallback(async () => {
     const res = await fetch('/api/campus/attendance/settings')
@@ -559,6 +561,39 @@ function AttendanceSettings() {
 
   return (
     <div className="space-y-6">
+      {/* 컴퓨터 계정 일괄 생성 */}
+      <div className="flex items-center gap-3 p-3 bg-[#F8FAFC] rounded-xl border border-[#E2E8F0] mb-2">
+        <div className="flex-1">
+          <p className="text-xs font-medium text-[#1E293B]">컴퓨터 계정 자동 생성</p>
+          <p className="text-[10px] text-[#94A3B8]">computer1~11 계정 생성 (비밀번호: 7659) + 교실 자동 연결</p>
+        </div>
+        <button
+          onClick={async () => {
+            if (!confirm('컴퓨터 1~11 계정을 생성하고 교실에 연결합니다. 계속하시겠습니까?')) return
+            setCreatingAccounts(true)
+            const res = await fetch('/api/campus/attendance/create-computer-accounts', { method: 'POST' })
+            const d = await res.json()
+            setAccountResults(d.results)
+            setCreatingAccounts(false)
+            load()
+          }}
+          disabled={creatingAccounts}
+          className="bg-[#1e3a5f] text-white text-xs px-4 py-2 rounded-lg hover:bg-[#2c5f8a] disabled:opacity-50 flex-shrink-0"
+        >{creatingAccounts ? '생성 중...' : '계정 생성'}</button>
+      </div>
+      {accountResults && (
+        <div className="mb-3 p-3 bg-white rounded-xl border border-[#E2E8F0] text-[10px] space-y-0.5">
+          {accountResults.map(r => (
+            <div key={r.email} className="flex gap-2">
+              <span className="text-[#1E293B] font-medium w-36 truncate">{r.email}</span>
+              <span className="text-[#64748B] w-20">{r.classroom}</span>
+              <span className={r.status.includes('완료') ? 'text-[#10B981]' : 'text-[#EF4444]'}>{r.status}</span>
+            </div>
+          ))}
+          <button onClick={() => setAccountResults(null)} className="text-[#94A3B8] mt-1">닫기</button>
+        </div>
+      )}
+
       {classrooms.length === 0 && (
         <div className="py-10 text-center text-[#94A3B8] text-sm">015_classrooms.sql 실행 필요</div>
       )}

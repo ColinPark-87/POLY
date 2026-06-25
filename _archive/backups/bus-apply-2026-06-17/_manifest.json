@@ -1,0 +1,51 @@
+{
+  "generatedAt": "2026-06-17T01:44:21.437Z",
+  "stamp": "2026-06-17",
+  "campuses": {
+    "중계": {
+      "id": "ebb499c6-8fb4-4207-9f34-a75c1d29d973",
+      "code": "JK",
+      "file": "JK_중계.json",
+      "counts": {
+        "campus_students": 345,
+        "class_sessions": 20,
+        "classes": 171,
+        "class_enrollments": 1454,
+        "campus_buses": 7,
+        "campus_stop_coords": 178,
+        "campus_registered_stops": 3,
+        "pickup_overrides": 102
+      }
+    },
+    "광교": {
+      "id": "f6a5e446-905d-4876-9389-10b535a4b985",
+      "code": "GG",
+      "file": "GG_광교.json",
+      "counts": {
+        "campus_students": 369,
+        "class_sessions": 5,
+        "classes": 36,
+        "class_enrollments": 369,
+        "campus_buses": 0,
+        "campus_stop_coords": 1,
+        "campus_registered_stops": 0,
+        "pickup_overrides": 0
+      }
+    },
+    "분당": {
+      "id": "b212958f-92f9-495a-b3b8-17983e67c7dd",
+      "code": "BD",
+      "file": "BD_분당.json",
+      "counts": {
+        "campus_students": 387,
+        "class_sessions": 5,
+        "classes": 44,
+        "class_enrollments": 387,
+        "campus_buses": 13,
+        "campus_stop_coords": 1,
+        "campus_registered_stops": 0,
+        "pickup_overrides": 1
+      }
+    }
+  }
+}
