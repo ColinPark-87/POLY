@@ -246,7 +246,7 @@ export default function AttendancePage() {
       {/* ── 출결 현황 탭 ── */}
       {pageTab === 'roster' && (<>
 
-      {/* 히어로: 선택된 세션 기준 */}
+      {/* 히어로: 한 줄 인라인 */}
       {activeGroup && (() => {
         const g = activeGroup
         const total   = g.classes.reduce((n, c) => n + c.students.length, 0)
@@ -255,24 +255,20 @@ export default function AttendancePage() {
         const preAbs  = g.classes.reduce((n, c) => n + c.students.filter(s => s.pre_marked && s.status === 'absent').length, 0)
         const present = total - absent - late - preAbs
         return (
-          <div className="mb-4">
-            <p className="text-xs text-[#94A3B8] mb-2">
-              <span className="font-medium" style={{ color: g.color }}>{g.name}</span>
-              {g.time_range && <span className="ml-2">{g.time_range}</span>}
-              <span className="ml-2">· {g.classes.length}반 · 총 {total}명</span>
-            </p>
-            <div className="grid grid-cols-4 gap-3">
+          <div className="flex items-center gap-2 mb-3 px-3 py-2 bg-white rounded-xl border border-[#E2E8F0] shadow-sm flex-wrap">
+            <span className="text-xs font-bold" style={{ color: g.color }}>{g.name}</span>
+            {g.time_range && <span className="text-xs text-[#94A3B8]">{g.time_range}</span>}
+            <span className="text-xs text-[#94A3B8]">총 {total}명</span>
+            <div className="flex items-center gap-1.5 ml-auto flex-wrap">
               {[
                 { label: '출석', value: present, color: '#10B981', bg: '#F0FDF4' },
                 { label: '결석', value: absent,  color: '#DC2626', bg: '#FEF2F2' },
                 { label: '지각', value: late,    color: '#D97706', bg: '#FFFBEB' },
-                { label: '사전결석', value: preAbs, color: '#7C3AED', bg: '#FDF4FF' },
+                { label: '사전', value: preAbs,  color: '#7C3AED', bg: '#FDF4FF' },
               ].map(({ label, value, color, bg }) => (
-                <div key={label} className="rounded-xl px-4 py-3 flex flex-col" style={{ background: bg }}>
-                  <span className="text-xs font-medium mb-1" style={{ color }}>{label}</span>
-                  <span className="text-2xl font-extrabold" style={{ color }}>{value}</span>
-                  <span className="text-[10px] mt-0.5" style={{ color, opacity: 0.7 }}>/ {total}명</span>
-                </div>
+                <span key={label} className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold" style={{ background: bg, color }}>
+                  {label} {value}
+                </span>
               ))}
             </div>
           </div>
@@ -317,64 +313,6 @@ export default function AttendancePage() {
       {/* 활성 세션 */}
       {activeGroup && (
         <>
-          {/* 요일 토글 */}
-          <div className="flex items-center gap-1.5 mb-3 flex-wrap">
-            <span className="text-xs text-[#64748B]">수업 요일</span>
-            {/* 전체 리셋 버튼 */}
-            <button
-              onClick={async () => {
-                await fetch('/api/campus/class-roster', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ action: 'update_session', session_id: activeGroup.session_id, days: null }),
-                })
-                loadData()
-              }}
-              className={`text-xs font-bold px-2 h-7 rounded transition-colors ${
-                !activeGroup.days ? 'text-white' : 'bg-[#F1F5F9] text-[#94A3B8]'
-              }`}
-              style={!activeGroup.days ? { background: activeGroup.color } : {}}
-            >전체</button>
-            {(['월','화','수','목','금'] as const).map(d => {
-              // null(전체) 일 때는 모두 활성, 설정된 경우만 개별 체크
-              const active = activeGroup.days ? activeGroup.days.includes(d) : false
-              return (
-                <button key={d}
-                  onClick={async () => {
-                    const cur = activeGroup.days ?? '월화수목금'
-                    const next = active ? cur.replace(d, '') : cur + d
-                    await fetch('/api/campus/class-roster', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ action: 'update_session', session_id: activeGroup.session_id, days: next || null }),
-                    })
-                    loadData()
-                  }}
-                  className={`text-xs font-bold w-8 h-7 rounded transition-colors ${
-                    active ? 'text-white' : 'bg-[#F1F5F9] text-[#CBD5E1]'
-                  }`}
-                  style={active ? { background: activeGroup.color } : {}}
-                >{d}</button>
-              )
-            })}
-            <span className="text-xs text-[#94A3B8] ml-1">
-              {activeGroup.days ? `${activeGroup.days} 요일만 표시` : '매일 표시'}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2 mb-3">
-            {activeGroup.time_range && (
-              <span className="text-xs text-[#64748B] bg-[#F1F5F9] px-2 py-0.5 rounded-full">{activeGroup.time_range}</span>
-            )}
-            <span className="text-xs text-[#94A3B8]">
-              {activeGroup.classes.length}반 · {activeGroup.classes.reduce((n, c) => n + c.students.length, 0)}명
-            </span>
-            {activeGroup.classes.reduce((n, c) => n + c.absent_count, 0) > 0 && (
-              <span className="text-xs text-[#DC2626] font-medium">
-                결석 {activeGroup.classes.reduce((n, c) => n + c.absent_count, 0)}명
-              </span>
-            )}
-          </div>
 
           {/* 5열 그리드 */}
           <div className="grid gap-[6px]" style={{ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}>
@@ -664,55 +602,90 @@ function AttendanceSettings() {
               </div>
             )}
 
-            {/* 5열 카드 그리드 (시간순) */}
+            {/* 5열 카드 그리드 (시간순, 드래그 reorder) */}
             {roomClasses.length === 0
-              ? <p className="text-xs text-[#CBD5E1] py-2">배정된 반 없음</p>
-              : (
-                <div className="grid gap-[6px]" style={{ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}>
-                  {roomClasses.map(cls => {
-                    const sess = sessMap.get(cls.session_id)
-                    const isSelected = selectedClassId === cls.id
-                    const popupMin = cls.popup_minutes_before ?? room.popup_minutes_before
-                    return (
-                      <div key={cls.id}
-                        onClick={() => {
-                          if (selectedClassId === cls.id) { setSelectedClassId(null); return }
-                          setSelectedClassId(cls.id)
-                          setClassDraft({ days: cls.days ?? sess?.days ?? '', time_range: sess?.time_range ?? '', classroom_id: cls.classroom_id ?? '' })
-                        }}
-                        className={`rounded-[9px] border-[1.5px] bg-white shadow-sm overflow-hidden cursor-pointer transition-all ${isSelected ? 'border-[#004EA2] ring-2 ring-[#004EA2]/20' : 'border-[#E0E0E0] hover:border-[#004EA2]'}`}
-                      >
-                        {/* 컬러 헤더 */}
-                        <div className="px-2 py-1.5 text-white" style={{ background: cls.color || '#94A3B8' }}>
-                          <p className="text-[11px] font-extrabold leading-tight truncate">{cls.level}</p>
-                          {cls.teacher && <p className="text-[8px] opacity-75 truncate">{cls.teacher}</p>}
-                        </div>
-                        {/* 정보 */}
-                        <div className="px-2 py-1.5 space-y-0.5">
-                          <p className="text-[10px] text-[#64748B] truncate">{sess?.time_range ?? '시간 미설정'}</p>
-                          <p className="text-[9px] text-[#94A3B8] truncate">{cls.days ?? sess?.days ?? '매일'}</p>
-                          {/* 팝업 시간 (인라인 편집) */}
-                          <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                            <span className="text-[9px] text-[#94A3B8]">팝업</span>
-                            <input
-                              type="number" min={0} max={30}
-                              value={cls.popup_minutes_before ?? ''}
-                              placeholder={String(room.popup_minutes_before)}
-                              onChange={async e => {
-                                const val = e.target.value === '' ? null : Number(e.target.value)
-                                await patch({ type: 'class_popup', class_id: cls.id, popup_minutes_before: val })
-                              }}
-                              className="w-10 text-[9px] border border-[#E2E8F0] rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#004EA2]"
-                            />
-                            <span className="text-[9px] text-[#94A3B8]">분</span>
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )
+              ? <p className="text-xs text-[#CBD5E1] py-1">배정된 반 없음</p>
+              : <SettingsClassGrid
+                  roomClasses={roomClasses}
+                  sessMap={sessMap}
+                  roomDefault={room.popup_minutes_before}
+                  selectedClassId={selectedClassId}
+                  onSelect={(cls, sess) => {
+                    if (selectedClassId === cls.id) { setSelectedClassId(null); return }
+                    setSelectedClassId(cls.id)
+                    setClassDraft({ days: cls.days ?? sess?.days ?? '', time_range: sess?.time_range ?? '', classroom_id: cls.classroom_id ?? '' })
+                  }}
+                  onPatch={patch}
+                />
             }
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function SettingsClassGrid({ roomClasses, sessMap, roomDefault, selectedClassId, onSelect, onPatch }: {
+  roomClasses: SettingsClass[]
+  sessMap: Map<string, SettingsSession>
+  roomDefault: number
+  selectedClassId: string | null
+  onSelect: (cls: SettingsClass, sess: SettingsSession | undefined) => void
+  onPatch: (body: object) => Promise<void>
+}) {
+  const [order, setOrder] = useState<string[]>(() => roomClasses.map(c => c.id))
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [dragOver, setDragOver] = useState<string | null>(null)
+
+  const sorted = order.map(id => roomClasses.find(c => c.id === id)).filter(Boolean) as SettingsClass[]
+
+  async function drop(targetId: string) {
+    if (!dragId || dragId === targetId) { setDragId(null); setDragOver(null); return }
+    const next = [...order]
+    const from = next.indexOf(dragId); const to = next.indexOf(targetId)
+    next.splice(from, 1); next.splice(to, 0, dragId)
+    setOrder(next)
+    setDragId(null); setDragOver(null)
+    await onPatch({ type: 'reorder_classes', orders: next.map((id, i) => ({ id, sort_order: i })) })
+  }
+
+  return (
+    <div className="grid gap-[4px]" style={{ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}>
+      {sorted.map(cls => {
+        const sess = sessMap.get(cls.session_id)
+        const isSelected = selectedClassId === cls.id
+        return (
+          <div key={cls.id}
+            draggable
+            onDragStart={() => setDragId(cls.id)}
+            onDragOver={e => { e.preventDefault(); setDragOver(cls.id) }}
+            onDragLeave={() => setDragOver(null)}
+            onDrop={() => drop(cls.id)}
+            onDragEnd={() => { setDragId(null); setDragOver(null) }}
+            onClick={() => onSelect(cls, sess)}
+            className={`rounded-[7px] border bg-white overflow-hidden cursor-grab active:cursor-grabbing transition-all ${
+              dragOver === cls.id ? 'ring-2 ring-[#004EA2]' : dragId === cls.id ? 'opacity-40' : ''
+            } ${isSelected ? 'border-[#004EA2]' : 'border-[#E0E0E0] hover:border-[#004EA2]'}`}
+          >
+            <div className="px-1.5 py-1 text-white" style={{ background: cls.color || '#94A3B8' }}>
+              <p className="text-[10px] font-extrabold truncate">{cls.level}</p>
+            </div>
+            <div className="px-1.5 py-1">
+              <p className="text-[9px] text-[#64748B] truncate">{sess?.time_range ?? '미설정'}</p>
+              <p className="text-[8px] text-[#94A3B8] truncate">{cls.days ?? sess?.days ?? '매일'}</p>
+              <div className="flex items-center gap-0.5 mt-0.5" onClick={e => e.stopPropagation()}>
+                <input type="number" min={0} max={30}
+                  value={cls.popup_minutes_before ?? ''}
+                  placeholder={String(roomDefault)}
+                  onChange={async e => {
+                    const val = e.target.value === '' ? null : Number(e.target.value)
+                    await onPatch({ type: 'class_popup', class_id: cls.id, popup_minutes_before: val })
+                  }}
+                  className="w-8 text-[8px] border border-[#E2E8F0] rounded px-0.5 py-px focus:outline-none"
+                />
+                <span className="text-[8px] text-[#94A3B8]">분</span>
+              </div>
+            </div>
           </div>
         )
       })}

@@ -130,5 +130,14 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ ok: true })
   }
 
+  // 반 순서 변경
+  if (body.type === 'reorder_classes') {
+    const { orders } = body as { orders: { id: string; sort_order: number }[] }
+    await Promise.all(orders.map(({ id, sort_order }) =>
+      serviceClient.from('classes').update({ sort_order }).eq('id', id)
+    ))
+    return NextResponse.json({ ok: true })
+  }
+
   return NextResponse.json({ error: 'unknown type' }, { status: 400 })
 }
