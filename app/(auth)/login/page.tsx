@@ -211,19 +211,21 @@ export default function LoginPage() {
           </div>
 
           <form onSubmit={handleLogin} className="space-y-4">
-            {/* 소속 선택 */}
+            {/* 소속 선택 — 2열 버튼 그리드 */}
             <div>
               <label className="block text-sm font-medium text-[#1E293B] mb-1">소속</label>
-              <select
-                value={selected}
-                onChange={e => handleSelectChange(e.target.value)}
-                className="w-full border border-[#E2E8F0] rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2] bg-white"
-              >
-                <option value="hq">🏢 본사 (HQ)</option>
+              <div className="grid grid-cols-2 gap-1.5">
+                <button type="button" onClick={() => handleSelectChange('hq')}
+                  className={`py-2 px-2 rounded-lg text-xs font-medium border transition-colors truncate ${
+                    selected === 'hq' ? 'border-[#004EA2] bg-[#EAF2FB] text-[#002F65]' : 'border-[#E2E8F0] bg-white text-[#64748B] hover:border-[#94A3B8]'
+                  }`}>🏢 본사</button>
                 {campuses.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
+                  <button key={c.id} type="button" onClick={() => handleSelectChange(c.id)}
+                    className={`py-2 px-2 rounded-lg text-xs font-medium border transition-colors truncate ${
+                      selected === c.id ? 'border-[#004EA2] bg-[#EAF2FB] text-[#002F65]' : 'border-[#E2E8F0] bg-white text-[#64748B] hover:border-[#94A3B8]'
+                    }`}>{c.name}</button>
                 ))}
-              </select>
+              </div>
             </div>
 
             {/* 캠퍼스: 직원 / 원장 / 컴퓨터 탭 */}
