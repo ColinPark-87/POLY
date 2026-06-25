@@ -59,6 +59,7 @@ interface SessionGroup {
 type DraftMap = Map<string, Map<string, { status: LocalStatus; note: string }>>
 
 export default function AttendancePage() {
+  const [pageTab, setPageTab] = useState<'roster' | 'settings'>('roster')
   const [classes, setClasses] = useState<ClassWithAttendance[]>([])
   const [loading, setLoading] = useState(true)
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
@@ -219,16 +220,57 @@ export default function AttendancePage() {
   return (
     <div className="max-w-full">
       {/* 헤더 */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-3">
         <div>
           <h1 className="text-xl font-bold text-[#1E293B]">출결 관리</h1>
           <p className="text-[#64748B] text-xs mt-0.5">{today}</p>
         </div>
-        <button onClick={() => setShowPreAbsence(true)}
-          className="bg-[#004EA2] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 transition-colors">
-          사전 결석 등록
-        </button>
+        {pageTab === 'roster' && (
+          <button onClick={() => setShowPreAbsence(true)}
+            className="bg-[#004EA2] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 transition-colors">
+            사전 결석 등록
+          </button>
+        )}
       </div>
+
+      {/* 페이지 탭 */}
+      <div className="flex gap-0 border-b border-[#E2E8F0] mb-4">
+        {([['roster','출결 현황'],['settings','세팅']] as const).map(([key, label]) => (
+          <button key={key} onClick={() => setPageTab(key)}
+            className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              pageTab === key ? 'border-[#004EA2] text-[#004EA2]' : 'border-transparent text-[#64748B] hover:text-[#1E293B]'
+            }`}>{label}</button>
+        ))}
+      </div>
+
+      {/* ── 출결 현황 탭 ── */}
+      {pageTab === 'roster' && (<>
+
+      {/* 히어로: 전체 세션 요약 */}
+      {sessionGroups.length > 0 && (() => {
+        const todayGroups = sessionGroups.filter(g => g.is_today)
+        const total   = todayGroups.reduce((n, g) => n + g.classes.reduce((m, c) => m + c.students.length, 0), 0)
+        const absent  = todayGroups.reduce((n, g) => n + g.classes.reduce((m, c) => m + c.students.filter(s => s.status === 'absent' && !s.pre_marked).length, 0), 0)
+        const late    = todayGroups.reduce((n, g) => n + g.classes.reduce((m, c) => m + c.late_count, 0), 0)
+        const preAbs  = todayGroups.reduce((n, g) => n + g.classes.reduce((m, c) => m + c.students.filter(s => s.pre_marked && s.status === 'absent').length, 0), 0)
+        const present = total - absent - late - preAbs
+        return (
+          <div className="grid grid-cols-4 gap-3 mb-4">
+            {[
+              { label: '출석', value: present, color: '#10B981', bg: '#F0FDF4' },
+              { label: '결석', value: absent,  color: '#DC2626', bg: '#FEF2F2' },
+              { label: '지각', value: late,    color: '#D97706', bg: '#FFFBEB' },
+              { label: '사전결석', value: preAbs, color: '#7C3AED', bg: '#FDF4FF' },
+            ].map(({ label, value, color, bg }) => (
+              <div key={label} className="rounded-xl px-4 py-3 flex flex-col" style={{ background: bg }}>
+                <span className="text-xs font-medium mb-1" style={{ color }}>{label}</span>
+                <span className="text-2xl font-extrabold" style={{ color }}>{value}</span>
+                <span className="text-[10px] mt-0.5" style={{ color, opacity: 0.7 }}>/ {total}명</span>
+              </div>
+            ))}
+          </div>
+        )
+      })()}
 
       {/* 세션 탭 (드래그로 순서 변경) */}
       <div className="flex gap-0 border-b border-[#E2E8F0] mb-4 overflow-x-auto">
@@ -363,6 +405,10 @@ export default function AttendancePage() {
         <PreAbsenceModal classes={classes} onClose={() => setShowPreAbsence(false)}
           onSaved={() => { setShowPreAbsence(false); loadData() }} />
       )}
+      </>)}
+
+      {/* ── 세팅 탭 ── */}
+      {pageTab === 'settings' && <AttendanceSettings />}
     </div>
   )
 }
@@ -501,6 +547,148 @@ function ClassCard({ classData, color, sessionDays, students, dirty, isSaving, o
           >
             {isSaving ? '저장 중...' : '출석 완료 저장'}
           </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ──────────────────────────────────────────────
+// 세팅 탭
+// ──────────────────────────────────────────────
+interface Classroom { id: string; display_name: string; account_email: string | null; popup_minutes_before: number }
+interface SettingsSession { id: string; name: string; time_range: string | null; days: string | null }
+interface SettingsClass { id: string; session_id: string; level: string; room: string | null; teacher: string | null; color: string; days: string | null; classroom_id: string | null }
+
+function AttendanceSettings() {
+  const [classrooms, setClassrooms] = useState<Classroom[]>([])
+  const [sessions, setSessions] = useState<SettingsSession[]>([])
+  const [classes, setClasses] = useState<SettingsClass[]>([])
+  const [loading, setLoading] = useState(true)
+  const [editingRoom, setEditingRoom] = useState<string | null>(null)
+  const [roomDraft, setRoomDraft] = useState<Partial<Classroom>>({})
+
+  const load = useCallback(async () => {
+    const res = await fetch('/api/campus/attendance/settings')
+    if (res.ok) {
+      const d = await res.json()
+      setClassrooms(d.classrooms ?? [])
+      setSessions(d.sessions ?? [])
+      setClasses(d.classes ?? [])
+    }
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  async function patch(body: object) {
+    await fetch('/api/campus/attendance/settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    load()
+  }
+
+  if (loading) return <div className="p-8 text-gray-400">로딩 중...</div>
+
+  const sessMap = new Map(sessions.map(s => [s.id, s]))
+  const unassigned = classes.filter(c => !c.classroom_id)
+
+  return (
+    <div className="space-y-5">
+      <p className="text-xs text-[#64748B]">교실별 스마트보드 계정, 팝업 시간, 배정된 반을 관리합니다.</p>
+
+      {classrooms.length === 0 && (
+        <div className="py-10 text-center text-[#94A3B8] text-sm">
+          교실이 없습니다. Supabase SQL Editor에서 015_classrooms.sql을 실행해 주세요.
+        </div>
+      )}
+
+      {classrooms.map(room => {
+        const roomClasses = classes.filter(c => c.classroom_id === room.id)
+        const isEditing = editingRoom === room.id
+        return (
+          <div key={room.id} className="bg-white rounded-xl border border-[#E2E8F0] shadow-sm overflow-hidden">
+            <div className="px-4 py-3 bg-[#1e3a5f] text-white flex items-center justify-between">
+              <div className="flex items-center gap-3 flex-wrap">
+                <span className="text-base font-extrabold">교실 {room.display_name}</span>
+                {room.account_email
+                  ? <span className="text-xs bg-green-400/30 text-green-200 px-2 py-0.5 rounded-full">{room.account_email}</span>
+                  : <span className="text-xs bg-white/10 text-white/40 px-2 py-0.5 rounded-full">계정 미설정</span>}
+                <span className="text-xs text-white/50">팝업 {room.popup_minutes_before}분 전</span>
+              </div>
+              <button onClick={() => { setEditingRoom(isEditing ? null : room.id); setRoomDraft({ ...room }) }}
+                className="text-xs bg-white/20 hover:bg-white/30 px-3 py-1 rounded transition-colors">
+                {isEditing ? '닫기' : '설정'}
+              </button>
+            </div>
+
+            {isEditing && (
+              <div className="px-4 py-3 bg-[#F8FAFC] border-b border-[#E2E8F0] flex flex-wrap gap-3 items-end">
+                <div>
+                  <label className="text-xs text-[#64748B] block mb-1">계정 이메일</label>
+                  <input value={roomDraft.account_email ?? ''} onChange={e => setRoomDraft(p => ({ ...p, account_email: e.target.value }))}
+                    placeholder="room-a@poly.jungkye"
+                    className="border border-[#E2E8F0] rounded-lg px-3 py-1.5 text-sm w-52 focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]" />
+                </div>
+                <div>
+                  <label className="text-xs text-[#64748B] block mb-1">팝업 시작 (분 전)</label>
+                  <input type="number" min={0} max={30} value={roomDraft.popup_minutes_before ?? 2}
+                    onChange={e => setRoomDraft(p => ({ ...p, popup_minutes_before: Number(e.target.value) }))}
+                    className="border border-[#E2E8F0] rounded-lg px-3 py-1.5 text-sm w-20 focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]" />
+                </div>
+                <button onClick={async () => { await patch({ type: 'classroom', classroom_id: room.id, account_email: roomDraft.account_email, popup_minutes_before: roomDraft.popup_minutes_before }); setEditingRoom(null) }}
+                  className="bg-[#1e3a5f] text-white text-sm px-4 py-1.5 rounded-lg hover:bg-[#2c5f8a]">저장</button>
+              </div>
+            )}
+
+            <div className="divide-y divide-[#F1F5F9]">
+              {roomClasses.length === 0
+                ? <div className="px-4 py-3 text-xs text-[#CBD5E1]">배정된 반 없음</div>
+                : roomClasses.map(cls => {
+                  const sess = sessMap.get(cls.session_id)
+                  return (
+                    <div key={cls.id} className="px-4 py-2.5 flex items-center gap-3 flex-wrap">
+                      <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: cls.color || '#94A3B8' }} />
+                      <span className="text-sm font-semibold text-[#1E293B] w-20 truncate">{cls.level}</span>
+                      <span className="text-xs text-[#64748B] w-28 truncate">{sess?.name ?? ''}</span>
+                      <span className="text-xs text-[#64748B] bg-[#F1F5F9] px-2 py-0.5 rounded-full">{sess?.time_range ?? '미설정'}</span>
+                      <span className="text-xs text-[#94A3B8]">{cls.days ?? sess?.days ?? '매일'}</span>
+                      {cls.teacher && <span className="text-xs text-[#94A3B8]">{cls.teacher}</span>}
+                      <button onClick={() => patch({ type: 'class_classroom', class_id: cls.id, classroom_id: null })}
+                        className="ml-auto text-xs text-[#EF4444] hover:underline">해제</button>
+                    </div>
+                  )
+                })}
+            </div>
+          </div>
+        )
+      })}
+
+      {unassigned.length > 0 && (
+        <div className="bg-white rounded-xl border border-dashed border-[#E2E8F0]">
+          <div className="px-4 py-2 border-b border-[#E2E8F0]">
+            <span className="text-sm font-bold text-[#64748B]">미배정 반 ({unassigned.length})</span>
+          </div>
+          <div className="divide-y divide-[#F1F5F9]">
+            {unassigned.map(cls => {
+              const sess = sessMap.get(cls.session_id)
+              return (
+                <div key={cls.id} className="px-4 py-2.5 flex items-center gap-3 flex-wrap">
+                  <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: cls.color || '#94A3B8' }} />
+                  <span className="text-sm font-semibold text-[#1E293B] w-20 truncate">{cls.level}</span>
+                  <span className="text-xs text-[#64748B] w-28 truncate">{sess?.name ?? ''}</span>
+                  <span className="text-xs text-[#64748B] bg-[#F1F5F9] px-2 py-0.5 rounded-full">{sess?.time_range ?? '미설정'}</span>
+                  <select defaultValue="" onChange={e => { if (e.target.value) patch({ type: 'class_classroom', class_id: cls.id, classroom_id: e.target.value }) }}
+                    className="ml-auto text-xs border border-[#E2E8F0] rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[#1e3a5f]">
+                    <option value="">교실 배정...</option>
+                    {classrooms.map(r => <option key={r.id} value={r.id}>교실 {r.display_name}</option>)}
+                  </select>
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
     </div>
