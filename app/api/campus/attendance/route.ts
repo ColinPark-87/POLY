@@ -62,15 +62,19 @@ export async function GET(req: NextRequest) {
   // 3. 전체 수강생 (class_enrollments → campus_students)
   const { data: enrollments } = await serviceClient
     .from('class_enrollments')
-    .select('class_id, student_id, sort_order, campus_students(name)')
+    .select('class_id, student_id, sort_order, campus_students(name, english_name)')
     .in('class_id', classIds)
     .neq('is_waitlist', true)
     .order('sort_order')
 
-  const enrollmentsByClass = new Map<string, { student_id: string; name: string }[]>()
+  const enrollmentsByClass = new Map<string, { student_id: string; name: string; english_name: string | null }[]>()
   for (const e of (enrollments ?? []) as any[]) {
     const list = enrollmentsByClass.get(e.class_id) ?? []
-    list.push({ student_id: e.student_id, name: (e.campus_students as any)?.name ?? '' })
+    list.push({
+      student_id: e.student_id,
+      name: (e.campus_students as any)?.name ?? '',
+      english_name: (e.campus_students as any)?.english_name ?? null,
+    })
     enrollmentsByClass.set(e.class_id, list)
   }
 
@@ -105,6 +109,7 @@ export async function GET(req: NextRequest) {
       return {
         student_id: s.student_id,
         student_name: s.name,
+        student_english_name: s.english_name,
         status: r?.status ?? 'present',
         pre_marked: r?.pre_marked ?? false,
         note: r?.note ?? null,

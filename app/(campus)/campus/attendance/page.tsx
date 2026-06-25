@@ -17,17 +17,22 @@ function sessColor(name: string, idx: number) {
   return FALLBACK_COLORS[idx % FALLBACK_COLORS.length]
 }
 
-// 4-state cycle: present → absent → late → pre_absent → present
 type LocalStatus = 'present' | 'absent' | 'late' | 'pre_absent'
-const CYCLE: LocalStatus[] = ['present', 'absent', 'late', 'pre_absent']
-const STATUS_NEXT = (s: LocalStatus): LocalStatus => CYCLE[(CYCLE.indexOf(s) + 1) % CYCLE.length]
 
-const STATUS_BADGE: Record<LocalStatus, { bg: string; bd: string; tx: string; label: string } | null> = {
-  present:    null,
-  absent:     { bg: '#FEF2F2', bd: '#FCA5A5', tx: '#DC2626',  label: '결석' },
-  late:       { bg: '#FFFBEB', bd: '#FCD34D', tx: '#D97706',  label: '지각' },
-  pre_absent: { bg: '#FDF4FF', bd: '#D8B4FE', tx: '#7C3AED',  label: '사전결석' },
+// 각 버튼 스타일: off(기본) / on(선택)
+const BTN_OFF = 'border border-[#E2E8F0] text-[#94A3B8] bg-white'
+const BTN_ON: Record<LocalStatus, string> = {
+  present:    'border border-[#10B981] text-white bg-[#10B981]',
+  absent:     'border border-[#DC2626] text-white bg-[#DC2626]',
+  late:       'border border-[#D97706] text-white bg-[#D97706]',
+  pre_absent: 'border border-[#7C3AED] text-white bg-[#7C3AED]',
 }
+const BTN_LABELS: { status: LocalStatus; label: string }[] = [
+  { status: 'present',    label: '출석' },
+  { status: 'absent',     label: '결석' },
+  { status: 'late',       label: '지각' },
+  { status: 'pre_absent', label: '사전' },
+]
 
 const UI_STATUS_STYLE: Record<string, string> = {
   '미도래': 'bg-white/20 text-white/70',
@@ -38,6 +43,7 @@ const UI_STATUS_STYLE: Record<string, string> = {
 interface StudentLocal {
   student_id: string
   name: string
+  english_name: string | null
   status: LocalStatus
   note: string
 }
@@ -117,7 +123,13 @@ export default function AttendancePage() {
     return classData.students.map(s => {
       const d = classMap?.get(s.student_id)
       const raw = d?.status ?? (s.pre_marked && s.status === 'absent' ? 'pre_absent' : s.status as LocalStatus)
-      return { student_id: s.student_id, name: s.student_name, status: raw, note: d?.note ?? s.note ?? '' }
+      return {
+        student_id: s.student_id,
+        name: s.student_name,
+        english_name: (s as any).student_english_name ?? null,
+        status: raw,
+        note: d?.note ?? s.note ?? '',
+      }
     })
   }
 
@@ -246,10 +258,7 @@ export default function AttendancePage() {
                 students={getStudents(c)}
                 dirty={isDirty(c.class_id)}
                 isSaving={saving.has(c.class_id)}
-                onCycleStatus={(sid) => {
-                  const cur = getStudents(c).find(s => s.student_id === sid)!
-                  setStudentStatus(c.class_id, sid, STATUS_NEXT(cur.status))
-                }}
+                onSetStatus={(sid, st) => setStudentStatus(c.class_id, sid, st)}
                 onSetNote={(sid, note) => setNote(c.class_id, sid, note)}
                 onSave={() => saveClass(c)}
               />
@@ -270,13 +279,13 @@ export default function AttendancePage() {
   )
 }
 
-function ClassCard({ classData, color, students, dirty, isSaving, onCycleStatus, onSetNote, onSave }: {
+function ClassCard({ classData, color, students, dirty, isSaving, onSetStatus, onSetNote, onSave }: {
   classData: ClassWithAttendance
   color: string
   students: StudentLocal[]
   dirty: boolean
   isSaving: boolean
-  onCycleStatus: (studentId: string) => void
+  onSetStatus: (studentId: string, status: LocalStatus) => void
   onSetNote: (studentId: string, note: string) => void
   onSave: () => void
 }) {
@@ -306,42 +315,45 @@ function ClassCard({ classData, color, students, dirty, isSaving, onCycleStatus,
         )}
       </div>
 
-      {/* 학생 rows — 클릭으로 상태 순환 */}
+      {/* 학생 rows — 4버튼 토글 */}
       <div>
-        {students.map((s, i) => {
-          const badge = STATUS_BADGE[s.status]
-          return (
-            <div key={s.student_id}>
-              <div
-                onClick={() => onCycleStatus(s.student_id)}
-                className="flex items-center gap-1 px-1.5 border-b border-[#f0f0f0] cursor-pointer hover:brightness-95"
-                style={{ backgroundColor: i % 2 === 0 ? '#fafafa' : '#ffffff', minHeight: '28px' }}
-              >
-                <span className="text-[9px] text-[#ccc] w-3 text-right flex-shrink-0">{i + 1}</span>
-                <span className="flex-1 text-xs font-semibold text-[#1a1a1a] truncate leading-tight">{s.name}</span>
-                {badge ? (
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded border flex-shrink-0 self-center whitespace-nowrap"
-                    style={{ background: badge.bg, borderColor: badge.bd, color: badge.tx }}>
-                    {badge.label}
-                  </span>
-                ) : (
-                  <span className="text-[10px] font-bold text-[#10B981] flex-shrink-0 px-1 py-0.5 rounded border border-[#A7F3D0] bg-[#F0FDF4]">출석</span>
-                )}
-              </div>
-              {/* 사전결석 메모 인라인 */}
-              {s.status === 'pre_absent' && (
-                <div className="px-1.5 pb-1.5 bg-[#FAF5FF]" onClick={e => e.stopPropagation()}>
-                  <input
-                    value={s.note}
-                    onChange={e => onSetNote(s.student_id, e.target.value)}
-                    placeholder="사유 (선택)"
-                    className="w-full text-[10px] border border-[#D8B4FE] rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#7C3AED] bg-white"
-                  />
-                </div>
+        {students.map((s, i) => (
+          <div key={s.student_id}
+            className="border-b border-[#f0f0f0] px-1.5 py-1"
+            style={{ backgroundColor: i % 2 === 0 ? '#fafafa' : '#ffffff' }}>
+            {/* 이름 줄 */}
+            <div className="flex items-baseline gap-1 mb-1">
+              <span className="text-[9px] text-[#ccc] w-3 text-right flex-shrink-0">{i + 1}</span>
+              <span className="text-xs font-semibold text-[#1a1a1a] leading-tight truncate">{s.name}</span>
+              {s.english_name && (
+                <span className="text-[9px] text-[#94A3B8] truncate">{s.english_name}</span>
               )}
             </div>
-          )
-        })}
+            {/* 4버튼 */}
+            <div className="flex gap-0.5 ml-3">
+              {BTN_LABELS.map(({ status, label }) => (
+                <button
+                  key={status}
+                  onClick={() => onSetStatus(s.student_id, status)}
+                  className={`flex-1 text-[9px] font-bold py-0.5 rounded transition-colors ${s.status === status ? BTN_ON[status] : BTN_OFF}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {/* 사전결석 메모 인라인 */}
+            {s.status === 'pre_absent' && (
+              <div className="mt-0.5 ml-3">
+                <input
+                  value={s.note}
+                  onChange={e => onSetNote(s.student_id, e.target.value)}
+                  placeholder="사유 (선택)"
+                  className="w-full text-[9px] border border-[#D8B4FE] rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#7C3AED] bg-white"
+                />
+              </div>
+            )}
+          </div>
+        ))}
         {total === 0 && (
           <div className="h-[28px] flex items-center justify-center text-[#CBD5E1] text-[10px]">수강생 없음</div>
         )}
