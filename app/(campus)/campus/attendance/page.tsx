@@ -95,11 +95,10 @@ export default function AttendancePage() {
         })
         return active?.class_session_id ?? todayClasses[0]?.class_session_id ?? data[0]?.class_session_id ?? null
       })
-      // tabOrder 초기화 (서버 sort_order 반영, 이미 있으면 유지)
+      // tabOrder: 최초 1회만 서버 순서로 초기화, 이후 유지
       setTabOrder(prev => {
-        const ids = [...new Set(data.map(c => c.class_session_id))]
-        if (prev.length === ids.length && prev.every(id => ids.includes(id))) return prev
-        return ids
+        if (prev.length > 0) return prev  // 이미 설정됨 → 유지
+        return [...new Set(data.map(c => c.class_session_id))]
       })
     }
     setLoading(false)
@@ -209,7 +208,7 @@ export default function AttendancePage() {
     setDragTabId(null); setDragOverTabId(null)
     // DB 업데이트 (class-roster 동일 엔드포인트)
     await fetch('/api/campus/class-roster', {
-      method: 'PUT',
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'reorder_sessions', orders: newOrder.map((id, i) => ({ id, sort_order: i })) }),
     })
@@ -560,7 +559,7 @@ function AttendanceSettings() {
   }
 
   return (
-    <div className="space-y-6">
+    <div>
       {/* 컴퓨터 계정 일괄 생성 */}
       <div className="flex items-center gap-3 p-3 bg-[#F8FAFC] rounded-xl border border-[#E2E8F0] mb-2">
         <div className="flex-1">
@@ -598,6 +597,7 @@ function AttendanceSettings() {
         <div className="py-10 text-center text-[#94A3B8] text-sm">015_classrooms.sql 실행 필요</div>
       )}
 
+      <div className="grid grid-cols-2 gap-4">
       {classrooms.map(room => {
         const roomClasses = classesWithRoom
           .filter(c => c.classroom_id === room.id)
@@ -607,33 +607,31 @@ function AttendanceSettings() {
         return (
           <div key={room.id}>
             {/* 교실 헤더 */}
-            <div className="flex items-center gap-3 mb-2 pb-1.5 border-b-2 border-[#1e3a5f]">
-              <span className="text-sm font-extrabold text-[#1e3a5f]">{room.display_name}</span>
+            <div className="flex items-center gap-1.5 mb-1.5 pb-1 border-b border-[#1e3a5f]">
+              <span className="text-xs font-extrabold text-[#1e3a5f]">{room.display_name}</span>
               {room.account_email
-                ? <span className="text-[10px] text-[#10B981] bg-[#F0FDF4] px-2 py-0.5 rounded-full">{room.account_email}</span>
-                : <span className="text-[10px] text-[#CBD5E1]">계정 미설정</span>}
-              <span className="text-[10px] text-[#94A3B8]">기본 팝업 {room.popup_minutes_before}분 전</span>
+                ? <span className="text-[9px] text-[#10B981] truncate max-w-[100px]">{room.account_email}</span>
+                : <span className="text-[9px] text-[#CBD5E1]">계정 미설정</span>}
               <button onClick={() => { setEditingRoom(isEditing ? null : room.id); setRoomDraft({ ...room }) }}
-                className="ml-auto text-[11px] text-[#004EA2] hover:underline">{isEditing ? '닫기' : '계정 설정'}</button>
+                className="ml-auto text-[9px] text-[#004EA2] hover:underline flex-shrink-0">{isEditing ? '닫기' : '설정'}</button>
             </div>
 
-            {/* 교실 계정 편집 */}
             {isEditing && (
-              <div className="flex flex-wrap gap-2 items-end mb-3 px-3 py-2.5 bg-[#F0F7FF] rounded-lg border border-[#DBEAFE]">
+              <div className="flex flex-wrap gap-1.5 items-end mb-2 px-2 py-2 bg-[#F0F7FF] rounded border border-[#DBEAFE]">
                 <div>
-                  <label className="text-[10px] text-[#64748B] block mb-0.5">계정 이메일</label>
+                  <label className="text-[9px] text-[#64748B] block mb-0.5">이메일</label>
                   <input value={roomDraft.account_email ?? ''} onChange={e => setRoomDraft(p => ({ ...p, account_email: e.target.value }))}
-                    placeholder="room-america@poly"
-                    className="border border-[#BFDBFE] rounded px-2 py-1 text-xs w-52 focus:outline-none focus:ring-1 focus:ring-[#004EA2]" />
+                    placeholder="computer1@jungkye.poly"
+                    className="border border-[#BFDBFE] rounded px-1.5 py-0.5 text-[10px] w-44 focus:outline-none" />
                 </div>
                 <div>
-                  <label className="text-[10px] text-[#64748B] block mb-0.5">기본 팝업 (분 전)</label>
+                  <label className="text-[9px] text-[#64748B] block mb-0.5">팝업 분전</label>
                   <input type="number" min={0} max={30} value={roomDraft.popup_minutes_before ?? 2}
                     onChange={e => setRoomDraft(p => ({ ...p, popup_minutes_before: Number(e.target.value) }))}
-                    className="border border-[#BFDBFE] rounded px-2 py-1 text-xs w-16 focus:outline-none focus:ring-1 focus:ring-[#004EA2]" />
+                    className="border border-[#BFDBFE] rounded px-1.5 py-0.5 text-[10px] w-12 focus:outline-none" />
                 </div>
                 <button onClick={async () => { await patch({ type: 'classroom', classroom_id: room.id, account_email: roomDraft.account_email, popup_minutes_before: roomDraft.popup_minutes_before }); setEditingRoom(null) }}
-                  className="bg-[#004EA2] text-white text-xs px-3 py-1.5 rounded hover:bg-blue-800">저장</button>
+                  className="bg-[#004EA2] text-white text-[10px] px-2 py-0.5 rounded">저장</button>
               </div>
             )}
 
@@ -656,6 +654,7 @@ function AttendanceSettings() {
           </div>
         )
       })}
+      </div>
     </div>
   )
 }
@@ -685,7 +684,7 @@ function SettingsClassGrid({ roomClasses, sessMap, roomDefault, selectedClassId,
   }
 
   return (
-    <div className="grid gap-[4px]" style={{ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}>
+    <div className="grid gap-[3px]" style={{ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}>
       {sorted.map(cls => {
         const sess = sessMap.get(cls.session_id)
         const isSelected = selectedClassId === cls.id
@@ -698,17 +697,17 @@ function SettingsClassGrid({ roomClasses, sessMap, roomDefault, selectedClassId,
             onDrop={() => drop(cls.id)}
             onDragEnd={() => { setDragId(null); setDragOver(null) }}
             onClick={() => onSelect(cls, sess)}
-            className={`rounded-[7px] border bg-white overflow-hidden cursor-grab active:cursor-grabbing transition-all ${
-              dragOver === cls.id ? 'ring-2 ring-[#004EA2]' : dragId === cls.id ? 'opacity-40' : ''
+            className={`rounded-[5px] border bg-white overflow-hidden cursor-grab active:cursor-grabbing transition-all ${
+              dragOver === cls.id ? 'ring-1 ring-[#004EA2]' : dragId === cls.id ? 'opacity-40' : ''
             } ${isSelected ? 'border-[#004EA2]' : 'border-[#E0E0E0] hover:border-[#004EA2]'}`}
           >
-            <div className="px-1.5 py-1 text-white" style={{ background: cls.color || '#94A3B8' }}>
-              <p className="text-[10px] font-extrabold truncate">{cls.level}</p>
+            <div className="px-1 py-0.5 text-white" style={{ background: cls.color || '#94A3B8' }}>
+              <p className="text-[9px] font-extrabold truncate leading-tight">{cls.level}</p>
             </div>
-            <div className="px-1.5 py-1">
-              <p className="text-[9px] text-[#64748B] truncate">{sess?.time_range ?? '미설정'}</p>
-              <p className="text-[8px] text-[#94A3B8] truncate">{cls.days ?? sess?.days ?? '매일'}</p>
-              <div className="flex items-center gap-0.5 mt-0.5" onClick={e => e.stopPropagation()}>
+            <div className="px-1 py-0.5">
+              <p className="text-[8px] text-[#64748B] truncate leading-tight">{sess?.time_range ?? '미설정'}</p>
+              <p className="text-[7px] text-[#94A3B8] truncate leading-tight">{cls.days ?? sess?.days ?? '매일'}</p>
+              <div className="flex items-center gap-0.5" onClick={e => e.stopPropagation()}>
                 <input type="number" min={0} max={30}
                   value={cls.popup_minutes_before ?? ''}
                   placeholder={String(roomDefault)}
@@ -716,9 +715,9 @@ function SettingsClassGrid({ roomClasses, sessMap, roomDefault, selectedClassId,
                     const val = e.target.value === '' ? null : Number(e.target.value)
                     await onPatch({ type: 'class_popup', class_id: cls.id, popup_minutes_before: val })
                   }}
-                  className="w-8 text-[8px] border border-[#E2E8F0] rounded px-0.5 py-px focus:outline-none"
+                  className="w-7 text-[7px] border border-[#E2E8F0] rounded px-0.5 focus:outline-none"
                 />
-                <span className="text-[8px] text-[#94A3B8]">분</span>
+                <span className="text-[7px] text-[#94A3B8]">분</span>
               </div>
             </div>
           </div>
