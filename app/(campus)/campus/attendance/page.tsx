@@ -567,6 +567,8 @@ function AttendanceSettings() {
   const [loading, setLoading] = useState(true)
   const [editingRoom, setEditingRoom] = useState<string | null>(null)
   const [roomDraft, setRoomDraft] = useState<Partial<Classroom>>({})
+  const [selectedClassId, setSelectedClassId] = useState<string | null>(null)
+  const [classDraft, setClassDraft] = useState<{ days: string; time_range: string; classroom_id: string }>({ days: '', time_range: '', classroom_id: '' })
 
   const load = useCallback(async () => {
     const res = await fetch('/api/campus/attendance/settings')
@@ -623,14 +625,19 @@ function AttendanceSettings() {
                     ? <span className="text-[10px] text-[#CBD5E1]">없음</span>
                     : roomClasses.map(cls => {
                       const sess = sessMap.get(cls.session_id)
+                      const isSelected = selectedClassId === cls.id
                       return (
                         <span key={cls.id}
-                          className="inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full text-white cursor-pointer hover:opacity-80"
+                          className={`inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full text-white cursor-pointer transition-opacity ${isSelected ? 'ring-2 ring-offset-1 ring-[#004EA2]' : 'hover:opacity-80'}`}
                           style={{ background: cls.color || '#94A3B8' }}
                           title={`${sess?.name ?? ''} ${sess?.time_range ?? ''}`}
-                          onClick={() => patch({ type: 'class_classroom', class_id: cls.id, classroom_id: null })}
+                          onClick={() => {
+                            if (selectedClassId === cls.id) { setSelectedClassId(null); return }
+                            setSelectedClassId(cls.id)
+                            setClassDraft({ days: cls.days ?? sess?.days ?? '', time_range: sess?.time_range ?? '', classroom_id: cls.classroom_id ?? '' })
+                          }}
                         >
-                          {cls.level} ×
+                          {cls.level}
                         </span>
                       )
                     })
@@ -676,6 +683,71 @@ function AttendanceSettings() {
         })}
       </div>
 
+      {/* 선택된 반 세팅 패널 */}
+      {selectedClassId && (() => {
+        const cls = classes.find(c => c.id === selectedClassId)
+        if (!cls) return null
+        const sess = sessMap.get(cls.session_id)
+        const room = classrooms.find(r => r.id === cls.classroom_id)
+        return (
+          <div className="bg-[#EFF6FF] border border-[#BFDBFE] rounded-xl px-4 py-3 mb-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-2.5 h-2.5 rounded-full" style={{ background: cls.color || '#94A3B8' }} />
+                <span className="font-bold text-[#1E293B]">{cls.level}</span>
+                <span className="text-xs text-[#64748B]">{sess?.name ?? ''}</span>
+              </div>
+              <button onClick={() => setSelectedClassId(null)} className="text-[#94A3B8] hover:text-[#64748B] text-sm">✕</button>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div>
+                <label className="text-[10px] text-[#64748B] block mb-1">교실</label>
+                <select value={classDraft.classroom_id} onChange={e => setClassDraft(p => ({ ...p, classroom_id: e.target.value }))}
+                  className="w-full border border-[#BFDBFE] rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#004EA2]">
+                  <option value="">미배정</option>
+                  {classrooms.map(r => <option key={r.id} value={r.id}>{r.display_name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] text-[#64748B] block mb-1">수업 시간</label>
+                <input value={classDraft.time_range} onChange={e => setClassDraft(p => ({ ...p, time_range: e.target.value }))}
+                  placeholder="9:40~11:00"
+                  className="w-full border border-[#BFDBFE] rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#004EA2]" />
+                <p className="text-[9px] text-[#94A3B8] mt-0.5">세션 전체 시간 변경</p>
+              </div>
+              <div>
+                <label className="text-[10px] text-[#64748B] block mb-1">수업 요일</label>
+                <div className="flex gap-0.5">
+                  {['월','화','수','목','금'].map(d => {
+                    const active = classDraft.days ? classDraft.days.includes(d) : false
+                    return (
+                      <button key={d} onClick={() => {
+                        const next = active ? classDraft.days.replace(d,'') : classDraft.days + d
+                        setClassDraft(p => ({ ...p, days: next }))
+                      }} className={`text-[10px] font-bold w-6 h-6 rounded ${active ? 'bg-[#004EA2] text-white' : 'bg-white text-[#CBD5E1] border border-[#E2E8F0]'}`}>{d}</button>
+                    )
+                  })}
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] text-[#64748B] block mb-1">정보</label>
+                <p className="text-[10px] text-[#94A3B8]">팝업: {room?.popup_minutes_before ?? 2}분 전</p>
+                {cls.teacher && <p className="text-[10px] text-[#94A3B8]">강사: {cls.teacher}</p>}
+              </div>
+            </div>
+            <div className="flex gap-2 mt-3">
+              <button onClick={async () => {
+                await patch({ type: 'class_classroom', class_id: cls.id, classroom_id: classDraft.classroom_id || null })
+                await patch({ type: 'session', session_id: cls.session_id, time_range: classDraft.time_range, days: classDraft.days || null })
+                setSelectedClassId(null)
+              }} className="bg-[#004EA2] text-white text-xs px-4 py-1.5 rounded-lg hover:bg-blue-800">저장</button>
+              <button onClick={() => patch({ type: 'class_classroom', class_id: cls.id, classroom_id: null }).then(() => setSelectedClassId(null))}
+                className="text-xs text-[#EF4444] px-3 py-1.5 rounded-lg border border-[#FCA5A5] hover:bg-[#FEF2F2]">교실 해제</button>
+            </div>
+          </div>
+        )
+      })()}
+
       {/* 미배정 반 */}
       {unassigned.length > 0 && (
         <div className="bg-white rounded-xl border border-dashed border-[#E2E8F0] overflow-hidden">
@@ -686,16 +758,18 @@ function AttendanceSettings() {
             {unassigned.map(cls => {
               const sess = sessMap.get(cls.session_id)
               return (
-                <div key={cls.id} className="flex items-center gap-2 px-3 py-1.5">
+                <div key={cls.id}
+                  className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-[#F1F5F9] ${selectedClassId === cls.id ? 'bg-[#EFF6FF]' : ''}`}
+                  onClick={() => {
+                    if (selectedClassId === cls.id) { setSelectedClassId(null); return }
+                    setSelectedClassId(cls.id)
+                    setClassDraft({ days: cls.days ?? sess?.days ?? '', time_range: sess?.time_range ?? '', classroom_id: cls.classroom_id ?? '' })
+                  }}>
                   <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: cls.color || '#94A3B8' }} />
                   <span className="text-xs font-semibold text-[#1E293B] w-16 truncate">{cls.level}</span>
                   <span className="text-[10px] text-[#94A3B8] w-24 truncate">{sess?.name ?? ''}</span>
                   <span className="text-[10px] text-[#94A3B8]">{sess?.time_range ?? ''}</span>
-                  <select defaultValue="" onChange={e => { if (e.target.value) patch({ type: 'class_classroom', class_id: cls.id, classroom_id: e.target.value }) }}
-                    className="ml-auto text-xs border border-[#E2E8F0] rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#004EA2]">
-                    <option value="">교실 배정...</option>
-                    {classrooms.map(r => <option key={r.id} value={r.id}>{r.display_name}</option>)}
-                  </select>
+                  <span className="ml-auto text-[10px] text-[#004EA2]">설정 →</span>
                 </div>
               )
             })}
