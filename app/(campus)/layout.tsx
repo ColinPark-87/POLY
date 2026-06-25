@@ -23,14 +23,14 @@ export default async function CampusLayout({ children }: { children: React.React
   // id로 먼저 조회, 없으면 email로 조회 (OR 쿼리 대신 개별 쿼리로 안정성 향상)
   const { data: byId } = await serviceClient
     .from('users')
-    .select('name, campus_id, role, position, perm_class_roster, perm_vehicles, perm_vehicles_restricted, perm_analytics, perm_attendance')
+    .select('name, campus_id, role, position, perm_class_roster, perm_vehicles, perm_vehicles_restricted, perm_analytics')
     .eq('id', user.id)
     .maybeSingle()
 
   const { data: byEmail } = (!byId && user.email)
     ? await serviceClient
         .from('users')
-        .select('name, campus_id, role, position, perm_class_roster, perm_vehicles, perm_vehicles_restricted, perm_analytics, perm_attendance')
+        .select('name, campus_id, role, position, perm_class_roster, perm_vehicles, perm_vehicles_restricted, perm_analytics')
         .eq('email', user.email)
         .maybeSingle()
     : { data: null }
@@ -60,7 +60,7 @@ export default async function CampusLayout({ children }: { children: React.React
     perm_vehicles: profile?.perm_vehicles ?? null,
     perm_vehicles_restricted: profile?.perm_vehicles_restricted ?? null,
     perm_analytics: profile?.perm_analytics ?? null,
-    perm_attendance: profile?.perm_attendance ?? null,
+    perm_attendance: null,
   })
 
   return (
