@@ -5,16 +5,19 @@ import { parseStartTime, toMinutes } from '@/lib/attendance'
 export const dynamic = 'force-dynamic'
 
 // 스마트보드: 내 교실(classroom_id)의 오늘 수업 중 "지금 팝업 떠야 하는" 반 + 학생 반환
-export async function GET() {
+export async function GET(req: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user || user.user_metadata?.role !== 'smartboard') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
+  const debug = new URL(req.url).searchParams.get('debug') === '1'
   const classroomId: string = user.user_metadata.classroom_id ?? ''
   const campusId: string = user.user_metadata.campus_id ?? ''
-  if (!classroomId || !campusId) return NextResponse.json({ active: null })
+  if (!classroomId || !campusId) {
+    return NextResponse.json({ active: null, ...(debug ? { debug: { reason: 'no classroom_id/campus_id in account', metadata: user.user_metadata } } : {}) })
+  }
 
   const svc = createServiceClient()
 
@@ -53,7 +56,6 @@ export async function GET() {
   const myClasses = (classes ?? []).filter((c: any) =>
     c.classroom_id === classroomId || (c.room ?? '').toLowerCase() === roomName
   )
-  if (!myClasses.length) return NextResponse.json({ active: null })
 
   // 오늘 요일
   const kstNow = new Date(Date.now() + 9 * 60 * 60 * 1000)
@@ -83,9 +85,9 @@ export async function GET() {
     return { class_id: cls.id, class_level: cls.level, session_name: sess.name, time_range: timeRange, forced, students }
   }
 
-  // 1) 강제 팝업 우선 (시간 무관)
+  // 1) 강제 팝업 우선 (시간 무관, 전체 반에서 검색)
   if (forcePopupClassId) {
-    const cls = myClasses.find((c: any) => c.id === forcePopupClassId)
+    const cls = (classes ?? []).find((c: any) => c.id === forcePopupClassId)
     if (cls) {
       const sess = sessMap.get(cls.session_id)
       const timeRange = cls.smartboard_time_range ?? sess?.time_range ?? ''
@@ -118,5 +120,16 @@ export async function GET() {
     return NextResponse.json({ active: await buildActive(cls, sess, timeRange, existing?.id ?? null, false) })
   }
 
-  return NextResponse.json({ active: null })
+  return NextResponse.json({
+    active: null,
+    ...(debug ? { debug: {
+      classroomId, roomName, latestMonth, todayDay, nowMin, forcePopupClassId,
+      totalClasses: (classes ?? []).length,
+      myClassCount: myClasses.length,
+      myClasses: myClasses.map((c: any) => {
+        const s = sessMap.get(c.session_id)
+        return { id: c.id, level: c.level, room: c.room, classroom_id: c.classroom_id, days: c.days ?? s?.days, time_range: c.smartboard_time_range ?? s?.time_range }
+      }),
+    } } : {}),
+  })
 }
