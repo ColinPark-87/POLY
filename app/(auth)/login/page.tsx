@@ -113,18 +113,14 @@ export default function LoginPage() {
     URL.revokeObjectURL(a.href)
   }
 
-  // AutoHotkey 도우미 다운로드 — 평소 최소화, 출석시간엔 전체화면 자동 팝업
-  function downloadAhkFile(num: number) {
+  // AHK 도우미 스크립트 생성
+  function buildAhk(num: number) {
     const url = `${window.location.origin}/smartboard?computer=${num}`
-    const ahk = [
+    return [
       `; 폴리 출석 도우미 - 컴퓨터${num}`,
-      `; 필요: AutoHotkey v1.1 설치 (https://www.autohotkey.com)`,
-      `; 사용: 이 파일을 시작프로그램 폴더에 넣기 (Win+R -> shell:startup)`,
       `#NoTrayIcon`,
       `#SingleInstance, Force`,
       `SetTitleMatchMode, 2`,
-      ``,
-      `; 크롬 경로 탐색`,
       `chromePath := ""`,
       `for i, p in [A_ProgramFiles "\\Google\\Chrome\\Application\\chrome.exe"`,
       `  , "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe"`,
@@ -136,12 +132,8 @@ export default function LoginPage() {
       `  }`,
       `if (chromePath = "")`,
       `  chromePath := "chrome.exe"`,
-      ``,
-      `; 출석 앱 실행 (앱 모드, 최소화)`,
       `Run, %chromePath% --app="${url}" --start-minimized, , Min`,
       `Sleep, 4000`,
-      ``,
-      `; 감시 루프: 출석시간이면 전체화면 팝업, 평소엔 최소화`,
       `Loop`,
       `{`,
       `  if WinExist("POLLY_ATTENDANCE_ACTIVE")`,
@@ -149,7 +141,6 @@ export default function LoginPage() {
       `    WinActivate`,
       `    WinRestore`,
       `    WinMaximize`,
-      `    ; 전체화면 (크롬 F11)`,
       `    if !InStr(prevState, "ACTIVE")`,
       `      Send, {F11}`,
       `    prevState := "ACTIVE"`,
@@ -159,7 +150,7 @@ export default function LoginPage() {
       `    if InStr(prevState, "ACTIVE")`,
       `    {`,
       `      WinActivate`,
-      `      Send, {F11}   ; 전체화면 해제`,
+      `      Send, {F11}`,
       `      Sleep, 300`,
       `    }`,
       `    WinMinimize, POLLY_ATTENDANCE_IDLE`,
@@ -168,8 +159,65 @@ export default function LoginPage() {
       `  Sleep, 2000`,
       `}`,
     ].join('\r\n')
+  }
 
-    const blob = new Blob([ahk], { type: 'text/plain' })
+  // UTF-8 → base64 (한글 안전)
+  function utf8ToBase64(s: string) {
+    const bytes = new TextEncoder().encode(s)
+    let bin = ''
+    bytes.forEach(b => { bin += String.fromCharCode(b) })
+    return btoa(bin)
+  }
+
+  // 원클릭 자동설치 .bat — AHK 설치 + 도우미 등록 + 실행 전부 자동
+  function downloadAutoInstaller(num: number, roomName: string) {
+    const ahkB64 = utf8ToBase64(buildAhk(num))
+    const bat = [
+      `@echo off`,
+      `chcp 65001 >nul`,
+      `title 폴리 출석 자동설치 - ${roomName || ('컴퓨터' + num)}`,
+      `echo ============================================`,
+      `echo   폴리 출석 시스템 자동 설치`,
+      `echo   교실: ${roomName || ('컴퓨터' + num)} (컴퓨터${num})`,
+      `echo ============================================`,
+      `echo.`,
+      `echo [1/3] AutoHotkey 설치 확인...`,
+      `set "AHK_OK="`,
+      `if exist "%ProgramFiles%\\AutoHotkey\\AutoHotkey.exe" set "AHK_OK=1"`,
+      `if exist "%ProgramFiles%\\AutoHotkey\\v1.1.37.02\\AutoHotkeyU64.exe" set "AHK_OK=1"`,
+      `if defined AHK_OK (`,
+      `  echo     이미 설치됨`,
+      `) else (`,
+      `  echo     다운로드 중... 잠시 기다려주세요`,
+      `  powershell -ExecutionPolicy Bypass -Command "try{Invoke-WebRequest -Uri 'https://www.autohotkey.com/download/ahk-install.exe' -OutFile \\"$env:TEMP\\ahk.exe\\"}catch{exit 1}"`,
+      `  echo     설치 중...`,
+      `  "%TEMP%\\ahk.exe" /S`,
+      `  timeout /t 5 /nobreak >nul`,
+      `)`,
+      `echo [2/3] 도우미 파일 생성...`,
+      `powershell -ExecutionPolicy Bypass -Command "[IO.File]::WriteAllText([Environment]::GetFolderPath('Startup')+'\\폴리출석도우미.ahk', [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${ahkB64}')))"`,
+      `echo [3/3] 실행...`,
+      `start "" "%AppData%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\폴리출석도우미.ahk"`,
+      `echo.`,
+      `echo  완료! 컴퓨터를 켤 때마다 자동 실행됩니다.`,
+      `echo  수업 시간이 되면 출석판이 자동으로 화면에 뜹니다.`,
+      `echo  이 창은 닫아도 됩니다.`,
+      `echo.`,
+      `pause`,
+    ].join('\r\n')
+
+    // UTF-8 BOM 추가 (cmd 한글 표시)
+    const blob = new Blob(['﻿' + bat], { type: 'application/octet-stream' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `폴리출석_원클릭설치_${roomName || ('컴퓨터' + num)}.bat`
+    a.click()
+    URL.revokeObjectURL(a.href)
+  }
+
+  // AHK 파일만 다운로드 (수동 설치용)
+  function downloadAhkFile(num: number) {
+    const blob = new Blob([buildAhk(num)], { type: 'text/plain' })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
     a.download = `폴리출석도우미_컴퓨터${num}.ahk`
@@ -353,7 +401,7 @@ export default function LoginPage() {
             {/* 컴퓨터 로그인: 1~11 선택 */}
             {isCampus && mode === 'computer' && (
               <div>
-                <p className="text-xs text-[#64748B] mb-2">번호 클릭 = 바로 로그인 · ⬇ = 자동시작 파일 받기</p>
+                <p className="text-xs text-[#64748B] mb-2">교실명 = 바로 로그인 · ⚡ = 자동설치(원클릭)</p>
                 <div className="grid grid-cols-3 gap-2">
                   {(smartRooms.length ? smartRooms : Array.from({ length: 11 }, (_, i) => ({ num: i + 1, display_name: '' }))).map(r => (
                     <div key={r.num} className="flex flex-col rounded-xl border-2 border-[#E2E8F0] overflow-hidden">
@@ -366,28 +414,27 @@ export default function LoginPage() {
                         <span className="text-[9px] text-[#94A3B8]">컴퓨터{r.num}</span>
                       </button>
                       <button type="button"
-                        onClick={() => downloadAhkFile(r.num)}
-                        className="text-[9px] text-white bg-[#004EA2] hover:bg-[#003E83] py-1 border-t border-[#E2E8F0]"
-                      >⬇ 자동팝업(권장)</button>
-                      <button type="button"
-                        onClick={() => downloadStartupFile(r.num)}
-                        className="text-[9px] text-[#94A3B8] bg-[#F8FAFC] hover:bg-[#EAF2FB] py-1 border-t border-[#E2E8F0]"
-                      >⬇ 단순실행</button>
+                        onClick={() => downloadAutoInstaller(r.num, r.display_name)}
+                        className="text-[9px] text-white bg-[#004EA2] hover:bg-[#003E83] py-1 border-t border-[#E2E8F0] font-bold"
+                      >⚡ 자동설치</button>
                     </div>
                   ))}
                 </div>
                 {loading && <p className="text-xs text-[#004EA2] text-center mt-2">로그인 중...</p>}
                 {error && <p className="text-[#EF4444] text-xs text-center mt-2">{error}</p>}
-                <details className="mt-3 text-[11px] text-[#64748B]">
-                  <summary className="cursor-pointer text-[#004EA2]">자동팝업 설정 방법 (권장)</summary>
-                  <ol className="mt-1 space-y-0.5 list-decimal list-inside">
-                    <li><b>AutoHotkey</b> 설치 (autohotkey.com, v1.1, 1회만)</li>
-                    <li>⬇ 자동팝업 눌러 파일 받기 (폴리출석도우미_컴퓨터N.ahk)</li>
-                    <li>키보드 <b>Win+R</b> → <b>shell:startup</b> → Enter</li>
-                    <li>열린 폴더에 받은 .ahk 파일 넣기</li>
-                    <li>끝. 부팅 시 자동 로그인 + 평소 최소화 + 수업시간엔 전체화면 자동 팝업</li>
+                <details className="mt-3 text-[11px] text-[#64748B]" open>
+                  <summary className="cursor-pointer text-[#004EA2] font-medium">⚡ 자동설치 사용법 (교실당 1번)</summary>
+                  <ol className="mt-1.5 space-y-1 list-decimal list-inside">
+                    <li>그 교실 컴퓨터에서 이 화면 열기</li>
+                    <li>해당 교실의 <b>⚡ 자동설치</b> 버튼 클릭 → 파일 받기</li>
+                    <li>받은 파일 <b>더블클릭</b> (검은 창 뜸)</li>
+                    <li>「Windows의 PC 보호」 경고 뜨면 → <b>추가 정보</b> → <b>실행</b></li>
+                    <li>자동으로 설치·등록·실행됨. 검은 창 닫으면 끝</li>
                   </ol>
-                  <p className="mt-1 text-[#94A3B8]">※ AutoHotkey 설치가 어려우면 「단순실행」 사용 (최소화만, 자동 팝업 없음)</p>
+                  <p className="mt-1.5 text-[#94A3B8]">이후 컴퓨터 켤 때마다: 자동 로그인 → 평소 안 보임 → 수업시간엔 출석판 전체화면 자동 팝업 → 체크 완료하면 다시 숨김</p>
+                  <p className="mt-1 text-[#94A3B8]">단순 버전(자동팝업 없이 최소화만):
+                    <button type="button" onClick={() => downloadStartupFile(1)} className="text-[#004EA2] underline ml-1">.vbs 받기</button>
+                  </p>
                 </details>
               </div>
             )}
