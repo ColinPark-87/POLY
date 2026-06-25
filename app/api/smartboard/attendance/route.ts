@@ -13,7 +13,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const campus_id: string = user.user_metadata.campus_id
   const session_date = new Date().toISOString().split('T')[0]
 
   const { class_id, records } = await req.json() as {
@@ -23,6 +22,16 @@ export async function POST(req: NextRequest) {
   if (!class_id) return NextResponse.json({ error: 'class_id 필요' }, { status: 400 })
 
   const serviceClient = createServiceClient()
+
+  // campus_id는 교실(classroom) 기준 — metadata.campus_id 틀릴 수 있음
+  let campus_id: string = user.user_metadata.campus_id ?? ''
+  const classroomId = user.user_metadata.classroom_id
+  if (classroomId) {
+    const { data: room } = await serviceClient
+      .from('classrooms').select('campus_id').eq('id', classroomId).maybeSingle()
+    if (room?.campus_id) campus_id = room.campus_id
+  }
+  if (!campus_id) return NextResponse.json({ error: 'campus_id 없음' }, { status: 400 })
 
   const { data: session, error: sessErr } = await serviceClient
     .from('attendance_sessions')

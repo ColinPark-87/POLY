@@ -15,6 +15,7 @@ interface Props {
 export function AttendanceOverlay({ classId, campusId, students, onComplete }: Props) {
   const [statuses, setStatuses] = useState<Record<string, AttendanceStatus>>({})
   const [submitting, setSubmitting] = useState(false)
+  const [err, setErr] = useState('')
 
   useEffect(() => {
     const init: Record<string, AttendanceStatus> = {}
@@ -46,10 +47,13 @@ export function AttendanceOverlay({ classId, campusId, students, onComplete }: P
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ class_id: classId, records }),
       })
-      if (!res.ok) throw new Error('저장 실패')
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        throw new Error(d.error || `HTTP ${res.status}`)
+      }
       onComplete()
     } catch (e) {
-      console.error('출결 저장 실패:', e)
+      setErr('저장 실패: ' + (e instanceof Error ? e.message : '알 수 없음'))
       setSubmitting(false)
     }
   }
@@ -83,10 +87,11 @@ export function AttendanceOverlay({ classId, campusId, students, onComplete }: P
       </div>
 
       <div className="flex-shrink-0 p-8 border-t bg-gray-50 flex items-center justify-between">
-        <p className="text-gray-600 text-lg">
+        <div className="text-gray-600 text-lg">
           결석 <strong className="text-red-600">{absentCount}</strong>명 &nbsp;
           지각 <strong className="text-yellow-600">{lateCount}</strong>명
-        </p>
+          {err && <p className="text-red-600 text-sm mt-1">{err}</p>}
+        </div>
         <button
           onClick={handleSubmit}
           disabled={submitting}
