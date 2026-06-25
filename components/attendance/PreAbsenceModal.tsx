@@ -66,15 +66,18 @@ export function PreAbsenceModal({ classes, onClose, onSaved }: Props) {
             class_id: selected.class_id,
             session_date: d,
             student_id: selected.student_id,
-            status,
+            status: status === 'late' ? 'late' : 'absent',
             note: note || undefined,
           }),
         })
-        if (!res.ok) throw new Error()
+        if (!res.ok) {
+          const d = await res.json().catch(() => ({}))
+          throw new Error(d.error || `HTTP ${res.status}`)
+        }
       }
       onSaved()
-    } catch {
-      setError('저장에 실패했습니다')
+    } catch (e) {
+      setError('저장 실패: ' + (e instanceof Error ? e.message : '알 수 없음'))
       setSaving(false)
     }
   }
