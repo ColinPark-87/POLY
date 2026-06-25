@@ -15,6 +15,7 @@ const JUNGKYE_CAMPUS_ID = 'ebb499c6-8fb4-4207-9f34-a75c1d29d973'
 
 export default function LoginPage() {
   const [campuses, setCampuses] = useState<Campus[]>([])
+  const [smartRooms, setSmartRooms] = useState<{ num: number; display_name: string }[]>([])
   const [selected, setSelected] = useState('hq')
   const [mode, setMode] = useState<LoginMode>('email') // hq는 항상 email, 캠퍼스는 기본 name
   const [form, setForm] = useState({ name: '', email: '', password: '' })
@@ -43,6 +44,10 @@ export default function LoginPage() {
     fetch('/api/public/campuses')
       .then(r => r.json())
       .then(d => setCampuses(d.campuses ?? []))
+    fetch('/api/public/smartboard-rooms')
+      .then(r => r.json())
+      .then(d => setSmartRooms(d.rooms ?? []))
+      .catch(() => {})
 
     // 저장된 아이디 불러오기
     try {
@@ -286,18 +291,18 @@ export default function LoginPage() {
               <div>
                 <p className="text-xs text-[#64748B] mb-2">번호 클릭 = 바로 로그인 · ⬇ = 자동시작 파일 받기</p>
                 <div className="grid grid-cols-3 gap-2">
-                  {Array.from({ length: 11 }, (_, i) => i + 1).map(num => (
-                    <div key={num} className="flex flex-col rounded-xl border-2 border-[#E2E8F0] overflow-hidden">
+                  {(smartRooms.length ? smartRooms : Array.from({ length: 11 }, (_, i) => ({ num: i + 1, display_name: '' }))).map(r => (
+                    <div key={r.num} className="flex flex-col rounded-xl border-2 border-[#E2E8F0] overflow-hidden">
                       <button type="button"
-                        onClick={() => handleComputerLogin(num)}
+                        onClick={() => handleComputerLogin(r.num)}
                         disabled={loading}
                         className="flex flex-col items-center py-2 hover:bg-[#EAF2FB] transition-all disabled:opacity-50"
                       >
-                        <span className="text-base font-bold text-[#1E293B]">{num}</span>
-                        <span className="text-[9px] text-[#94A3B8]">컴퓨터{num}</span>
+                        <span className="text-sm font-bold text-[#1E293B]">{r.display_name || `컴퓨터${r.num}`}</span>
+                        <span className="text-[9px] text-[#94A3B8]">컴퓨터{r.num}</span>
                       </button>
                       <button type="button"
-                        onClick={() => downloadStartupFile(num)}
+                        onClick={() => downloadStartupFile(r.num)}
                         className="text-[9px] text-[#004EA2] bg-[#F8FAFC] hover:bg-[#EAF2FB] py-1 border-t border-[#E2E8F0]"
                       >⬇ 자동시작</button>
                     </div>

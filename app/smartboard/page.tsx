@@ -26,6 +26,7 @@ export default function SmartboardPage() {
   const [codeOk, setCodeOk] = useState(false)
   const [changeErr, setChangeErr] = useState('')
   const [changeCode, setChangeCode] = useState('7659')
+  const [roomList, setRoomList] = useState<{ num: number; display_name: string }[]>([])
 
   useEffect(() => {
     async function checkAuth() {
@@ -119,7 +120,11 @@ export default function SmartboardPage() {
       <p className="text-gray-400 text-lg">출석 대기 중...</p>
 
       {/* 우하단 교실 변경 — 코드 입력 필요 */}
-      <button onClick={() => { setChangeOpen(true); setCodeInput(''); setCodeOk(false); setChangeErr('') }}
+      <button onClick={async () => {
+          setChangeOpen(true); setCodeInput(''); setCodeOk(false); setChangeErr('')
+          const r = await fetch('/api/smartboard/classrooms')
+          if (r.ok) { const d = await r.json(); setRoomList(d.rooms ?? []) }
+        }}
         className="fixed bottom-3 right-3 text-xs text-gray-300 hover:text-gray-500 border border-gray-200 rounded-lg px-3 py-1.5 transition-colors">
         교실 변경 ({roomName})
       </button>
@@ -145,13 +150,13 @@ export default function SmartboardPage() {
               </form>
             ) : (
               <div>
-                <p className="text-sm text-gray-600 mb-3">변경할 교실 컴퓨터 번호를 선택하세요</p>
-                <div className="grid grid-cols-4 gap-2">
-                  {Array.from({ length: 11 }, (_, i) => i + 1).map(num => (
-                    <button key={num} onClick={() => changeToComputer(num)}
+                <p className="text-sm text-gray-600 mb-3">변경할 교실을 선택하세요</p>
+                <div className="grid grid-cols-3 gap-2 max-h-72 overflow-y-auto">
+                  {(roomList.length ? roomList : Array.from({ length: 11 }, (_, i) => ({ num: i + 1, display_name: '' }))).map(r => (
+                    <button key={r.num} onClick={() => changeToComputer(r.num)}
                       className="flex flex-col items-center py-2.5 rounded-xl border-2 border-gray-200 hover:border-[#004EA2] hover:bg-[#EAF2FB]">
-                      <span className="text-lg font-bold text-[#1E293B]">{num}</span>
-                      <span className="text-[9px] text-gray-400">컴퓨터{num}</span>
+                      <span className="text-base font-bold text-[#1E293B]">{r.display_name || `컴퓨터${r.num}`}</span>
+                      <span className="text-[9px] text-gray-400">컴퓨터{r.num}</span>
                     </button>
                   ))}
                 </div>
