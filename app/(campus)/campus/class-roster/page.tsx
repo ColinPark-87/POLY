@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { toggleSelection, applyRange } from '@/lib/utils/roster-multimove'
 import type { RegisteredStop } from '@/lib/utils/stop-search'
+import type { ClassWithAttendance } from '@/lib/attendance'
 
 const DAYS = ['월', '화', '수', '목', '금'] as const
 type Day = typeof DAYS[number]
@@ -1703,6 +1704,17 @@ function RosterTab({
     }
   }
 
+  // ── 오늘 출결 배지 ──────────────────────────────────────────
+  const [attendanceMap, setAttendanceMap] = useState<Map<string, ClassWithAttendance>>(new Map())
+  useEffect(() => {
+    fetch('/api/campus/attendance')
+      .then(r => r.ok ? r.json() : [])
+      .then((data: ClassWithAttendance[]) => {
+        setAttendanceMap(new Map(data.map((c: ClassWithAttendance) => [c.class_id, c])))
+      })
+      .catch(() => {})
+  }, [])
+
   // 세션 접기 + 접은 상태에서 세션 순서 드래그
   const [collapsedSessions, setCollapsedSessions] = useState<Set<string>>(new Set())
   const [dragSessId, setDragSessId] = useState<string | null>(null)
@@ -1971,6 +1983,21 @@ function RosterTab({
                           <span className="font-extrabold text-[11px] leading-tight truncate flex-1 cursor-pointer hover:brightness-110" onClick={() => onEditClass(cls)}>{cls.level}</span>
                           <span className="text-[9px] font-bold bg-white/30 px-1 py-px rounded flex-shrink-0">{all.length}</span>
                         </div>
+                        {/* 오늘 출결 배지 */}
+                        {(() => {
+                          const att = attendanceMap.get(cls.id)
+                          if (!att || att.ui_status === '미도래') return null
+                          const badgeStyle = att.ui_status === '완료'
+                            ? 'bg-green-100 text-green-700'
+                            : 'bg-blue-100 text-blue-700 animate-pulse'
+                          const totalPresent = att.students.length - att.absent_count - att.late_count
+                          const label = att.ui_status === '완료'
+                            ? `완료 ${totalPresent}/${att.students.length}`
+                            : att.ui_status
+                          return (
+                            <span className={`mt-0.5 inline-block text-[8px] font-bold px-1.5 py-px rounded-full ${badgeStyle}`}>{label}</span>
+                          )
+                        })()}
                         {(cls.room || cls.teacher) && (
                           <div className="mt-0.5 space-y-px cursor-pointer" onClick={() => onEditClass(cls)}>
                             {cls.room && <div className="text-[7.5px] opacity-75 flex gap-0.5 truncate"><span className="opacity-60">교</span><span className="bg-white/15 px-0.5 rounded truncate">{cls.room}</span></div>}
