@@ -91,6 +91,12 @@ export default function SmartboardPage() {
     try { window.blur() } catch {}
   }
 
+  async function handleLogout() {
+    const supabase = createClient()
+    await supabase.auth.signOut()
+    window.location.href = '/login'
+  }
+
   if (!authChecked) {
     return <div className="flex items-center justify-center min-h-screen text-gray-400 text-xl">로딩 중...</div>
   }
@@ -101,6 +107,11 @@ export default function SmartboardPage() {
       <p className="text-[#004EA2] text-3xl font-extrabold mb-2">{roomName}</p>
       <p className="text-gray-300 text-6xl font-mono mb-4">{clock}</p>
       <p className="text-gray-400 text-lg">출석 대기 중...</p>
+      {/* 우하단 교실 변경(로그아웃) — 잘못 설치 시 교정용 */}
+      <button onClick={handleLogout}
+        className="fixed bottom-3 right-3 text-xs text-gray-300 hover:text-gray-500 border border-gray-200 rounded-lg px-3 py-1.5 transition-colors">
+        교실 변경 ({roomName})
+      </button>
       {active && (
         <AttendanceOverlay
           classId={active.class_id}
