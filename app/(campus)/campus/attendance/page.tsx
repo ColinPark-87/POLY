@@ -754,48 +754,67 @@ function SettingsClassGrid({ roomClasses, sessMap, roomDefault, selectedClassId,
                 )}
               </div>
               <p className="text-[7px] text-[#94A3B8] truncate leading-tight">{cls.days ?? sess?.days ?? '매일'}</p>
-              {/* 팝업 시간 HH:MM 직접 입력 */}
-              <div className="flex items-center gap-0.5" onClick={e => e.stopPropagation()}>
-                <span className="text-[7px] text-[#94A3B8]">팝업</span>
-                <input type="text"
-                  value={cls.popup_minutes_before !== null ? (() => {
-                    const tr = cls.smartboard_time_range ?? sess?.time_range ?? ''
-                    const s = tr.split('~')[0]?.trim() ?? ''
-                    const [h, m] = s.split(':').map(Number)
-                    if (!h && h !== 0) return ''
-                    const h24 = h < 9 ? h + 12 : h
-                    const totalMin = h24 * 60 + (m || 0) - (cls.popup_minutes_before ?? roomDefault)
-                    return `${String(Math.floor(totalMin/60)).padStart(2,'0')}:${String(totalMin%60).padStart(2,'0')}`
-                  })() : ''}
-                  placeholder={(() => {
-                    const tr = cls.smartboard_time_range ?? sess?.time_range ?? ''
-                    const s = tr.split('~')[0]?.trim() ?? ''
-                    const [h, m] = s.split(':').map(Number)
-                    if (!h && h !== 0) return '자동'
-                    const h24 = h < 9 ? h + 12 : h
-                    const totalMin = h24 * 60 + (m || 0) - roomDefault
-                    return `${String(Math.floor(totalMin/60)).padStart(2,'0')}:${String(totalMin%60).padStart(2,'0')}`
-                  })()}
-                  onChange={async e => {
-                    const val = e.target.value
-                    if (!val) { await onPatch({ type: 'class_popup', class_id: cls.id, popup_minutes_before: null }); return }
-                    const [ph, pm] = val.split(':').map(Number)
-                    if (isNaN(ph) || isNaN(pm)) return
-                    const tr = cls.smartboard_time_range ?? sess?.time_range ?? ''
-                    const s = tr.split('~')[0]?.trim() ?? ''
-                    const [sh, sm] = s.split(':').map(Number)
-                    if (isNaN(sh)) return
-                    const sh24 = sh < 9 ? sh + 12 : sh
-                    const diff = (sh24 * 60 + (sm || 0)) - (ph * 60 + pm)
-                    await onPatch({ type: 'class_popup', class_id: cls.id, popup_minutes_before: diff })
-                  }}
-                  className="w-10 text-[7px] border border-[#E2E8F0] rounded px-0.5 focus:outline-none focus:border-[#004EA2]"
-                />
-              </div>
+              {/* 팝업 시간 HH:MM */}
+              <PopupTimeInput
+                timeRange={cls.smartboard_time_range ?? sess?.time_range ?? ''}
+                popupMinsBefore={cls.popup_minutes_before}
+                roomDefault={roomDefault}
+                onSave={async (mins) => onPatch({ type: 'class_popup', class_id: cls.id, popup_minutes_before: mins })}
+              />
             </div>
           </div>
         )
       })}
+    </div>
+  )
+}
+
+function calcPopupTime(timeRange: string, minsBefore: number): string {
+  const s = timeRange.split('~')[0]?.trim() ?? ''
+  const [h, m] = s.split(':').map(Number)
+  if (isNaN(h)) return ''
+  const h24 = h < 9 ? h + 12 : h
+  const totalMin = h24 * 60 + (m || 0) - minsBefore
+  return `${String(Math.floor(totalMin / 60)).padStart(2, '0')}:${String(totalMin % 60).padStart(2, '0')}`
+}
+
+function PopupTimeInput({ timeRange, popupMinsBefore, roomDefault, onSave }: {
+  timeRange: string
+  popupMinsBefore: number | null
+  roomDefault: number
+  onSave: (mins: number | null) => Promise<void>
+}) {
+  const defaultTime = timeRange ? calcPopupTime(timeRange, roomDefault) : ''
+  const currentTime = popupMinsBefore !== null && timeRange ? calcPopupTime(timeRange, popupMinsBefore) : ''
+  const [draft, setDraft] = useState(currentTime)
+  const [dirty, setDirty] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  async function save() {
+    if (!draft) { setSaving(true); await onSave(null); setSaving(false); setDirty(false); return }
+    const [ph, pm] = draft.split(':').map(Number)
+    if (isNaN(ph) || isNaN(pm)) return
+    const [sh, sm] = (timeRange.split('~')[0]?.trim() ?? '').split(':').map(Number)
+    if (isNaN(sh)) return
+    const sh24 = sh < 9 ? sh + 12 : sh
+    const diff = sh24 * 60 + (sm || 0) - (ph * 60 + pm)
+    setSaving(true); await onSave(diff); setSaving(false); setDirty(false)
+  }
+
+  return (
+    <div className="flex items-center gap-0.5 mt-0.5" onClick={e => e.stopPropagation()}>
+      <span className="text-[7px] text-[#94A3B8]">팝업</span>
+      <input type="text" value={draft} placeholder={defaultTime || '자동'}
+        onChange={e => { setDraft(e.target.value); setDirty(true) }}
+        onKeyDown={e => { if (e.key === 'Enter') save() }}
+        className={`w-10 text-[7px] border rounded px-0.5 focus:outline-none ${dirty ? 'border-[#004EA2]' : 'border-[#E2E8F0]'}`}
+      />
+      {dirty && (
+        <button onClick={save} disabled={saving}
+          className="text-[7px] font-bold text-white bg-[#004EA2] rounded px-0.5 disabled:opacity-50">
+          {saving ? '…' : '✓'}
+        </button>
+      )}
     </div>
   )
 }

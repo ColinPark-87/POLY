@@ -13,7 +13,8 @@ export function PreAbsenceModal({ classes, onClose, onSaved }: Props) {
   const [selected, setSelected] = useState<{ student_id: string; name: string; class_id: string; class_label: string } | null>(null)
   const [status, setStatus] = useState<'absent' | 'late'>('absent')
   const [note, setNote] = useState('')
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0])
+  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -39,22 +40,38 @@ export function PreAbsenceModal({ classes, onClose, onSaved }: Props) {
       )
     : []
 
+  // 시작~종료 날짜 범위 (포함)
+  function dateRange(start: string, end: string): string[] {
+    const out: string[] = []
+    const s = new Date(start + 'T00:00:00')
+    const e = new Date(end + 'T00:00:00')
+    if (isNaN(s.getTime()) || isNaN(e.getTime()) || e < s) return [start]
+    for (let d = new Date(s); d <= e; d.setDate(d.getDate() + 1)) {
+      out.push(d.toISOString().split('T')[0])
+      if (out.length > 60) break // 안전장치: 최대 60일
+    }
+    return out
+  }
+
   async function handleSave() {
     if (!selected) { setError('학생을 선택해주세요'); return }
     setSaving(true); setError('')
     try {
-      const res = await fetch('/api/campus/attendance/pre-absence', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          class_id: selected.class_id,
-          session_date: date,
-          student_id: selected.student_id,
-          status,
-          note: note || undefined,
-        }),
-      })
-      if (!res.ok) throw new Error()
+      const dates = dateRange(startDate, endDate)
+      for (const d of dates) {
+        const res = await fetch('/api/campus/attendance/pre-absence', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            class_id: selected.class_id,
+            session_date: d,
+            student_id: selected.student_id,
+            status,
+            note: note || undefined,
+          }),
+        })
+        if (!res.ok) throw new Error()
+      }
       onSaved()
     } catch {
       setError('저장에 실패했습니다')
@@ -106,15 +123,28 @@ export function PreAbsenceModal({ classes, onClose, onSaved }: Props) {
           </div>
         )}
 
-        {/* 날짜 */}
+        {/* 기간 (시작~종료) */}
         <div>
-          <label className="text-xs font-medium text-[#64748B] block mb-1">날짜</label>
-          <input
-            type="date"
-            value={date}
-            onChange={e => setDate(e.target.value)}
-            className="w-full border border-[#E2E8F0] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]"
-          />
+          <label className="text-xs font-medium text-[#64748B] block mb-1">기간 (며칠 결석 시 종료일 지정)</label>
+          <div className="flex items-center gap-1.5">
+            <input
+              type="date"
+              value={startDate}
+              onChange={e => { setStartDate(e.target.value); if (endDate < e.target.value) setEndDate(e.target.value) }}
+              className="flex-1 border border-[#E2E8F0] rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]"
+            />
+            <span className="text-[#94A3B8] text-sm">~</span>
+            <input
+              type="date"
+              value={endDate}
+              min={startDate}
+              onChange={e => setEndDate(e.target.value)}
+              className="flex-1 border border-[#E2E8F0] rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]"
+            />
+          </div>
+          {startDate !== endDate && (
+            <p className="text-[10px] text-[#7C3AED] mt-1">{dateRange(startDate, endDate).length}일간 사전결석 등록</p>
+          )}
         </div>
 
         {/* 결석/지각 */}
