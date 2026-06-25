@@ -805,35 +805,48 @@ function PopupTimeInput({ timeRange, popupMinsBefore, roomDefault, onSave }: {
 }) {
   const defaultTime = timeRange ? calcPopupTime(timeRange, roomDefault) : ''
   const currentTime = popupMinsBefore !== null && timeRange ? calcPopupTime(timeRange, popupMinsBefore) : ''
+  const displayTime = currentTime || defaultTime
+  const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(currentTime)
-  const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
 
   async function save() {
-    if (!draft) { setSaving(true); await onSave(null); setSaving(false); setDirty(false); return }
+    if (!draft) { setSaving(true); await onSave(null); setSaving(false); setEditing(false); return }
     const [ph, pm] = draft.split(':').map(Number)
-    if (isNaN(ph) || isNaN(pm)) return
+    if (isNaN(ph) || isNaN(pm)) { setEditing(false); return }
     const [sh, sm] = (timeRange.split('~')[0]?.trim() ?? '').split(':').map(Number)
-    if (isNaN(sh)) return
+    if (isNaN(sh)) { setEditing(false); return }
     const sh24 = sh < 9 ? sh + 12 : sh
     const diff = sh24 * 60 + (sm || 0) - (ph * 60 + pm)
-    setSaving(true); await onSave(diff); setSaving(false); setDirty(false)
+    setSaving(true); await onSave(diff); setSaving(false); setEditing(false)
+  }
+
+  if (!editing) {
+    return (
+      <div className="flex items-center gap-0.5 mt-0.5" onClick={e => e.stopPropagation()}>
+        <span className="text-[7px] text-[#94A3B8]">팝업</span>
+        <span className={`text-[7px] font-semibold ${currentTime ? 'text-[#004EA2]' : 'text-[#94A3B8]'}`}>
+          {displayTime || '자동'}
+        </span>
+        <button onClick={() => { setDraft(currentTime); setEditing(true) }}
+          className="text-[7px] text-[#004EA2] hover:underline ml-auto">수정</button>
+      </div>
+    )
   }
 
   return (
     <div className="flex items-center gap-0.5 mt-0.5" onClick={e => e.stopPropagation()}>
-      <span className="text-[7px] text-[#94A3B8]">팝업</span>
-      <input type="text" value={draft} placeholder={defaultTime || '자동'}
-        onChange={e => { setDraft(e.target.value); setDirty(true) }}
-        onKeyDown={e => { if (e.key === 'Enter') save() }}
-        className={`w-10 text-[7px] border rounded px-0.5 focus:outline-none ${dirty ? 'border-[#004EA2]' : 'border-[#E2E8F0]'}`}
+      <input type="text" value={draft} placeholder={defaultTime || 'HH:MM'} autoFocus
+        onChange={e => setDraft(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setEditing(false) }}
+        className="w-10 text-[7px] border border-[#004EA2] rounded px-0.5 focus:outline-none"
       />
-      {dirty && (
-        <button onClick={save} disabled={saving}
-          className="text-[7px] font-bold text-white bg-[#004EA2] rounded px-0.5 disabled:opacity-50">
-          {saving ? '…' : '✓'}
-        </button>
-      )}
+      <button onClick={save} disabled={saving}
+        className="text-[7px] font-bold text-white bg-[#004EA2] rounded px-1 disabled:opacity-50">
+        {saving ? '…' : '저장'}
+      </button>
+      <button onClick={() => setEditing(false)}
+        className="text-[7px] text-[#94A3B8] hover:text-[#64748B]">취소</button>
     </div>
   )
 }
