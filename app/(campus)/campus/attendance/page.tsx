@@ -502,7 +502,7 @@ function ClassCard({ classData, color, sessionDays, students, dirty, isSaving, o
 // ──────────────────────────────────────────────
 interface Classroom { id: string; display_name: string; account_email: string | null; popup_minutes_before: number }
 interface SettingsSession { id: string; name: string; time_range: string | null; days: string | null }
-interface SettingsClass { id: string; session_id: string; level: string; room: string | null; teacher: string | null; color: string; days: string | null; classroom_id: string | null; popup_minutes_before: number | null }
+interface SettingsClass { id: string; session_id: string; level: string; room: string | null; teacher: string | null; color: string; days: string | null; classroom_id: string | null; popup_minutes_before: number | null; smartboard_time_range: string | null }
 
 function AttendanceSettings() {
   const [classrooms, setClassrooms] = useState<Classroom[]>([])
@@ -670,6 +670,8 @@ function SettingsClassGrid({ roomClasses, sessMap, roomDefault, selectedClassId,
   const [order, setOrder] = useState<string[]>(() => roomClasses.map(c => c.id))
   const [dragId, setDragId] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState<string | null>(null)
+  const [editingTimeId, setEditingTimeId] = useState<string | null>(null)
+  const [timeDraft, setTimeDraft] = useState('')
 
   const sorted = order.map(id => roomClasses.find(c => c.id === id)).filter(Boolean) as SettingsClass[]
 
@@ -705,7 +707,23 @@ function SettingsClassGrid({ roomClasses, sessMap, roomDefault, selectedClassId,
               <p className="text-[9px] font-extrabold truncate leading-tight">{cls.level}</p>
             </div>
             <div className="px-1 py-0.5">
-              <p className="text-[8px] text-[#64748B] truncate leading-tight">{sess?.time_range ?? '미설정'}</p>
+              {/* 시간 — 클릭 인라인 편집 (개설반현황 독립) */}
+              <div onClick={e => { e.stopPropagation(); setEditingTimeId(cls.id); setTimeDraft(cls.smartboard_time_range ?? sess?.time_range ?? '') }}>
+                {editingTimeId === cls.id ? (
+                  <input autoFocus value={timeDraft}
+                    onChange={e => setTimeDraft(e.target.value)}
+                    onBlur={async () => { await onPatch({ type: 'class_smartboard_time', class_id: cls.id, smartboard_time_range: timeDraft }); setEditingTimeId(null) }}
+                    onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                    placeholder="9:40~11:00"
+                    className="w-full text-[8px] border border-[#004EA2] rounded px-0.5 focus:outline-none"
+                    onClick={e => e.stopPropagation()}
+                  />
+                ) : (
+                  <p className={`text-[8px] truncate leading-tight cursor-pointer hover:text-[#004EA2] ${cls.smartboard_time_range ? 'text-[#004EA2] font-semibold' : 'text-[#64748B]'}`}>
+                    {cls.smartboard_time_range ?? sess?.time_range ?? '미설정'}{cls.smartboard_time_range ? ' *' : ''}
+                  </p>
+                )}
+              </div>
               <p className="text-[7px] text-[#94A3B8] truncate leading-tight">{cls.days ?? sess?.days ?? '매일'}</p>
               <div className="flex items-center gap-0.5" onClick={e => e.stopPropagation()}>
                 <input type="number" min={0} max={30}

@@ -47,7 +47,7 @@ export async function GET() {
     // days/classroom_id 컬럼 없을 수 있으므로 폴백
     const full = await serviceClient
       .from('classes')
-      .select('id, session_id, level, room, teacher, color, days, classroom_id, popup_minutes_before')
+      .select('id, session_id, level, room, teacher, color, days, classroom_id, popup_minutes_before, smartboard_time_range')
       .in('session_id', sessionIds)
       .order('sort_order')
     if (!full.error && full.data) {
@@ -58,7 +58,7 @@ export async function GET() {
         .select('id, session_id, level, room, teacher, color')
         .in('session_id', sessionIds)
         .order('sort_order')
-      classes = (basic.data ?? []).map((c: any) => ({ ...c, days: null, classroom_id: null, popup_minutes_before: null }))
+      classes = (basic.data ?? []).map((c: any) => ({ ...c, days: null, classroom_id: null, popup_minutes_before: null, smartboard_time_range: null }))
     }
   }
 
@@ -102,6 +102,16 @@ export async function PATCH(req: NextRequest) {
     const { class_id, classroom_id } = body
     const { error } = await serviceClient
       .from('classes').update({ classroom_id: classroom_id || null })
+      .eq('id', class_id)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ ok: true })
+  }
+
+  // 스마트보드 전용 시간 설정 (개설반현황 독립)
+  if (body.type === 'class_smartboard_time') {
+    const { class_id, smartboard_time_range } = body
+    const { error } = await serviceClient
+      .from('classes').update({ smartboard_time_range: smartboard_time_range || null })
       .eq('id', class_id)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ ok: true })
