@@ -44,12 +44,22 @@ export async function GET() {
 
   let classes: any[] = []
   if (sessionIds.length) {
-    const { data } = await serviceClient
+    // days/classroom_id 컬럼 없을 수 있으므로 폴백
+    const full = await serviceClient
       .from('classes')
       .select('id, session_id, level, room, teacher, color, days, classroom_id')
       .in('session_id', sessionIds)
       .order('sort_order')
-    classes = data ?? []
+    if (!full.error && full.data) {
+      classes = full.data
+    } else {
+      const basic = await serviceClient
+        .from('classes')
+        .select('id, session_id, level, room, teacher, color')
+        .in('session_id', sessionIds)
+        .order('sort_order')
+      classes = (basic.data ?? []).map((c: any) => ({ ...c, days: null, classroom_id: null }))
+    }
   }
 
   // classroom_id가 없으면 classes.room 텍스트로 자동 매칭
