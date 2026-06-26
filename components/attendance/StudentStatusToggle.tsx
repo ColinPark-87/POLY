@@ -18,9 +18,9 @@ const STATUS_STYLE: Record<AttendanceStatus, string> = {
   late: 'bg-yellow-50 border-yellow-400 text-yellow-800',
 }
 const STATUS_LABEL: Record<AttendanceStatus, string> = {
-  present: '출석',
-  absent: '결석',
-  late: '지각',
+  present: '출석 Present',
+  absent: '결석 Absent',
+  late: '지각 Late',
 }
 const STATUS_ICON: Record<AttendanceStatus, string> = {
   present: '🟢',
