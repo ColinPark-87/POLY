@@ -636,23 +636,88 @@ function AttendanceSessions() {
                 </button>
               </div>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-1.5">
-              {list.map(c => {
-                const room = c.rid ? roomById.get(c.rid) : null
-                const popped = room?.force_popup_class_id === c.id
-                return (
-                  <div key={c.id} className={`rounded-lg border px-2 py-1.5 text-xs ${popped ? 'border-[#DC2626] bg-[#FEF2F2]' : 'border-[#E2E8F0] bg-[#F8FAFC]'}`}>
-                    <div className="font-bold text-[#1E293B] truncate">{c.level}</div>
-                    <div className="text-[10px] text-[#64748B] truncate">{room ? room.display_name : '교실 미지정'}</div>
-                    {popped && <div className="text-[9px] font-bold text-[#DC2626]">● 팝업중</div>}
-                  </div>
-                )
-              })}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
+              {list.map(c => (
+                <SessionClassCard key={c.id}
+                  classId={c.id} level={c.level} days={c.days}
+                  sessionDays={s.days} room={c.rid ? roomById.get(c.rid) ?? null : null}
+                  onReload={load} />
+              ))}
             </div>
             {allPopped && <p className="text-[10px] text-[#10B981] mt-1.5">✅ 이 세션 전체 교실 팝업중</p>}
           </div>
         )
       })}
+    </div>
+  )
+}
+
+// 세션 탭 내 반 카드 — 반별 팝업/닫기 + 요일 편집
+function SessionClassCard({ classId, level, days, sessionDays, room, onReload }: {
+  classId: string; level: string; days: string | null; sessionDays: string | null
+  room: Classroom | null; onReload: () => Promise<void> | void
+}) {
+  const popped = room?.force_popup_class_id === classId
+  const [showDays, setShowDays] = useState(false)
+  const [draft, setDraft] = useState('')
+  const [busy, setBusy] = useState(false)
+  const effectiveDays = days ?? sessionDays
+
+  function openDays() { setDraft(effectiveDays ?? '월화수목금'); setShowDays(true) }
+  function toggle(d: string) { setDraft(p => p.includes(d) ? p.replace(d, '') : p + d) }
+  async function patchDays(value: string | null) {
+    setBusy(true)
+    await fetch('/api/campus/attendance/class-days', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ class_id: classId, days: value }),
+    })
+    await onReload(); setBusy(false); setShowDays(false)
+  }
+  async function saveDays() {
+    const ordered = ['월', '화', '수', '목', '금', '토', '일'].filter(x => draft.includes(x)).join('')
+    await patchDays(ordered || null)
+  }
+  async function togglePopup() {
+    if (!room) return
+    setBusy(true)
+    await fetch('/api/campus/attendance/force-popup', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ classroom_id: room.id, class_id: popped ? null : classId }),
+    })
+    await onReload(); setBusy(false)
+  }
+
+  return (
+    <div className={`rounded-lg border px-2 py-1.5 text-xs ${popped ? 'border-[#DC2626] bg-[#FEF2F2]' : 'border-[#E2E8F0] bg-[#F8FAFC]'}`}>
+      <div className="flex items-center gap-1">
+        <span className="font-bold text-[#1E293B] truncate flex-1">{level}</span>
+        {popped && <span className="text-[9px] font-bold text-[#DC2626]">●팝업중</span>}
+      </div>
+      <div className="text-[10px] text-[#64748B] truncate">{room ? room.display_name : '교실 미지정'} · {effectiveDays || '전체'}</div>
+      <div className="flex items-center gap-1 mt-1">
+        <button onClick={togglePopup} disabled={busy || !room}
+          className={`text-[10px] font-bold px-2 py-0.5 rounded text-white ${popped ? 'bg-[#DC2626]' : 'bg-[#004EA2]'} disabled:opacity-40`}>
+          {popped ? '닫기' : '팝업'}
+        </button>
+        <button onClick={() => showDays ? setShowDays(false) : openDays()}
+          className="text-[10px] px-2 py-0.5 rounded border border-[#CBD5E1] text-[#64748B]">요일</button>
+      </div>
+      {showDays && (
+        <div className="mt-1 p-1 rounded bg-white border border-[#E2E8F0]">
+          <div className="flex items-center gap-0.5 flex-wrap">
+            <button onClick={() => setDraft('월화수목금')} className="text-[9px] font-bold px-1 py-0.5 rounded bg-[#EAF2FB] text-[#004EA2]">월~금</button>
+            {['월', '화', '수', '목', '금'].map(d => (
+              <button key={d} onClick={() => toggle(d)}
+                className={`text-[9px] font-bold w-5 h-5 rounded ${draft.includes(d) ? 'bg-[#004EA2] text-white' : 'bg-[#F1F5F9] text-[#94A3B8]'}`}>{d}</button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1 mt-1">
+            <button onClick={() => patchDays(null)} disabled={busy} className="text-[9px] px-1.5 py-0.5 rounded border border-[#CBD5E1] text-[#64748B]" title="세션 요일 상속">상속</button>
+            <button onClick={saveDays} disabled={busy} className="text-[9px] font-bold px-2 py-0.5 rounded bg-[#004EA2] text-white disabled:opacity-50">{busy ? '...' : '저장'}</button>
+            <button onClick={() => setShowDays(false)} className="text-[9px] px-1.5 py-0.5 rounded border border-[#CBD5E1] text-[#64748B]">취소</button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
