@@ -20,9 +20,13 @@ const staffNavItems = [
   { href: '/campus/attendance', label: '출결', icon: '✅' },
 ]
 
-export default function CampusBottomNav({ staffOnly = false }: { staffOnly?: boolean }) {
+export default function CampusBottomNav({ staffOnly = false, permAttendance = false }: { staffOnly?: boolean; permAttendance?: boolean }) {
   const pathname = usePathname()
-  const items = staffOnly ? staffNavItems : navItems
+  let items = staffOnly ? staffNavItems : navItems
+  // 출결 권한 있으면 일반 네비에 '출결' 추가 (설정 앞에 끼움)
+  if (!staffOnly && permAttendance) {
+    items = [...navItems.slice(0, 4), { href: '/campus/attendance', label: '출결', icon: '📋' }, ...navItems.slice(4)]
+  }
 
   return (
     <nav

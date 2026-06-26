@@ -82,7 +82,7 @@ export default async function CampusLayout({ children }: { children: React.React
           {children}
         </main>
       </div>
-      <CampusBottomNav staffOnly={isCampusStaffOnly(role, position)} />
+      <CampusBottomNav staffOnly={isCampusStaffOnly(role, position)} permAttendance={permissions.attendance} />
     </div>
   )
 }

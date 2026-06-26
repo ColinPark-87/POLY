@@ -53,13 +53,23 @@ function bestAddr(stop){const m=stopAddr[stop]||{}; const e=Object.entries(m).fi
 async function kakao(type,q){const url=`https://dapi.kakao.com/v2/local/search/${type}.json?query=${encodeURIComponent(q)}&size=5`+(type==='keyword'?`&x=${CX}&y=${CY}&radius=20000&sort=distance`:'')
   const r=await fetch(url,{headers:{Authorization:`KakaoAK ${KAKAO}`}}); if(!r.ok)return[]; const d=await r.json()
   return (d.documents??[]).map(x=>({lat:parseFloat(x.y),lng:parseFloat(x.x),name:x.place_name||x.address_name}))}
-const cleanStop=s=>norm(s).replace(/\s*(앞|뒤|건너편|맞은편|입구|정문|후문|횡단보도|승강장|승차장|정류장|스쿨버스|놀이터|상가|약국|앞쪽)\s*/g,' ').replace(/\d+동.*$/,'').trim()
+// 정류장명에서 위치설명어만 제거(아파트명·동번호는 보존)
+const cleanStop=s=>norm(s).replace(/\(.*?\)/g,'').replace(/\s*(앞|뒤|건너편|맞은편|입구|횡단보도|승강장|승차장|정류장|스쿨버스|상가|앞쪽|승차대기|승차보류|하원|등원|정문|후문|약국|놀이터|차로|건너|쪽)\s*/g,' ').replace(/\s+/g,' ').trim()
+// 아파트/단지/동번호 등 '장소명'을 가진 정류장 = 정류장명 자체로 지오코딩 신뢰
+const hasPlace=s=>/크로바|목련|한마루|엑스포|센트럴|우성|에코|테라스|로덴|더샵|리슈빌|자이|푸르지오|아너스빌|해링턴|목양|누리|둥지|가람|마을|빌|타운|파크|힐|캐슬|어울림|아파트|유치원|초등학교|중학교|\d\s*동/.test(s)
 async function geocodeStop(stop){
-  const addr=bestAddr(stop)
-  const tries=[]
-  if(addr){ if(/(로|길)\s*\d|[가-힣]+시\s|[가-힣]+구\s/.test(addr))tries.push(['address',addr]); tries.push(['keyword',addr+' 대전']); tries.push(['keyword',addr]) }
-  const cs=cleanStop(stop); if(cs)tries.push(['keyword',cs+' 대전']); tries.push(['keyword',stop+' 대전'])
-  for(const [type,q] of tries){ const res=await kakao(type,q); const hit=res.find(r=>inDJ(r.lat,r.lng)); if(hit)return{...hit,q,type,addr} }
+  const addr=bestAddr(stop), cs=cleanStop(stop)
+  const byName=[], byAddr=[]
+  if(cs&&cs.length>=2){byName.push(['keyword',cs+' 대전']); byName.push(['keyword',cs])}
+  byName.push(['keyword',stop+' 대전'])
+  if(addr){ if(/(로|길)\s*\d|[가-힣]+시\s|[가-힣]+구\s/.test(addr))byAddr.push(['address',addr]); byAddr.push(['keyword',addr+' 대전']) }
+  // 아파트명 있으면 정류장명 우선, 일반명(어린이승차장 등)은 집주소 우선
+  const tries=hasPlace(cs||stop)?[...byName,...byAddr]:[...byAddr,...byName]
+  const named=/크로바|목련|한마루|엑스포|센트럴|우성|에코|테라스|로덴|더샵|리슈빌|자이|푸르지오|아너스빌|해링턴|목양|누리|둥지|가람|햇님|꿈나무|샘머리|보라|국화|향촌|녹원|무지개|미리내|은아|파랑새|개나리|서원|삼육|중앙고|엑스포|아파트|초등학교|중학교|유치원/
+  const nearCtr=(la,ln)=>Math.abs(la-CY)<0.003&&Math.abs(ln-CX)<0.003
+  for(const [type,q] of tries){ const res=await kakao(type,q); const hit=res.find(r=>inDJ(r.lat,r.lng)); if(!hit)continue
+    if(nearCtr(hit.lat,hit.lng)&&!named.test(q))continue  // 아파트명 없는 vague 센터쏠림 거부
+    return{...hit,q,type,addr} }
   return null
 }
 
