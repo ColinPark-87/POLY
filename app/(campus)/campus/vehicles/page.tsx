@@ -673,6 +673,22 @@ export default function VehiclesPage() {
     loadToday()
   }
 
+  // 오늘 임시배정/변경 취소 — pickup_override 행 삭제.
+  // 오늘만 탑승 추가 학생 → 오늘 명단에서 제거. 오늘 호차/정류장 변경 학생 → 영구 스케줄로 원복.
+  async function clearOverrideToday(studentId: string) {
+    setSaving(true)
+    const res = await fetch('/api/campus/vehicles', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ action: 'clear_override', student_id: studentId, date: selectedDate, direction: todayDir }),
+    })
+    const d = await res.json().catch(() => ({}))
+    if (!res.ok || d.error) { setSaving(false); alert(`취소 실패: ${d.error ?? res.status}`); return }
+    setSaving(false); closeOverrideModal()
+    setBusFilter('전체'); setSessionFilter('전체')
+    flashSuccess('오늘 배정이 취소되었습니다')
+    loadToday()
+  }
+
   async function confirmOverride() {
     if (!overrideModal) return
     const finalLoc = overrideLocMode === 'new' ? overrideLocNew : overrideLoc
@@ -1860,12 +1876,12 @@ export default function VehiclesPage() {
                 </div>
               )}
 
-              {/* 되돌리기 (오늘 임시배정 해제) */}
+              {/* 오늘 취소 (오늘만 탑승 추가 → 제거 / 오늘 변경 → 영구 스케줄로 원복) */}
               {overrideModal.student.override && (
                 <div className="flex gap-2">
-                  <button onClick={() => doOverride(overrideModal.student.student_id, overrideModal.bus, false)} disabled={saving}
-                    className="flex-1 px-3 py-2 rounded-xl text-xs font-semibold border border-[#E2E8F0] text-[#64748B]">
-                    ↩ 원래대로
+                  <button onClick={() => { if (confirm(`${overrideModal.student.name} — 오늘(${selectedDate}) ${todayDir==='arr'?'등원':'하원'} 임시 배정을 취소할까요?\n(오늘만 탑승은 명단에서 빠지고, 오늘 변경은 원래 스케줄로 돌아갑니다)`)) clearOverrideToday(overrideModal.student.student_id) }} disabled={saving}
+                    className="flex-1 px-3 py-2 rounded-xl text-xs font-semibold border border-[#FCA5A5] text-[#DC2626] bg-[#FEF2F2]">
+                    ✕ 오늘 탑승 취소
                   </button>
                 </div>
               )}
