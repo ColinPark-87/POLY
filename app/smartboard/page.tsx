@@ -54,14 +54,15 @@ export default function SmartboardPage() {
       if (needLogin) {
         // 기존 세션 정리 후 재로그인 (안정성)
         if (user && currentEmail !== wantEmail) { await supabase.auth.signOut(); user = null }
-        // 콜드부팅 네트워크 레이스 대비 — 최대 3회 재시도
-        for (let attempt = 1; attempt <= 3; attempt++) {
+        // 콜드부팅 네트워크 레이스 + 동시부팅 IP rate-limit 대비 — 지터 백오프 재시도
+        for (let attempt = 1; attempt <= 5; attempt++) {
           const { data: signInData, error } = await supabase.auth.signInWithPassword({
             email: wantEmail!, password: '7659',
           })
           if (!error && signInData.user) { user = signInData.user; setAutoErr(''); break }
-          setAutoErr(`자동로그인 시도 ${attempt}/3 실패 (${wantEmail}): ${error?.message ?? '오류'}`)
-          if (attempt < 3) await new Promise(r => setTimeout(r, 1500))
+          setAutoErr(`자동로그인 시도 ${attempt}/5 (${wantEmail}): ${error?.message ?? '오류'}`)
+          // 1.5~4.5초 랜덤 — 여러 PC가 같은 박자로 재시도해 또 몰리는 것 방지
+          if (attempt < 5) await new Promise(r => setTimeout(r, 1500 + Math.random() * 3000))
         }
       }
 
