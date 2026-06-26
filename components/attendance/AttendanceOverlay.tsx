@@ -98,6 +98,7 @@ export function AttendanceOverlay({ classId, campusId, students, onComplete, isT
               key={s.student_id}
               studentId={s.student_id}
               name={s.student_name}
+              englishName={s.english_name}
               status={statuses[s.student_id] ?? 'present'}
               preMarked={s.pre_marked_absent}
               onStatusChange={handleStatusChange}

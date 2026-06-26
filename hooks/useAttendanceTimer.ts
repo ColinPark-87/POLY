@@ -7,6 +7,7 @@ import { parseStartTime, toMinutes } from '@/lib/attendance'
 export interface StudentForOverlay {
   student_id: string
   student_name: string
+  english_name?: string | null
   pre_marked_absent: boolean
 }
 
@@ -22,7 +23,7 @@ export function useAttendanceTimer(classId: string, campusId: string) {
 
     const { data: enrollments } = await supabase
       .from('class_enrollments')
-      .select('student_id, campus_students(name)')
+      .select('student_id, campus_students(name, english_name)')
       .eq('class_id', classId)
       .eq('is_waitlist', false)
 
@@ -50,6 +51,7 @@ export function useAttendanceTimer(classId: string, campusId: string) {
       (enrollments ?? []).map((e: any) => ({
         student_id: e.student_id,
         student_name: (e.campus_students as any)?.name ?? '',
+        english_name: (e.campus_students as any)?.english_name ?? null,
         pre_marked_absent: preAbsentIds.has(e.student_id),
       }))
     )

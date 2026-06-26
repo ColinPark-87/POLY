@@ -13,7 +13,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const session_date = new Date().toISOString().split('T')[0]
+  // KST 기준 날짜 (현재팝업판단·관리페이지와 일치 — UTC 쓰면 새벽시간대 날짜 어긋남)
+  const session_date = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().split('T')[0]
 
   const { class_id, records } = await req.json() as {
     class_id: string

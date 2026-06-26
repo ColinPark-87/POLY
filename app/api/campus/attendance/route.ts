@@ -19,7 +19,8 @@ export async function GET(req: NextRequest) {
   if (!profile?.campus_id) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const searchParams = req.nextUrl.searchParams
-  const date = searchParams.get('date') ?? new Date().toISOString().split('T')[0]
+  // KST 기준 (저장 라우트·현재팝업판단과 일치)
+  const date = searchParams.get('date') ?? new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().split('T')[0]
 
   // 1. 최신 월 파악 (class-roster와 동일하게 월 기준 필터)
   const { data: allMonthRows } = await serviceClient
@@ -118,7 +119,9 @@ export async function GET(req: NextRequest) {
   }
 
   const sessMap = new Map(sessions.map(s => [s.id, s]))
-  const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes()
+  // KST 현재 분 (서버 UTC라 +9h 보정 — 안 하면 미도래/대기중 상태가 9시간 어긋남)
+  const kstNowMin = new Date(Date.now() + 9 * 60 * 60 * 1000)
+  const nowMinutes = kstNowMin.getUTCHours() * 60 + kstNowMin.getUTCMinutes()
 
   const result = (classes ?? []).map((c: any) => {
     const sess = sessMap.get(c.session_id)!

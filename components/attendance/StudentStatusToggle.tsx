@@ -5,6 +5,7 @@ import type { AttendanceStatus } from '@/lib/attendance'
 interface Props {
   studentId: string
   name: string
+  englishName?: string | null
   status: AttendanceStatus
   preMarked?: boolean
   onStatusChange: (studentId: string, status: AttendanceStatus) => void
@@ -27,7 +28,7 @@ const STATUS_ICON: Record<AttendanceStatus, string> = {
   late: '🟡',
 }
 
-export function StudentStatusToggle({ studentId, name, status, preMarked, onStatusChange }: Props) {
+export function StudentStatusToggle({ studentId, name, englishName, status, preMarked, onStatusChange }: Props) {
   function cycle() {
     const idx = STATUS_CYCLE.indexOf(status)
     const next = STATUS_CYCLE[(idx + 1) % STATUS_CYCLE.length]
@@ -41,6 +42,7 @@ export function StudentStatusToggle({ studentId, name, status, preMarked, onStat
     >
       <span className="text-xl">{STATUS_ICON[status]}</span>
       <span>{name}</span>
+      {englishName && <span className="text-sm font-normal opacity-60">{englishName}</span>}
       {preMarked && status === 'absent' && (
         <span className="text-xs font-bold bg-red-200 text-red-700 px-1 rounded">사전</span>
       )}

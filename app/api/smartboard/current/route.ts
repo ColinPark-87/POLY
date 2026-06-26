@@ -98,7 +98,7 @@ export async function GET(req: Request) {
   async function buildActive(cls: any, sess: any, timeRange: string, existingId: string | null, forced: boolean) {
     const { data: enrollments } = await svc
       .from('class_enrollments')
-      .select('student_id, campus_students(name)')
+      .select('student_id, campus_students(name, english_name)')
       .eq('class_id', cls.id).neq('is_waitlist', true)
     let preAbsent = new Set<string>()
     if (existingId) {
@@ -111,6 +111,7 @@ export async function GET(req: Request) {
     const students = (enrollments ?? []).map((e: any) => ({
       student_id: e.student_id,
       student_name: (e.campus_students as any)?.name ?? '',
+      english_name: (e.campus_students as any)?.english_name ?? null,
       pre_marked_absent: preAbsent.has(e.student_id),
     }))
     return { class_id: cls.id, class_level: cls.level, session_name: sess.name, time_range: timeRange, forced, students }
