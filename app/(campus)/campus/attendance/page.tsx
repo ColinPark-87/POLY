@@ -407,9 +407,20 @@ function ClassCard({ classData, color, sessionDays, students, dirty, isSaving, o
   onUpdateDays: (days: string | null) => Promise<void>
 }) {
   const [showDays, setShowDays] = useState(false)
+  const [dayDraft, setDayDraft] = useState('')
+  const [daySaving, setDaySaving] = useState(false)
   const classDays = (classData as any).class_days as string | null
   // 실제 적용 요일: 반 개별 > 세션 > null(전체)
   const effectiveDays = classDays ?? sessionDays
+
+  function openDays() { setDayDraft(effectiveDays ?? '월화수목금'); setShowDays(true) }
+  function toggleDraft(d: string) { setDayDraft(prev => prev.includes(d) ? prev.replace(d, '') : prev + d) }
+  async function saveDays() {
+    setDaySaving(true)
+    const ordered = ['월', '화', '수', '목', '금', '토', '일'].filter(x => dayDraft.includes(x)).join('')
+    await onUpdateDays(ordered || null)
+    setDaySaving(false); setShowDays(false)
+  }
 
   const total = students.length
   const absentCount = students.filter(s => s.status === 'absent' || s.status === 'pre_absent').length
@@ -425,38 +436,36 @@ function ClassCard({ classData, color, sessionDays, students, dirty, isSaving, o
           <span className="text-[9px] font-bold bg-white/30 px-1 py-px rounded flex-shrink-0">{total}</span>
           {/* 요일 설정 토글 버튼 */}
           <button
-            onClick={e => { e.stopPropagation(); setShowDays(v => !v) }}
+            onClick={e => { e.stopPropagation(); showDays ? setShowDays(false) : openDays() }}
             className="text-[9px] bg-white/20 hover:bg-white/35 px-1 py-px rounded ml-0.5 flex-shrink-0"
             title="반별 요일 설정"
           >요일</button>
         </div>
-        {/* 요일 토글 패널 */}
+        {/* 요일 편집 패널 — 선택 후 저장 눌러야 반영 */}
         {showDays && (
-          <div className="flex items-center gap-0.5 mt-1 flex-wrap" onClick={e => e.stopPropagation()}>
-            {/* 세션 상속 버튼 */}
-            <button
-              onClick={async () => { await onUpdateDays(null); setShowDays(false) }}
-              className={`text-[8px] font-bold px-1 py-px rounded ${!classDays ? 'bg-white text-gray-700' : 'bg-white/20'}`}
-              title="세션 요일 상속"
-            >{classDays ? '상속' : '✓상속'}</button>
-            {DAYS_LIST.map(d => {
-              const active = effectiveDays ? effectiveDays.includes(d) : true
-              const isOverride = !!classDays
-              return (
-                <button key={d}
-                  onClick={async () => {
-                    const cur = classDays ?? effectiveDays ?? '월화수목금'
-                    const next = active ? cur.replace(d, '') : cur + d
-                    await onUpdateDays(next || null)
-                  }}
-                  className={`text-[8px] font-bold w-5 h-5 rounded transition-colors ${
-                    active
-                      ? isOverride ? 'bg-white text-gray-800' : 'bg-white/40'
-                      : 'bg-white/10 text-white/40'
-                  }`}
-                >{d}</button>
-              )
-            })}
+          <div className="mt-1" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-0.5 flex-wrap">
+              {/* 월~금 한방 선택 */}
+              <button onClick={() => setDayDraft('월화수목금')}
+                className="text-[8px] font-bold px-1 py-px rounded bg-white/25 hover:bg-white/40" title="월~금 전체">월~금</button>
+              {DAYS_LIST.map(d => {
+                const active = dayDraft.includes(d)
+                return (
+                  <button key={d} onClick={() => toggleDraft(d)}
+                    className={`text-[8px] font-bold w-5 h-5 rounded transition-colors ${active ? 'bg-white text-gray-800' : 'bg-white/10 text-white/50'}`}
+                  >{d}</button>
+                )
+              })}
+            </div>
+            <div className="flex items-center gap-1 mt-1">
+              <button onClick={async () => { await onUpdateDays(null); setShowDays(false) }}
+                className="text-[8px] font-bold px-1.5 py-px rounded bg-white/20 hover:bg-white/35" title="세션 요일 상속(개별설정 해제)">상속</button>
+              <button onClick={saveDays} disabled={daySaving}
+                className="text-[8px] font-bold px-2 py-px rounded bg-white text-[#004EA2] disabled:opacity-50">{daySaving ? '저장중' : '저장'}</button>
+              <button onClick={() => setShowDays(false)}
+                className="text-[8px] font-bold px-1.5 py-px rounded bg-white/20 hover:bg-white/35">취소</button>
+              <span className="text-[7.5px] text-white/70 ml-0.5">현재: {effectiveDays || '전체'}</span>
+            </div>
           </div>
         )}
         {classData.ui_status !== '미도래' && (
