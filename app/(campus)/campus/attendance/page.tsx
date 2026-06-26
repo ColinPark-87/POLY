@@ -60,7 +60,7 @@ interface SessionGroup {
 type DraftMap = Map<string, Map<string, { status: LocalStatus; note: string }>>
 
 export default function AttendancePage() {
-  const [pageTab, setPageTab] = useState<'roster' | 'analytics' | 'settings'>('roster')
+  const [pageTab, setPageTab] = useState<'roster' | 'analytics' | 'settings' | 'sessions'>('roster')
   const [classes, setClasses] = useState<ClassWithAttendance[]>([])
   const [loading, setLoading] = useState(true)
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
@@ -182,7 +182,7 @@ export default function AttendancePage() {
   async function saveClass(classData: ClassWithAttendance) {
     const students = getStudents(classData)
     setSaving(prev => new Set(prev).add(classData.class_id))
-    const todayStr = new Date().toISOString().split('T')[0]
+    const todayStr = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().split('T')[0]  // KST
     const records = students.map(s => ({
       student_id: s.student_id,
       status: s.status === 'pre_absent' ? 'absent' : s.status,
@@ -236,7 +236,7 @@ export default function AttendancePage() {
 
       {/* 페이지 탭 */}
       <div className="flex gap-0 border-b border-[#E2E8F0] mb-4 overflow-x-auto">
-        {([['roster','당일 출결현황'],['analytics','출결현황 분석'],['settings','세팅']] as const).map(([key, label]) => (
+        {([['roster','당일 출결현황'],['analytics','출결현황 분석'],['sessions','세션별 팝업'],['settings','세팅']] as const).map(([key, label]) => (
           <button key={key} onClick={() => setPageTab(key)}
             className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${
               pageTab === key ? 'border-[#004EA2] text-[#004EA2]' : 'border-transparent text-[#64748B] hover:text-[#1E293B]'
@@ -385,6 +385,8 @@ export default function AttendancePage() {
       {pageTab === 'analytics' && <AttendanceAnalytics />}
 
       {/* ── 세팅 탭 ── */}
+      {pageTab === 'sessions' && <AttendanceSessions />}
+
       {pageTab === 'settings' && <AttendanceSettings />}
     </div>
   )
@@ -536,6 +538,115 @@ function ClassCard({ classData, color, sessionDays, students, dirty, isSaving, o
 interface Classroom { id: string; display_name: string; account_email: string | null; popup_minutes_before: number; force_popup_class_id: string | null }
 interface SettingsSession { id: string; name: string; time_range: string | null; days: string | null }
 interface SettingsClass { id: string; session_id: string; level: string; room: string | null; teacher: string | null; color: string; days: string | null; classroom_id: string | null; popup_minutes_before: number | null; smartboard_time_range: string | null }
+
+// ── 세션별 팝업 탭 ── 시간(세션) 순으로 정렬, 세션 단위 전체 팝업/닫기
+function AttendanceSessions() {
+  const [classrooms, setClassrooms] = useState<Classroom[]>([])
+  const [sessions, setSessions] = useState<SettingsSession[]>([])
+  const [classes, setClasses] = useState<SettingsClass[]>([])
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    const res = await fetch('/api/campus/attendance/settings')
+    if (res.ok) {
+      const d = await res.json()
+      setClassrooms(d.classrooms ?? [])
+      setSessions(d.sessions ?? [])
+      setClasses(d.classes ?? [])
+    }
+    setLoading(false)
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  if (loading) return <div className="p-8 text-gray-400">로딩 중...</div>
+
+  const roomByName = new Map(classrooms.map(r => [r.display_name.toLowerCase(), r.id]))
+  const roomById = new Map(classrooms.map(r => [r.id, r]))
+  const sessMap = new Map(sessions.map(s => [s.id, s]))
+  const parseT = (t: string | null | undefined) => {
+    if (!t) return 9999
+    const [h, m] = t.split('~')[0].trim().split(':').map(Number)
+    return (h < 9 ? h + 12 : h) * 60 + (m || 0)
+  }
+
+  // 세션별 그룹 + 각 반의 교실 매핑
+  const withRoom = classes.map(c => ({ ...c, rid: c.classroom_id ?? roomByName.get((c.room ?? '').toLowerCase()) ?? null }))
+  const bySession = new Map<string, typeof withRoom>()
+  withRoom.forEach(c => {
+    if (!bySession.has(c.session_id)) bySession.set(c.session_id, [])
+    bySession.get(c.session_id)!.push(c)
+  })
+  const orderedSessions = [...bySession.keys()]
+    .map(id => sessMap.get(id))
+    .filter(Boolean)
+    .sort((a, b) => parseT(a!.time_range) - parseT(b!.time_range)) as SettingsSession[]
+
+  async function setPopup(rid: string, classId: string | null) {
+    await fetch('/api/campus/attendance/force-popup', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ classroom_id: rid, class_id: classId }),
+    })
+  }
+
+  async function popSession(sid: string, on: boolean) {
+    setBusy(sid)
+    const list = (bySession.get(sid) ?? []).filter(c => c.rid)
+    await Promise.all(list.map(c => setPopup(c.rid!, on ? c.id : null)))
+    await load()
+    setBusy(null)
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-[#64748B]">시간(세션) 순. <b>세션 전체 팝업</b>을 누르면 그 세션의 모든 교실 PC에 해당 반 출석판이 동시에 뜹니다. <b>닫기</b>로 일괄 해제.</p>
+      {orderedSessions.length === 0 && <div className="py-10 text-center text-[#94A3B8] text-sm">세션이 없습니다</div>}
+      {orderedSessions.map(s => {
+        const list = (bySession.get(s.id) ?? []).sort((a, b) => parseT(a.smartboard_time_range ?? s.time_range) - parseT(b.smartboard_time_range ?? s.time_range))
+        const withRid = list.filter(c => c.rid)
+        const poppedCount = withRid.filter(c => roomById.get(c.rid!)?.force_popup_class_id === c.id).length
+        const allPopped = withRid.length > 0 && poppedCount === withRid.length
+        const color = sessColor(s.name, 0)
+        return (
+          <div key={s.id} className="rounded-xl border border-[#E2E8F0] bg-white p-3">
+            <div className="flex items-center gap-2 mb-2 flex-wrap">
+              <span className="font-bold text-sm" style={{ color }}>{s.name}</span>
+              {s.time_range && <span className="text-xs text-[#94A3B8]">{s.time_range}</span>}
+              <span className="text-xs text-[#94A3B8]">{withRid.length}개 교실</span>
+              {poppedCount > 0 && <span className="text-[10px] font-bold text-[#DC2626]">팝업중 {poppedCount}</span>}
+              <div className="ml-auto flex gap-1.5">
+                <button disabled={busy === s.id || withRid.length === 0}
+                  onClick={() => popSession(s.id, true)}
+                  className="text-xs font-bold px-3 py-1.5 rounded-lg bg-[#004EA2] text-white disabled:opacity-40">
+                  {busy === s.id ? '...' : '🔔 세션 전체 팝업'}
+                </button>
+                <button disabled={busy === s.id || poppedCount === 0}
+                  onClick={() => popSession(s.id, false)}
+                  className="text-xs font-bold px-3 py-1.5 rounded-lg border border-[#CBD5E1] text-[#64748B] disabled:opacity-40">
+                  ⏹ 닫기
+                </button>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-1.5">
+              {list.map(c => {
+                const room = c.rid ? roomById.get(c.rid) : null
+                const popped = room?.force_popup_class_id === c.id
+                return (
+                  <div key={c.id} className={`rounded-lg border px-2 py-1.5 text-xs ${popped ? 'border-[#DC2626] bg-[#FEF2F2]' : 'border-[#E2E8F0] bg-[#F8FAFC]'}`}>
+                    <div className="font-bold text-[#1E293B] truncate">{c.level}</div>
+                    <div className="text-[10px] text-[#64748B] truncate">{room ? room.display_name : '교실 미지정'}</div>
+                    {popped && <div className="text-[9px] font-bold text-[#DC2626]">● 팝업중</div>}
+                  </div>
+                )
+              })}
+            </div>
+            {allPopped && <p className="text-[10px] text-[#10B981] mt-1.5">✅ 이 세션 전체 교실 팝업중</p>}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
 
 function AttendanceSettings() {
   const [classrooms, setClassrooms] = useState<Classroom[]>([])
