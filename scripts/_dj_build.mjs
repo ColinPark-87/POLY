@@ -102,8 +102,8 @@ for(const r of recs){
   acc[key]=acc[key]||{student_id:m.id,class_id:cid,session:ses,eng:m.english_name,kr:m.name,arr:{},dep:{}}
   okRows++
   for(const d of r.days){
-    if(r.arrStop||r.arrTime){const ex=acc[key].arr[d]; if(ex&&ex.bus!==r.bus)conflicts.push({name:m.name,session:ses,day:d,dir:'arr',a:ex.bus,b:r.bus}); acc[key].arr[d]={bus:r.bus,loc:r.arrStop,time:r.arrTime}}
-    if(r.depStop||r.depTime){const ex=acc[key].dep[d]; if(ex&&ex.bus!==r.bus)conflicts.push({name:m.name,session:ses,day:d,dir:'dep',a:ex.bus,b:r.bus}); acc[key].dep[d]={bus:r.bus,loc:r.depStop,time:r.depTime}}
+    if(r.arrStop||r.arrTime){const ex=acc[key].arr[d]; if(ex&&ex.bus!==r.bus)conflicts.push({sid:m.id,name:m.name,session:ses,day:d,dir:'arr',a:ex.bus,b:r.bus}); acc[key].arr[d]={bus:r.bus,loc:r.arrStop,time:r.arrTime}}
+    if(r.depStop||r.depTime){const ex=acc[key].dep[d]; if(ex&&ex.bus!==r.bus)conflicts.push({sid:m.id,name:m.name,session:ses,day:d,dir:'dep',a:ex.bus,b:r.bus}); acc[key].dep[d]={bus:r.bus,loc:r.depStop,time:r.depTime}}
   }
 }
 // build schedule json (collapse _time vs day_time)
@@ -116,13 +116,14 @@ function buildSched(perDay){
   else for(const d of days)if(perDay[d].time)sched[d+'_time']=perDay[d].time
   return sched
 }
-const conflictKeys=new Set(conflicts.map(x=>x.name+'|'+x.session))
+const conflictSids=new Set(conflicts.map(x=>x.sid+'|'+x.session))
+const isBad=t=>{const h=+String(t).split(':')[0];return !(h>=0)||h>=23||h<6}
+function stripBad(sched){if(!sched)return sched; const s={...sched}; if(s._time&&isBad(s._time))delete s._time; for(const k of Object.keys(s))if(k.endsWith('_time')&&isBad(s[k]))delete s[k]; return s}
 const updates=[]
-for(const k in acc){const a=acc[k]; const arr=buildSched(a.arr), dep=buildSched(a.dep)
-  const hasConflict=conflictKeys.has(a.kr+'|'+a.session)
-  // 비신뢰 시간(자정대/23:59 등) 플래그
+for(const k in acc){const a=acc[k]; const arr=stripBad(buildSched(a.arr)), dep=stripBad(buildSched(a.dep))
+  const hasConflict=conflictSids.has(a.student_id+'|'+a.session)
   const allT=[...Object.values(a.arr),...Object.values(a.dep)].map(x=>x.time).filter(Boolean)
-  const badTime=allT.some(t=>{const h=+t.split(':')[0];return h>=23||h<6})
+  const badTime=allT.some(isBad)
   updates.push({student_id:a.student_id,class_id:a.class_id,session:a.session,kr:a.kr,eng:a.eng,arr_schedule:arr,dep_schedule:dep,hasConflict,badTime})}
 const clean=updates.filter(u=>!u.hasConflict&&!u.badTime)
 console.log('\n=== CLEAN SUBSET ===')
@@ -153,9 +154,23 @@ console.log('\nsession update breakdown:',JSON.stringify(updates.reduce((a,u)=>{
 console.log('\nsample updates:')
 for(const u of updates.slice(0,4))console.log(' ',u.kr,u.session,'arr',JSON.stringify(u.arr_schedule),'dep',JSON.stringify(u.dep_schedule))
 
+// ---- apply set: 충돌 학생 제외, 빈 스케줄 제외 ----
+const applySet=updates.filter(u=>!u.hasConflict&&(u.arr_schedule||u.dep_schedule))
+  .map(u=>({student_id:u.student_id,class_id:u.class_id,session:u.session,kr:u.kr,arr_schedule:u.arr_schedule,dep_schedule:u.dep_schedule}))
+// stops from applied only (bus|dir|loc)
+const applyStops=new Set()
+for(const u of applySet){for(const [sc,dir] of [[u.arr_schedule,'arr'],[u.dep_schedule,'dep']]){if(!sc)continue;for(const d of DAYS){if(sc[d]&&sc[d+'_loc'])applyStops.add(sc[d]+'||'+dir+'||'+sc[d+'_loc'])}}}
+const stopsRows=[...applyStops].map(s=>{const [bus,direction,stop_name]=s.split('||');return{bus_name:bus,direction,stop_name}})
+const applyBuses=[...new Set(applySet.flatMap(u=>[u.arr_schedule,u.dep_schedule].filter(Boolean).flatMap(sc=>DAYS.map(d=>sc[d]).filter(Boolean))))].sort((a,b)=>parseInt(a)-parseInt(b))
+const sessionTimeRanges={'1st Block':'15:00~16:25','2nd Block':'16:30~17:55','2nd Block(T,TH)':'16:30~17:55','유치부':'09:40~14:20'}
+console.log('\n=== APPLY SET ===')
+console.log('apply updates:',applySet.length,' buses:',applyBuses.join(','),' stops:',stopsRows.length)
+console.log('  by session:',JSON.stringify(applySet.reduce((a,u)=>{a[u.session]=(a[u.session]||0)+1;return a},{})))
+
 const out='../산출물/대전차량_2026-06-26/'
 fs.mkdirSync(out,{recursive:true})
 fs.writeFileSync(out+'_plan.json',JSON.stringify({campusId:c.id,updates,busesUsed,stops:[...stopSet]},null,1))
+fs.writeFileSync(out+'_apply.json',JSON.stringify({campusId:c.id,sessionTimeRanges,buses:applyBuses,stops:stopsRows,updates:applySet},null,1))
 const csv=(rows,cols)=>'﻿'+[cols.join(',')].concat(rows.map(r=>cols.map(k=>`"${String(r[k]??'').replace(/"/g,'""')}"`).join(','))).join('\n')
 fs.writeFileSync(out+'_미매칭.csv',csv(unmatched,['name','bus','sessLbl','addr','arrStop','depStop']))
 fs.writeFileSync(out+'_동명이인모호.csv',csv(ambiguous,['name','reason','bus','sessLbl','addr','arrStop','depStop']))

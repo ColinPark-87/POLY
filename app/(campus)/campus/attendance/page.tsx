@@ -235,7 +235,7 @@ export default function AttendancePage() {
       </div>
 
       {/* 페이지 탭 */}
-      <div className="flex gap-0 border-b border-[#E2E8F0] mb-4">
+      <div className="flex gap-0 border-b border-[#E2E8F0] mb-4 overflow-x-auto">
         {([['roster','당일 출결현황'],['analytics','출결현황 분석'],['settings','세팅']] as const).map(([key, label]) => (
           <button key={key} onClick={() => setPageTab(key)}
             className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${
@@ -318,8 +318,8 @@ export default function AttendancePage() {
       {activeGroup && (
         <>
 
-          {/* 5열 그리드 */}
-          <div className="grid gap-[6px]" style={{ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}>
+          {/* 반응형 그리드 (모바일 2열 → 데스크톱 5열) */}
+          <div className="grid gap-[6px] grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
             {activeGroup.classes.map(c => (
               <ClassCard
                 key={c.class_id}
@@ -666,7 +666,7 @@ function AttendanceSettings() {
         <div className="py-10 text-center text-[#94A3B8] text-sm">015_classrooms.sql 실행 필요</div>
       )}
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       {classrooms.map(room => {
         const roomClasses = classesWithRoom
           .filter(c => c.classroom_id === room.id)
