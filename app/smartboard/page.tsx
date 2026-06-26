@@ -28,6 +28,7 @@ export default function SmartboardPage() {
   const [changeCode, setChangeCode] = useState('7659')
   const [roomList, setRoomList] = useState<{ num: number; display_name: string }[]>([])
   const [autoErr, setAutoErr] = useState('')
+  const [computerNum, setComputerNum] = useState('')
 
   useEffect(() => {
     async function checkAuth() {
@@ -35,6 +36,7 @@ export default function SmartboardPage() {
       let { data: { user } } = await supabase.auth.getUser()
       const params = new URLSearchParams(window.location.search)
       const num = params.get('computer')
+      if (num && /^\d+$/.test(num)) setComputerNum(num)
 
       // ?computer=N 쿼리 → 자동 로그인 (부팅 자동시작용)
       // 이미 smartboard 계정이어도, 쿼리 번호와 다른 계정이면 교체
@@ -103,10 +105,11 @@ export default function SmartboardPage() {
     return () => clearInterval(id)
   }, [])
 
-  // 창 제목 — AutoHotkey 도우미가 이 제목으로 창 띄움/숨김 감지
+  // 창 제목 — AutoHotkey 도우미가 이 제목으로 창 띄움/숨김 감지 (컴퓨터별 고유 prefix)
   useEffect(() => {
-    document.title = active ? 'POLLY_ATTENDANCE_ACTIVE' : 'POLLY_ATTENDANCE_IDLE'
-  }, [active])
+    const pfx = computerNum ? `POLLY_ATTENDANCE_${computerNum}_` : 'POLLY_ATTENDANCE_'
+    document.title = active ? `${pfx}ACTIVE` : `${pfx}IDLE`
+  }, [active, computerNum])
 
   function handleComplete() {
     if (active) {
