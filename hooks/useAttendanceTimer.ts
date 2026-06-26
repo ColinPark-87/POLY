@@ -9,6 +9,7 @@ export interface StudentForOverlay {
   student_name: string
   english_name?: string | null
   pre_marked_absent: boolean
+  saved_status?: 'present' | 'absent' | 'late' | null
 }
 
 export function useAttendanceTimer(classId: string, campusId: string) {

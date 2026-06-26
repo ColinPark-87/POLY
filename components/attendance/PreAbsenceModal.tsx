@@ -17,6 +17,7 @@ export function PreAbsenceModal({ classes, onClose, onSaved }: Props) {
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [done, setDone] = useState<{ saved: number; skipped: number } | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { inputRef.current?.focus() }, [])
@@ -57,27 +58,25 @@ export function PreAbsenceModal({ classes, onClose, onSaved }: Props) {
     if (!selected) { setError('학생을 선택해주세요'); return }
     setSaving(true); setError('')
     try {
-      const dates = dateRange(startDate, endDate)
-      for (const d of dates) {
-        const res = await fetch('/api/campus/attendance/pre-absence', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            class_id: selected.class_id,
-            session_date: d,
-            student_id: selected.student_id,
-            status: status === 'late' ? 'late' : 'absent',
-            note: note || undefined,
-          }),
-        })
-        if (!res.ok) {
-          const d = await res.json().catch(() => ({}))
-          throw new Error(d.error || `HTTP ${res.status}`)
-        }
-      }
-      onSaved()
+      // 서버가 반 요일·주말·공휴일 필터해서 해당 날짜만 저장 (클라 루프 X)
+      const res = await fetch('/api/campus/attendance/pre-absence', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          class_id: selected.class_id,
+          student_id: selected.student_id,
+          status: status === 'late' ? 'late' : 'absent',
+          note: note || undefined,
+          start_date: startDate,
+          end_date: endDate,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+      setDone({ saved: data.saved ?? 0, skipped: data.skipped ?? 0 })
     } catch (e) {
       setError('저장 실패: ' + (e instanceof Error ? e.message : '알 수 없음'))
+    } finally {
       setSaving(false)
     }
   }
@@ -146,7 +145,7 @@ export function PreAbsenceModal({ classes, onClose, onSaved }: Props) {
             />
           </div>
           {startDate !== endDate && (
-            <p className="text-[10px] text-[#7C3AED] mt-1">{dateRange(startDate, endDate).length}일간 사전결석 등록</p>
+            <p className="text-[10px] text-[#7C3AED] mt-1">최대 {dateRange(startDate, endDate).length}일 (반 수업요일·주말·공휴일 제외하고 저장됨)</p>
           )}
         </div>
 
@@ -172,14 +171,25 @@ export function PreAbsenceModal({ classes, onClose, onSaved }: Props) {
         />
 
         {error && <p className="text-red-600 text-xs">{error}</p>}
+        {done && (
+          <p className="text-green-700 text-xs bg-green-50 rounded-lg p-2">
+            ✅ {done.saved}일 사전{status === 'late' ? '지각' : '결석'} 등록됨
+            {done.skipped > 0 && ` (주말·공휴일·타요일 ${done.skipped}일 제외)`}
+          </p>
+        )}
 
-        <div className="flex gap-2">
-          <button onClick={onClose} className="flex-1 py-2.5 border border-gray-300 rounded-xl text-gray-600 text-sm font-medium">취소</button>
-          <button onClick={handleSave} disabled={saving || !selected}
-            className="flex-1 py-2.5 bg-[#004EA2] text-white rounded-xl font-bold text-sm disabled:opacity-40">
-            {saving ? '저장 중...' : '저장'}
-          </button>
-        </div>
+        {done ? (
+          <button onClick={() => { onSaved(); onClose() }}
+            className="w-full py-2.5 bg-[#004EA2] text-white rounded-xl font-bold text-sm">닫기</button>
+        ) : (
+          <div className="flex gap-2">
+            <button onClick={onClose} className="flex-1 py-2.5 border border-gray-300 rounded-xl text-gray-600 text-sm font-medium">취소</button>
+            <button onClick={handleSave} disabled={saving || !selected}
+              className="flex-1 py-2.5 bg-[#004EA2] text-white rounded-xl font-bold text-sm disabled:opacity-40">
+              {saving ? '저장 중...' : '저장'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

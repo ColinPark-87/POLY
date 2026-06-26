@@ -100,19 +100,24 @@ export async function GET(req: Request) {
       .from('class_enrollments')
       .select('student_id, campus_students(name, english_name)')
       .eq('class_id', cls.id).neq('is_waitlist', true)
-    let preAbsent = new Set<string>()
+    const preAbsent = new Set<string>()
+    const savedStatus = new Map<string, string>()  // 저장된 status 복원용 (재팝업 시 prefill)
     if (existingId) {
       const { data: recs } = await svc
         .from('attendance_records')
         .select('student_id, status, pre_marked')
         .eq('attendance_session_id', existingId)
-      preAbsent = new Set((recs ?? []).filter((r: any) => r.pre_marked && r.status === 'absent').map((r: any) => r.student_id))
+      for (const r of (recs ?? []) as any[]) {
+        savedStatus.set(r.student_id, r.status)
+        if (r.pre_marked && r.status === 'absent') preAbsent.add(r.student_id)
+      }
     }
     const students = (enrollments ?? []).map((e: any) => ({
       student_id: e.student_id,
       student_name: (e.campus_students as any)?.name ?? '',
       english_name: (e.campus_students as any)?.english_name ?? null,
       pre_marked_absent: preAbsent.has(e.student_id),
+      saved_status: savedStatus.get(e.student_id) ?? null,
     }))
     return { class_id: cls.id, class_level: cls.level, session_name: sess.name, time_range: timeRange, forced, students }
   }

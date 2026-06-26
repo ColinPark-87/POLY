@@ -21,7 +21,8 @@ export function AttendanceOverlay({ classId, campusId, students, onComplete, isT
   useEffect(() => {
     const init: Record<string, AttendanceStatus> = {}
     students.forEach(s => {
-      init[s.student_id] = s.pre_marked_absent ? 'absent' : 'present'
+      // 저장된 status 우선 복원(재팝업 시 prefill), 없으면 사전결석→결석, 기본 출석
+      init[s.student_id] = s.saved_status ?? (s.pre_marked_absent ? 'absent' : 'present')
     })
     setStatuses(init)
   }, [students])
