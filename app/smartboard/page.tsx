@@ -132,7 +132,7 @@ export default function SmartboardPage() {
   // 창 제목 — AHK/에이전트가 이 제목으로 창 띄움/숨김 감지 (컴퓨터별 고유 prefix)
   // Next.js 메타데이터가 제목을 layout 기본값으로 되돌리므로 700ms마다 재확인·재설정
   useEffect(() => {
-    const pfx = computerNum ? `POLLY_ATTENDANCE_${computerNum}_` : 'POLLY_ATTENDANCE_'
+    const pfx = computerNum ? `POLY_ATTENDANCE_${computerNum}_` : 'POLY_ATTENDANCE_'
     const desired = () => active ? `${pfx}ACTIVE` : `${pfx}IDLE`
     document.title = desired()
     const id = setInterval(() => { const d = desired(); if (document.title !== d) document.title = d }, 700)

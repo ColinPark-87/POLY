@@ -117,7 +117,7 @@ export default function LoginPage() {
   function buildAhk(num: number) {
     const url = `${window.location.origin}/smartboard?computer=${num}`
     // 컴퓨터별 고유 제목 prefix — 다른 교실 창과 절대 안 섞임
-    const tag = `POLLY_ATTENDANCE_${num}_`
+    const tag = `POLY_ATTENDANCE_${num}_`
     return [
       `; 폴리 출석 도우미 - 컴퓨터${num}`,
       `#NoTrayIcon`,
