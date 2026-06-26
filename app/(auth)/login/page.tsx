@@ -138,7 +138,7 @@ export default function LoginPage() {
       `  ; 출석앱 창이 없으면(닫혔거나 최초) 최대화 앱으로 실행 후 최소화`,
       `  if (!WinExist("POLLY_ATTENDANCE_ACTIVE") and !WinExist("POLLY_ATTENDANCE_IDLE"))`,
       `  {`,
-      `    Run, %chromePath% --app="${url}" --start-maximized`,
+      `    Run, %chromePath% --app="${url}", , Min`,
       `    Sleep, 6000`,
       `    if WinExist("POLLY_ATTENDANCE_IDLE")`,
       `      WinMinimize, POLLY_ATTENDANCE_IDLE`,
