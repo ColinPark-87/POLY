@@ -118,8 +118,6 @@ export default function LoginPage() {
     const url = `${window.location.origin}/smartboard?computer=${num}`
     // 컴퓨터별 고유 제목 prefix — 다른 교실 창과 절대 안 섞임
     const tag = `POLLY_ATTENDANCE_${num}_`
-    // 전용 크롬 프로필 — 교사 일반 크롬과 분리된 독립 창/프로세스
-    const profile = `%AppData%\\POLLY_Attendance_${num}`
     return [
       `; 폴리 출석 도우미 - 컴퓨터${num}`,
       `#NoTrayIcon`,
@@ -149,7 +147,7 @@ export default function LoginPage() {
       `      hwnd := existing`,
       `    else`,
       `    {`,
-      `      Run, "%chromePath%" --user-data-dir="${profile}" --no-first-run --disable-session-crashed-bubble --app="${url}", , Min`,
+      `      Run, "%chromePath%" --no-first-run --disable-session-crashed-bubble --app="${url}", , Min`,
       `      WinWait, ${tag}, , 30`,
       `      hwnd := WinExist("${tag}")`,
       `    }`,

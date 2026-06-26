@@ -29,7 +29,12 @@ export default function SmartboardPage() {
   const [changeCode, setChangeCode] = useState('7659')
   const [roomList, setRoomList] = useState<{ num: number; display_name: string }[]>([])
   const [autoErr, setAutoErr] = useState('')
-  const [computerNum, setComputerNum] = useState('')
+  // URL ?computer=N 에서 즉시(동기) 추출 — 첫 렌더부터 제목에 번호가 박히게 (AHK 감지 안정)
+  const [computerNum] = useState(() => {
+    if (typeof window === 'undefined') return ''
+    const n = new URLSearchParams(window.location.search).get('computer')
+    return n && /^\d+$/.test(n) ? n : ''
+  })
 
   useEffect(() => {
     async function checkAuth() {
@@ -37,7 +42,6 @@ export default function SmartboardPage() {
       let { data: { user } } = await supabase.auth.getUser()
       const params = new URLSearchParams(window.location.search)
       const num = params.get('computer')
-      if (num && /^\d+$/.test(num)) setComputerNum(num)
 
       // ?computer=N 쿼리 → 자동 로그인 (부팅 자동시작용)
       // 이미 smartboard 계정이어도, 쿼리 번호와 다른 계정이면 교체
