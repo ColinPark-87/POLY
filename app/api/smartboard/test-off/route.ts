@@ -19,7 +19,7 @@ export async function POST() {
     .from('classrooms')
     .update({ force_popup_class_id: null })
     .eq('id', classroomId)
-    .eq('force_popup_class_id', '__TEST__')
+    .like('force_popup_class_id', '__TEST__%')
 
   return NextResponse.json({ ok: true })
 }

@@ -117,9 +117,10 @@ export async function GET(req: Request) {
   }
 
   // 0) 교실 단위 테스트 팝업 (배정 반 없어도 강제로 띄움 — 설치 테스트용)
-  if (forcePopupClassId === '__TEST__') {
+  // class_id = '__TEST__:<timestamp>' (푸쉬마다 고유) → 닫았다 다시 눌러도 매번 뜸
+  if (forcePopupClassId && forcePopupClassId.startsWith('__TEST__')) {
     return NextResponse.json({ active: {
-      class_id: '__TEST__',
+      class_id: forcePopupClassId,
       class_level: '테스트',
       session_name: '🧪 테스트 팝업',
       time_range: '',

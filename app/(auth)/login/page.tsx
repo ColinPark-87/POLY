@@ -147,7 +147,7 @@ export default function LoginPage() {
       `      hwnd := existing`,
       `    else`,
       `    {`,
-      `      Run, "%chromePath%" --no-first-run --disable-session-crashed-bubble --app="${url}", , Min`,
+      `      Run, "%chromePath%" --no-first-run --disable-session-crashed-bubble --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --app="${url}", , Min`,
       `      WinWait, ${tag}, , 30`,
       `      hwnd := WinExist("${tag}")`,
       `    }`,

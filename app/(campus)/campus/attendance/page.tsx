@@ -682,16 +682,17 @@ function AttendanceSettings() {
                 ? <span className="text-[9px] text-[#10B981] truncate max-w-[100px]">{room.account_email}</span>
                 : <span className="text-[9px] text-[#CBD5E1]">계정 미설정</span>}
               <button onClick={async () => {
-                  const on = room.force_popup_class_id === '__TEST__'
+                  const on = room.force_popup_class_id?.startsWith('__TEST__') ?? false
+                  // 매 푸쉬마다 고유 ID → 닫았다 다시 눌러도 매번 새로 뜸 (dismissed 회피)
                   await fetch('/api/campus/attendance/force-popup', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ classroom_id: room.id, class_id: on ? null : '__TEST__' }),
+                    body: JSON.stringify({ classroom_id: room.id, class_id: on ? null : `__TEST__:${Date.now()}` }),
                   })
                   await load()
                 }}
                 title="반 없어도 이 교실 PC에 테스트 팝업을 띄움 (닫으면 자동 해제)"
-                className={`ml-auto text-[9px] px-1.5 py-0.5 rounded flex-shrink-0 ${room.force_popup_class_id === '__TEST__' ? 'bg-[#DC2626] text-white' : 'bg-[#FFF3E0] text-[#E65100] hover:bg-[#FFE0B2]'}`}>
-                {room.force_popup_class_id === '__TEST__' ? '⏹ 테스트끄기' : '🧪 테스트팝업'}
+                className={`ml-auto text-[9px] px-1.5 py-0.5 rounded flex-shrink-0 ${room.force_popup_class_id?.startsWith('__TEST__') ? 'bg-[#DC2626] text-white' : 'bg-[#FFF3E0] text-[#E65100] hover:bg-[#FFE0B2]'}`}>
+                {room.force_popup_class_id?.startsWith('__TEST__') ? '⏹ 테스트끄기' : '🧪 테스트팝업'}
               </button>
               <button onClick={() => { setEditingRoom(isEditing ? null : room.id); setRoomDraft({ ...room }) }}
                 className="text-[9px] text-[#004EA2] hover:underline flex-shrink-0">{isEditing ? '닫기' : '설정'}</button>

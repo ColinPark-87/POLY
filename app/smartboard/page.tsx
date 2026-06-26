@@ -95,7 +95,7 @@ export default function SmartboardPage() {
   useEffect(() => {
     if (!authChecked || notAuthorized) return
     poll()
-    const id = setInterval(poll, 10_000)
+    const id = setInterval(poll, 5_000)
     return () => clearInterval(id)
   }, [authChecked, notAuthorized, poll])
 
