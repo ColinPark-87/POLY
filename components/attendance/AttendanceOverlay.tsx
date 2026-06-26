@@ -10,9 +10,10 @@ interface Props {
   campusId: string
   students: StudentForOverlay[]
   onComplete: () => void
+  isTest?: boolean
 }
 
-export function AttendanceOverlay({ classId, campusId, students, onComplete }: Props) {
+export function AttendanceOverlay({ classId, campusId, students, onComplete, isTest }: Props) {
   const [statuses, setStatuses] = useState<Record<string, AttendanceStatus>>({})
   const [submitting, setSubmitting] = useState(false)
   const [err, setErr] = useState('')
@@ -49,6 +50,8 @@ export function AttendanceOverlay({ classId, campusId, students, onComplete }: P
   }
 
   async function handleSubmit() {
+    // 테스트 팝업: 저장 안 하고 바로 닫기
+    if (isTest) { onComplete(); return }
     setSubmitting(true)
     try {
       const records = students.map(s => ({
@@ -79,9 +82,13 @@ export function AttendanceOverlay({ classId, campusId, students, onComplete }: P
       className="fixed inset-0 bg-white flex flex-col"
       style={{ zIndex: 9999, width: '100vw', height: '100vh' }}
     >
-      <div className="bg-[#004EA2] text-white px-8 py-6 flex-shrink-0">
-        <h1 className="text-3xl font-bold">출석 체크</h1>
-        <p className="text-blue-200 mt-1 text-lg">결석·지각 학생을 탭하여 표시하세요. 완료 버튼을 눌러야 저장됩니다.</p>
+      <div className={`${isTest ? 'bg-[#E65100]' : 'bg-[#004EA2]'} text-white px-8 py-6 flex-shrink-0`}>
+        <h1 className="text-3xl font-bold">{isTest ? '🧪 테스트 팝업' : '출석 체크'}</h1>
+        <p className={`${isTest ? 'text-orange-100' : 'text-blue-200'} mt-1 text-lg`}>
+          {isTest
+            ? '설치 확인용 테스트 화면입니다. 저장되지 않습니다. 아래 버튼으로 닫으세요.'
+            : '결석·지각 학생을 탭하여 표시하세요. 완료 버튼을 눌러야 저장됩니다.'}
+        </p>
       </div>
 
       <div className="flex-1 overflow-y-auto p-8">
@@ -108,9 +115,9 @@ export function AttendanceOverlay({ classId, campusId, students, onComplete }: P
         <button
           onClick={handleSubmit}
           disabled={submitting}
-          className="bg-[#004EA2] hover:bg-blue-800 disabled:opacity-50 text-white text-2xl font-bold px-16 py-5 rounded-2xl transition-colors"
+          className={`${isTest ? 'bg-[#E65100] hover:bg-orange-700' : 'bg-[#004EA2] hover:bg-blue-800'} disabled:opacity-50 text-white text-2xl font-bold px-16 py-5 rounded-2xl transition-colors`}
         >
-          {submitting ? '저장 중...' : '출석 완료'}
+          {isTest ? '✕ 테스트 닫기' : (submitting ? '저장 중...' : '출석 완료')}
         </button>
       </div>
     </div>

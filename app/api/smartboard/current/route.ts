@@ -116,6 +116,23 @@ export async function GET(req: Request) {
     return { class_id: cls.id, class_level: cls.level, session_name: sess.name, time_range: timeRange, forced, students }
   }
 
+  // 0) 교실 단위 테스트 팝업 (배정 반 없어도 강제로 띄움 — 설치 테스트용)
+  if (forcePopupClassId === '__TEST__') {
+    return NextResponse.json({ active: {
+      class_id: '__TEST__',
+      class_level: '테스트',
+      session_name: '🧪 테스트 팝업',
+      time_range: '',
+      forced: true,
+      test: true,
+      students: [
+        { student_id: 'test-1', student_name: '테스트 학생 1', pre_marked_absent: false },
+        { student_id: 'test-2', student_name: '테스트 학생 2', pre_marked_absent: false },
+        { student_id: 'test-3', student_name: '테스트 학생 3', pre_marked_absent: false },
+      ],
+    }, changeCode })
+  }
+
   // 1) 강제 팝업 우선 (시간 무관, 전체 반에서 검색)
   if (forcePopupClassId) {
     const cls = (classes ?? []).find((c: any) => c.id === forcePopupClassId)

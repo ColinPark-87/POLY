@@ -10,6 +10,7 @@ interface ActiveClass {
   session_name: string
   time_range: string
   students: StudentForOverlay[]
+  test?: boolean
 }
 
 export default function SmartboardPage() {
@@ -115,6 +116,10 @@ export default function SmartboardPage() {
     if (active) {
       const today = new Date().toISOString().split('T')[0]
       dismissedRef.current.add(`${today}-${active.class_id}`)
+      // 테스트 팝업은 서버에서도 해제 (안 하면 계속 다시 뜸 — stuck 방지)
+      if (active.test) {
+        fetch('/api/smartboard/test-off', { method: 'POST' }).catch(() => {})
+      }
     }
     setActive(null)
     try { window.blur() } catch {}
@@ -193,6 +198,7 @@ export default function SmartboardPage() {
           campusId={campusId}
           students={active.students}
           onComplete={handleComplete}
+          isTest={active.test}
         />
       )}
     </div>
