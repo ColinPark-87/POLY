@@ -53,14 +53,15 @@ export default function SmartboardPage() {
 
       if (needLogin) {
         // 기존 세션 정리 후 재로그인 (안정성)
-        if (user && currentEmail !== wantEmail) { await supabase.auth.signOut() }
-        const { data: signInData, error } = await supabase.auth.signInWithPassword({
-          email: wantEmail!, password: '7659',
-        })
-        if (error) {
-          setAutoErr(`자동로그인 실패 (${wantEmail}): ${error.message}`)
-        } else if (signInData.user) {
-          user = signInData.user
+        if (user && currentEmail !== wantEmail) { await supabase.auth.signOut(); user = null }
+        // 콜드부팅 네트워크 레이스 대비 — 최대 3회 재시도
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          const { data: signInData, error } = await supabase.auth.signInWithPassword({
+            email: wantEmail!, password: '7659',
+          })
+          if (!error && signInData.user) { user = signInData.user; setAutoErr(''); break }
+          setAutoErr(`자동로그인 시도 ${attempt}/3 실패 (${wantEmail}): ${error?.message ?? '오류'}`)
+          if (attempt < 3) await new Promise(r => setTimeout(r, 1500))
         }
       }
 
@@ -68,6 +69,8 @@ export default function SmartboardPage() {
         if (user && user.user_metadata?.role !== 'smartboard') {
           setAutoErr(prev => prev || `로그인됨(${user!.email})이나 스마트보드 계정 아님`)
         }
+        // ?computer=N인데 자동로그인 끝내 실패 → 무인 복구: 잠시 후 새로고침(네트워크 안정 후 재시도)
+        if (wantEmail) { setTimeout(() => { try { window.location.reload() } catch {} }, 8000) }
         setNotAuthorized(true); setAuthChecked(true); return
       }
       setRoomName(user.user_metadata.display_name ?? '교실')
