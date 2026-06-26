@@ -93,7 +93,7 @@ export function AttendanceOverlay({ classId, campusId, students, onComplete, isT
       </div>
 
       <div className="flex-1 overflow-y-auto p-8">
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 max-w-4xl mx-auto">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 max-w-4xl mx-auto items-stretch">
           {students.map(s => (
             <StudentStatusToggle
               key={s.student_id}
