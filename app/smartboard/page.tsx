@@ -18,6 +18,7 @@ export default function SmartboardPage() {
   const [notAuthorized, setNotAuthorized] = useState(false)
   const [roomName, setRoomName] = useState('')
   const [campusId, setCampusId] = useState('')
+  const [classroomId, setClassroomId] = useState('')
   const [active, setActive] = useState<ActiveClass | null>(null)
   const [clock, setClock] = useState('')
   const dismissedRef = useRef<Set<string>>(new Set())
@@ -76,6 +77,7 @@ export default function SmartboardPage() {
       }
       setRoomName(user.user_metadata.display_name ?? '교실')
       setCampusId(user.user_metadata.campus_id ?? '')
+      setClassroomId(user.user_metadata.classroom_id ?? '')
       setAuthChecked(true)
     }
     checkAuth()
@@ -102,6 +104,19 @@ export default function SmartboardPage() {
     const id = setInterval(poll, 5_000)
     return () => clearInterval(id)
   }, [authChecked, notAuthorized, poll])
+
+  // 실시간 푸시 — 내 교실 force_popup 변경 즉시 감지 (숨김창 throttle 우회, 폴링은 fallback)
+  useEffect(() => {
+    if (!authChecked || notAuthorized || !classroomId) return
+    const supabase = createClient()
+    const ch = supabase
+      .channel(`smartboard-${classroomId}`)
+      .on('postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'classrooms', filter: `id=eq.${classroomId}` },
+        () => { poll() })
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [authChecked, notAuthorized, classroomId, poll])
 
   // 시계
   useEffect(() => {
