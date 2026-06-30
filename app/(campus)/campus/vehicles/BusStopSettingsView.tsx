@@ -76,6 +76,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
   const [msg, setMsg] = useState('')
   const [coords, setCoords] = useState<Record<string, { lat: number; lng: number }>>({})
   const [drafts, setDrafts] = useState<Record<string, Draft>>({})
+  const [openKey, setOpenKey] = useState<string | null>(null)  // 상세 펼침 정류장(가로 스트립 클릭)
   const [editKey, setEditKey] = useState<string | null>(null)  // 편집모드 행
   const [coordOpen, setCoordOpen] = useState(false)            // 편집모드 내 좌표·주소 펼침
   const [geoKey, setGeoKey] = useState<string | null>(null)
@@ -296,12 +297,32 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
     const label = dir === 'arr' ? '등원(승차)' : '하원(하차)'
     const k = `${dir}|${bus}`
     const add = addStop[k] ?? { stop: '', time: '' }
-    const Arrow = () => <div className="flex justify-center"><span className="text-[13px] leading-none my-0.5" style={{ color }}>↓</span></div>
-    const School = () => (
-      <div className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-bold text-white self-stretch" style={{ background: color }}>
-        🏫 학원 {dir === 'arr' ? '도착' : '출발'}
+    const ArrowH = () => <div className="flex items-center flex-shrink-0"><span className="text-[14px] leading-none" style={{ color }}>→</span></div>
+    const SchoolMini = () => (
+      <div className="flex flex-col items-center justify-center flex-shrink-0 w-[60px] rounded-lg px-1 py-1 text-[11px] font-bold text-white" style={{ background: color }}>
+        <span className="text-base leading-none">🏫</span>
+        <span className="text-[9px] mt-0.5">{dir === 'arr' ? '도착' : '출발'}</span>
       </div>
     )
+    const MiniCard = (r: Row, i: number) => {
+      const k2 = dkey(dir, bus, r.stop)
+      const open = openKey === k2
+      const hasCoord = !!coords[r.stop]
+      return (
+        <button onClick={() => { setOpenKey(o => o === k2 ? null : k2); setEditKey(null) }}
+          className={`flex-shrink-0 w-[116px] rounded-lg border px-1.5 py-1 text-left transition-colors ${open ? 'border-[#004EA2] bg-[#EAF2FB] ring-1 ring-[#004EA2]' : 'border-[#E2E8F0] bg-white hover:border-[#94A3B8]'}`}>
+          <div className="flex items-center gap-1">
+            <span className="w-4 h-4 rounded-full text-white text-[9px] font-bold flex items-center justify-center flex-shrink-0" style={{ background: color }}>{i + 1}</span>
+            <span className="ml-auto text-[11px] text-[#334155] tabular-nums font-semibold">{r.time || '–'}</span>
+          </div>
+          <div className="text-[11px] text-[#1E293B] leading-tight mt-0.5 truncate">{r.stop}</div>
+          <div className="flex items-center justify-between mt-0.5">
+            <span className="text-[9px] text-[#94A3B8]">👤{r.students.length}</span>
+            <span className="text-[9px]" style={{ color: hasCoord ? '#16A34A' : '#E2E8F0' }}>📍</span>
+          </div>
+        </button>
+      )
+    }
 
     const Node = (r: Row, i: number) => {
       const d = getDraft(dir, bus, r)
@@ -385,20 +406,24 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
       )
     }
 
+    const openRow = rows.find(r => dkey(dir, bus, r.stop) === openKey)
     return (
       <div className="px-2 py-2">
-        <div className="text-[12px] font-bold mb-2" style={{ color }}>{label} · {rows.length}</div>
+        <div className="text-[12px] font-bold mb-1.5" style={{ color }}>{label} · {rows.length}</div>
         {rows.length === 0 && <div className="text-center text-[#94A3B8] text-xs py-2">없음</div>}
-        <div className="flex flex-col">
-          {dir === 'dep' && rows.length > 0 && <><School /><Arrow /></>}
+        {/* 택배 경로식 가로 스트립 — 운행 순서대로 → 배열, 누르면 상세 */}
+        <div className="flex items-stretch gap-0.5 overflow-x-auto pb-1.5">
+          {dir === 'dep' && rows.length > 0 && <><SchoolMini /><ArrowH /></>}
           {rows.map((r, i) => (
             <Fragment key={r.stop}>
-              {i > 0 && <Arrow />}
-              {Node(r, i)}
+              {i > 0 && <ArrowH />}
+              {MiniCard(r, i)}
             </Fragment>
           ))}
-          {dir === 'arr' && rows.length > 0 && <><Arrow /><School /></>}
+          {dir === 'arr' && rows.length > 0 && <><ArrowH /><SchoolMini /></>}
         </div>
+        {/* 선택 정류장 상세 */}
+        {openRow && <div className="mt-1.5">{Node(openRow, rows.indexOf(openRow))}</div>}
         {/* 새 정류장 추가 (검색 중엔 숨김) */}
         {!q && (
           <div className="flex items-center gap-1 mt-2 pt-2 border-t border-[#EEF2F7]">
@@ -440,7 +465,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
         운행요일 점을 누르면 그날 탑승 제거. <b>(&apos;{FILTER_LABEL[filter]}&apos; 세션 학생에 반영)</b>
       </p>
 
-      <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3 items-start">
+      <div className="grid gap-2.5 xl:grid-cols-2 items-start">
         {buses.map(bus => {
           const matchN = matchRows('arr', bus.name).length + matchRows('dep', bus.name).length
           if (q && matchN === 0) return null
