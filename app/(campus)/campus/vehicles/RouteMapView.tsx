@@ -1923,7 +1923,8 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false,
 
   // ── 정류장 검색 결과 클릭 — 지도 이동 + 하이라이트
   function handleStopResultClick(row: StopSearchRow) {
-    const coord = coords[row.stopName]
+    // coordsRef 우선: focusStop 인터벌이 마운트 시점(coords state 비어있음) 클로저를 호출해도 최신 좌표로 pan
+    const coord = coordsRef.current[row.stopName] ?? coords[row.stopName]
     if (!coord || !mapRef.current) return
     const kakao = (window as any).kakao
     if (!kakao?.maps) return
