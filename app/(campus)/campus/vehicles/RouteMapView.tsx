@@ -113,7 +113,7 @@ function capStatus(n: number, cap: number = BUS_CAP): { label: string; color: st
   return { label: '여유', color: '#16A34A', bg: '#F0FDF4', ring: '#BBF7D0' }
 }
 
-export default function RouteMapView({ campusId, campusName, fullscreen = false, showPresence = true, onEditingChange }: { campusId?: string; campusName?: string; fullscreen?: boolean; showPresence?: boolean; onEditingChange?: (editing: boolean) => void }) {
+export default function RouteMapView({ campusId, campusName, fullscreen = false, showPresence = true, onEditingChange, focusStop }: { campusId?: string; campusName?: string; fullscreen?: boolean; showPresence?: boolean; onEditingChange?: (editing: boolean) => void; focusStop?: { name: string; busName?: string; nonce: number } | null }) {
   const cqs = campusId ? `&campus_id=${campusId}` : ''
   // campusId가 없으면 중계(hardcoded), 있으면 해당 캠퍼스 이름 사용 (없으면 null)
   const effectiveSchoolName = campusId ? (campusName ?? null) : SCHOOL_STOP.name
@@ -1963,6 +1963,28 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false,
       }
     }, 3000)
   }
+
+  // 외부(호차별 정류장 탭)에서 정류장 위치 보기 요청 → 지도 이동·하이라이트.
+  // 지도/좌표 준비 안됐을 수 있어 잠시 재시도.
+  useEffect(() => {
+    if (!focusStop?.name) return
+    let tries = 0
+    const id = setInterval(() => {
+      tries++
+      const kakao = (window as any).kakao
+      const coord = coordsRef.current[focusStop.name] ?? coords[focusStop.name]
+      if (kakao?.maps && mapRef.current && coord) {
+        clearInterval(id)
+        mapRef.current.setLevel(3)
+        handleStopResultClick({ stopName: focusStop.name, busName: focusStop.busName ?? '' } as StopSearchRow)
+      } else if (tries > 25) {
+        clearInterval(id)
+        if (!coord) alert(`'${focusStop.name}' 정류장은 좌표(핀)가 없습니다. 호차별 정류장 탭에서 좌표를 먼저 설정하세요.`)
+      }
+    }, 300)
+    return () => clearInterval(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusStop?.nonce])
 
   // ── 검색 함수들
   async function searchStop(stopName: string) {

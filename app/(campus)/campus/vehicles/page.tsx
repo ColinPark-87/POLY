@@ -200,6 +200,12 @@ export default function VehiclesPage() {
   const todayStr = [today.getFullYear(), String(today.getMonth()+1).padStart(2,'0'), String(today.getDate()).padStart(2,'0')].join('-')
 
   const [tab, setTab] = useState<'master'|'today'|'map'|'busstops'>('map')
+  // 호차별 정류장 탭 → 시스템 지도에서 해당 정류장 위치 보기
+  const [focusStop, setFocusStop] = useState<{ name: string; busName: string; nonce: number } | null>(null)
+  function locateStop(stop: string, busName: string) {
+    setTab('map')
+    setFocusStop(f => ({ name: stop, busName, nonce: (f?.nonce ?? 0) + 1 }))
+  }
   const [fullscreen, setFullscreen] = useState(false)
   // 지도 탭(RouteMapView) 편집 상태 — presence '편집 중' 표시에 합산
   const [mapEditing, setMapEditing] = useState(false)
@@ -1422,10 +1428,10 @@ export default function VehiclesPage() {
 
       {/* ═══ 변경/기록 탭 (좌: 승인 대기 | 우: 변경 기록) ════════ */}
       {/* ═══ 노선 지도 탭 ════════════════════════════════════════ */}
-      {tab === 'map' && <RouteMapView campusId={campusId} campusName={campusName} fullscreen={fullscreen} showPresence={false} onEditingChange={setMapEditing} />}
+      {tab === 'map' && <RouteMapView campusId={campusId} campusName={campusName} fullscreen={fullscreen} showPresence={false} onEditingChange={setMapEditing} focusStop={focusStop} />}
 
       {/* ═══ 호차별 정류장 세팅 탭 (중계 전용) ════════════════════ */}
-      {tab === 'busstops' && campusId === JUNGKYE_CAMPUS_ID && <BusStopSettingsView campusName={campusName} />}
+      {tab === 'busstops' && campusId === JUNGKYE_CAMPUS_ID && <BusStopSettingsView campusName={campusName} onLocateStop={locateStop} />}
 
       </div>{/* /탭 콘텐츠 */}
 

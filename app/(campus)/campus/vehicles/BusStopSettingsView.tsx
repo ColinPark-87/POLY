@@ -67,7 +67,7 @@ interface Row { stop: string; time: string; sess: string[]; days: string[]; hasS
 type Dir = 'arr' | 'dep'
 interface Draft { name: string; time: string; lat: string; lng: string; addr: string }
 
-export default function BusStopSettingsView({ campusName }: { campusName?: string }) {
+export default function BusStopSettingsView({ campusName, onLocateStop }: { campusName?: string; onLocateStop?: (stop: string, bus: string) => void }) {
   void campusName
   const [loading, setLoading] = useState(true)
   const [raw, setRaw] = useState<{ arr: MasterResp; dep: MasterResp } | null>(null)
@@ -81,6 +81,7 @@ export default function BusStopSettingsView({ campusName }: { campusName?: strin
   const [savingKey, setSavingKey] = useState<string | null>(null)
   const [addStop, setAddStop] = useState<Record<string, { stop: string; time: string }>>({})
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const [search, setSearch] = useState('')
 
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(''), 3200) }
 
@@ -283,8 +284,11 @@ export default function BusStopSettingsView({ campusName }: { campusName?: strin
 
   const inputCls = 'border border-[#E2E8F0] rounded px-1.5 py-1 text-[12px] focus:outline-none focus:ring-1 focus:ring-[#004EA2]'
 
+  const q = search.trim().toLowerCase()
+  const matchRows = (dir: Dir, bus: string) => q ? rowsOf(dir, bus).filter(r => r.stop.toLowerCase().includes(q)) : rowsOf(dir, bus)
+
   const DirTable = ({ dir, bus }: { dir: Dir; bus: string }) => {
-    const rows = rowsOf(dir, bus)
+    const rows = matchRows(dir, bus)
     const color = dir === 'arr' ? '#3B82F6' : '#DC2626'
     const label = dir === 'arr' ? '등원(승차)' : '하원(하차)'
     const k = `${dir}|${bus}`
@@ -334,6 +338,10 @@ export default function BusStopSettingsView({ campusName }: { campusName?: strin
                     </td>
                     <td className="py-1.5 text-[13px] text-[#334155] tabular-nums align-top">{r.time || '–'}</td>
                     <td className="py-1.5 text-center align-top whitespace-nowrap">
+                      {onLocateStop && coords[r.stop] && (
+                        <button onClick={() => onLocateStop(r.stop, bus)} title="시스템 지도에서 위치 보기"
+                          className="mr-1 text-[#004EA2] hover:text-[#003E83] text-xs">📍</button>
+                      )}
                       <button onClick={() => { if (editing) { setEditKey(null) } else { setEditKey(k2); setCoordOpen(false); setDraft(dir, bus, r, {}) } }}
                         className={`text-[11px] font-bold border rounded px-2 py-1 ${editing ? 'bg-[#004EA2] text-white border-[#004EA2]' : 'text-[#004EA2] border-[#004EA2] hover:bg-[#EAF2FB]'}`}>수정</button>
                       {!r.hasStudents && (
@@ -389,7 +397,8 @@ export default function BusStopSettingsView({ campusName }: { campusName?: strin
                 </Fragment>
               )
             })}
-            {/* 새 정류장 추가 */}
+            {/* 새 정류장 추가 (검색 중엔 숨김) */}
+            {!q && (
             <tr className="bg-[#FAFBFC]">
               <td></td>
               <td className="px-1 py-1.5">
@@ -404,6 +413,7 @@ export default function BusStopSettingsView({ campusName }: { campusName?: strin
                   className="text-[11px] font-bold text-white bg-[#16A34A] rounded px-2.5 py-1 disabled:opacity-40">추가</button>
               </td>
             </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -415,6 +425,13 @@ export default function BusStopSettingsView({ campusName }: { campusName?: strin
       {msg && (
         <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[200] px-4 py-2.5 rounded-full bg-[#16A34A] text-white text-[13px] font-extrabold shadow-xl pointer-events-none">✓ {msg}</div>
       )}
+
+      {/* 정류장 검색 */}
+      <div className="relative mb-2">
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 정류장 검색 (이름)"
+          className="w-full border border-[#E2E8F0] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]" />
+        {search && <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-[#94A3B8] hover:text-[#1E293B] text-sm">✕</button>}
+      </div>
 
       <div className="flex flex-wrap gap-1.5 mb-2 items-center">
         {FILTERS.map(f => (
@@ -432,7 +449,9 @@ export default function BusStopSettingsView({ campusName }: { campusName?: strin
 
       <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3 items-start">
         {buses.map(bus => {
-          const open = !collapsed.has(bus.name)
+          const matchN = matchRows('arr', bus.name).length + matchRows('dep', bus.name).length
+          if (q && matchN === 0) return null
+          const open = q ? true : !collapsed.has(bus.name)
           return (
           <div key={bus.id} className="border border-[#E2E8F0] rounded-lg overflow-hidden bg-white">
             <button onClick={() => setCollapsed(prev => { const n = new Set(prev); n.has(bus.name) ? n.delete(bus.name) : n.add(bus.name); return n })}
