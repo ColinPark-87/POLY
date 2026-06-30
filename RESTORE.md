@@ -4,13 +4,13 @@
 
 | 항목 | 내용 |
 |---|---|
-| 백업 일시 | 2026-06-30 (차량관리 '호차별 정류장' 탭 신설[중계 전용] + 로그인 컴퓨터 다운로드 세팅 삭제) |
-| 백업 브랜치 | `backup/pre-busstop-tab-20260630` (=커밋 `29d7a3e`, 직전 라이브) |
-| 변경 커밋 | `840adcd` (호차별 정류장 택배양식 카드:가로경로·탑승명단·명단수정·위치수정·검색 / 이전 401adbd·038299b) |
-| Vercel 롤백 대상 (직전 라이브) | `poly-gxfkflq58-colinpark-87s-projects.vercel.app` (탭 신설 전) |
-| 현재 라이브 | `poly-d6p9fb2a0-colinpark-87s-projects.vercel.app` / https://poly-system.vercel.app (2026-06-30) |
-| 롤백 방법 | `vercel promote poly-gxfkflq58-colinpark-87s-projects.vercel.app` 또는 `git checkout backup/pre-busstop-tab-20260630` 후 재배포 |
-| DB 의존 | 없음(스키마 변경 없음). 기존 `campus_registered_stops`/`class_enrollments` 사용. 시간 저장 시 `bulk_update_location_time`이 학생 스케줄 시간 실제 변경 |
+| 백업 일시 | 2026-07-01 (호차별 정류장 탭 2열 카드 재설계: 정류장 1장=등원(좌·파)\|하원(우·빨) 병합, 레퍼런스 png 양식) |
+| 백업 브랜치 | `backup/pre-busstop-2col-20260701` (=커밋 `bc0d888`, 직전 라이브) |
+| 변경 커밋 | `0e6ce00` (2열 카드: 정류장명 정확일치 등·하원 병합, 호차 전체폭 헤더바, 🏫학원 노드, 열별 +학생/×빼기/요일/시간) |
+| Vercel 롤백 대상 (직전 라이브) | `poly-d6p9fb2a0-colinpark-87s-projects.vercel.app` (택배 1열 카드) |
+| 현재 라이브 | `poly-73fjp4t8v-colinpark-87s-projects.vercel.app` (dpl_DAiZDjASxTToYWrbW2fpL1jGJuYu) / https://poly-system.vercel.app (2026-07-01) |
+| 롤백 방법 | `vercel promote poly-d6p9fb2a0-colinpark-87s-projects.vercel.app` 또는 `git checkout backup/pre-busstop-2col-20260701` 후 재배포 |
+| DB 의존 | 없음(스키마 변경 없음). 기존 `campus_registered_stops`/`class_enrollments` 사용. 시간 저장 시 `bulk_update_location_time`이 학생 스케줄 시간 실제 변경. 탭 노출은 중계만(`JUNGKYE_CAMPUS_ID` 게이트) |
 
 ### (이전) 2026-06-18 백업 정보
 | 항목 | 내용 |
