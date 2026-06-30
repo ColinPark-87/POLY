@@ -6,9 +6,9 @@
 |---|---|
 | 백업 일시 | 2026-06-30 (차량관리 '호차별 정류장' 탭 신설[중계 전용] + 로그인 컴퓨터 다운로드 세팅 삭제) |
 | 백업 브랜치 | `backup/pre-busstop-tab-20260630` (=커밋 `29d7a3e`, 직전 라이브) |
-| 변경 커밋 | `876448e` (호차별 정류장 이름수정·주소검색·좌표편집 / 이전 bb862b3·7be1e32·d578ae7) |
+| 변경 커밋 | `3aaf5b4` (호차별 정류장 통합수정모달:이름·시간·요일끄기·주소·좌표, 정류장별저장 / 이전 876448e·bb862b3) |
 | Vercel 롤백 대상 (직전 라이브) | `poly-gxfkflq58-colinpark-87s-projects.vercel.app` (탭 신설 전) |
-| 현재 라이브 | `poly-2nbmtxsin-colinpark-87s-projects.vercel.app` / https://poly-system.vercel.app (2026-06-30) |
+| 현재 라이브 | `poly-7qfcv6uet-colinpark-87s-projects.vercel.app` / https://poly-system.vercel.app (2026-06-30) |
 | 롤백 방법 | `vercel promote poly-gxfkflq58-colinpark-87s-projects.vercel.app` 또는 `git checkout backup/pre-busstop-tab-20260630` 후 재배포 |
 | DB 의존 | 없음(스키마 변경 없음). 기존 `campus_registered_stops`/`class_enrollments` 사용. 시간 저장 시 `bulk_update_location_time`이 학생 스케줄 시간 실제 변경 |
 
