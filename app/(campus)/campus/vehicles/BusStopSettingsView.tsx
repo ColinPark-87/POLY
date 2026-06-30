@@ -80,6 +80,7 @@ export default function BusStopSettingsView({ campusName }: { campusName?: strin
   const [geoKey, setGeoKey] = useState<string | null>(null)
   const [savingKey, setSavingKey] = useState<string | null>(null)
   const [addStop, setAddStop] = useState<Record<string, { stop: string; time: string }>>({})
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
 
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(''), 3200) }
 
@@ -429,20 +430,26 @@ export default function BusStopSettingsView({ campusName }: { campusName?: strin
         운행요일 점을 누르면 그날 탑승 제거. <b>(&apos;{FILTER_LABEL[filter]}&apos; 세션 학생에 반영)</b>
       </p>
 
-      <div className="grid gap-5">
-        {buses.map(bus => (
-          <div key={bus.id} className="border border-[#E2E8F0] rounded-xl overflow-hidden bg-white">
-            <div className="px-3 py-2 bg-[#F1F5F9] border-b border-[#E2E8F0]">
-              <span className="font-bold text-sm text-[#1E293B]">{bus.name}
-                <span className="text-[#94A3B8] font-normal"> (등원 {rowsOf('arr', bus.name).length} · 하원 {rowsOf('dep', bus.name).length})</span>
+      <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3 items-start">
+        {buses.map(bus => {
+          const open = !collapsed.has(bus.name)
+          return (
+          <div key={bus.id} className="border border-[#E2E8F0] rounded-lg overflow-hidden bg-white">
+            <button onClick={() => setCollapsed(prev => { const n = new Set(prev); n.has(bus.name) ? n.delete(bus.name) : n.add(bus.name); return n })}
+              className="w-full flex items-center justify-between px-2.5 py-1.5 bg-[#F1F5F9] border-b border-[#E2E8F0] text-left hover:bg-[#E9EEF5]">
+              <span className="font-bold text-[13px] text-[#1E293B]">{bus.name}
+                <span className="text-[#94A3B8] font-normal text-[11px]"> (등 {rowsOf('arr', bus.name).length}·하 {rowsOf('dep', bus.name).length})</span>
               </span>
-            </div>
-            <div className="divide-y divide-[#E2E8F0]">
-              <DirTable dir="arr" bus={bus.name} />
-              <DirTable dir="dep" bus={bus.name} />
-            </div>
+              <span className="text-[#94A3B8] text-xs">{open ? '▾' : '▸'}</span>
+            </button>
+            {open && (
+              <div className="divide-y divide-[#E2E8F0]">
+                <DirTable dir="arr" bus={bus.name} />
+                <DirTable dir="dep" bus={bus.name} />
+              </div>
+            )}
           </div>
-        ))}
+        )})}
       </div>
     </div>
   )
