@@ -236,9 +236,9 @@ export default function BusStopSettingsView({ campusName }: { campusName?: strin
                   <span className="text-[12px] text-[#1E293B] leading-tight">{r.stop}</span>
                   {!r.hasStudents && <span className="ml-1 text-[9px] text-[#94A3B8]">(빈)</span>}
                 </td>
-                <td className="py-1 w-[78px]">
+                <td className="py-1 w-[116px]">
                   <input type="time" value={val(dir, bus, r)} onChange={e => setTime(dir, bus, r.stop, e.target.value)}
-                    className={`w-[76px] border rounded px-1 py-0.5 text-[12px] focus:outline-none focus:ring-1 focus:ring-[#004EA2] ${
+                    className={`w-[110px] border rounded px-1.5 py-1 text-[13px] focus:outline-none focus:ring-1 focus:ring-[#004EA2] ${
                       dirtyOf(dir, bus, r) ? 'border-[#F59E0B] bg-[#FFFBEB] ring-1 ring-[#F59E0B]' : 'border-[#E2E8F0]'}`} />
                 </td>
                 <td className="w-5 text-center">
@@ -255,7 +255,7 @@ export default function BusStopSettingsView({ campusName }: { campusName?: strin
             <input value={add.stop} onChange={e => setAddStop(prev => ({ ...prev, [k]: { ...add, stop: e.target.value } }))}
               placeholder="새 정류장" className="flex-1 min-w-0 border border-[#E2E8F0] rounded px-1.5 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-[#004EA2]" />
             <input type="time" value={add.time} onChange={e => setAddStop(prev => ({ ...prev, [k]: { ...add, time: e.target.value } }))}
-              className="w-[76px] border border-[#E2E8F0] rounded px-1 py-1 text-[11px]" />
+              className="w-[110px] border border-[#E2E8F0] rounded px-1.5 py-1 text-[12px]" />
             <button onClick={() => addNewStop(dir, bus)} disabled={saving || !add.stop.trim()}
               className="text-[10px] font-bold text-white bg-[#16A34A] hover:bg-[#15803D] rounded px-1.5 py-1.5 disabled:opacity-40">추가</button>
           </div>
@@ -292,7 +292,7 @@ export default function BusStopSettingsView({ campusName }: { campusName?: strin
         </button>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4">
         {buses.map(bus => (
           <div key={bus.id} className="border border-[#E2E8F0] rounded-xl overflow-hidden bg-white">
             <div className="flex items-center justify-between px-3 py-2 bg-[#F1F5F9] border-b border-[#E2E8F0]">
