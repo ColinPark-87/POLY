@@ -68,16 +68,29 @@ export default function BusStopSettingsView({ campusName }: { campusName?: strin
   const [edits, setEdits] = useState<Record<string, string>>({})
   // 새 정류장 입력 `${dir}|${bus}` → {stop,time}
   const [addStop, setAddStop] = useState<Record<string, { stop: string; time: string }>>({})
+  // 좌표 (campus_stop_coords) stopName → {lat,lng}
+  const [coords, setCoords] = useState<Record<string, { lat: number; lng: number }>>({})
+  // 정류장 편집 모달 (이름·주소·좌표)
+  const [editModal, setEditModal] = useState<{ dir: Dir; bus: string; stop: string } | null>(null)
+  const [edName, setEdName] = useState('')
+  const [edAddr, setEdAddr] = useState('')
+  const [edLat, setEdLat] = useState('')
+  const [edLng, setEdLng] = useState('')
+  const [geoResults, setGeoResults] = useState<{ name: string; address: string; lat: number; lng: number }[]>([])
+  const [geoLoading, setGeoLoading] = useState(false)
+  const [edSaving, setEdSaving] = useState(false)
 
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(''), 3000) }
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [arr, dep] = await Promise.all([
+    const [arr, dep, cd] = await Promise.all([
       fetch('/api/campus/vehicles?direction=arr&master=true').then(r => r.json()).catch(() => ({})),
       fetch('/api/campus/vehicles?direction=dep&master=true').then(r => r.json()).catch(() => ({})),
-    ]) as [MasterResp, MasterResp]
+      fetch('/api/campus/stop-coords').then(r => r.json()).catch(() => ({})),
+    ]) as [MasterResp, MasterResp, { coords?: Record<string, { lat: number; lng: number }> }]
     setRaw({ arr, dep })
+    setCoords(cd.coords ?? {})
     setEdits({})
     setLoading(false)
   }, [])
@@ -208,6 +221,50 @@ export default function BusStopSettingsView({ campusName }: { campusName?: strin
     } catch (e) { alert(`삭제 실패: ${(e as Error).message}`) } finally { setSaving(false) }
   }
 
+  // ── 정류장 편집(이름·주소·좌표) ──────────────────────────────
+  function openEdit(dir: Dir, bus: string, stop: string) {
+    setEditModal({ dir, bus, stop })
+    setEdName(stop)
+    setEdAddr('')
+    setGeoResults([])
+    const c = coords[stop]
+    setEdLat(c ? String(c.lat) : '')
+    setEdLng(c ? String(c.lng) : '')
+  }
+  async function doGeocode() {
+    if (!edAddr.trim()) return
+    setGeoLoading(true)
+    try {
+      const res = await fetch(`/api/geocode?q=${encodeURIComponent(edAddr.trim())}`)
+      const d = await res.json().catch(() => ({}))
+      setGeoResults(d.results ?? [])
+    } finally { setGeoLoading(false) }
+  }
+  function pickGeo(r: { name: string; address: string; lat: number; lng: number }) {
+    setEdLat(String(r.lat)); setEdLng(String(r.lng))
+    setGeoResults([])
+  }
+  async function saveEdit() {
+    if (!editModal) return
+    const oldName = editModal.stop
+    const newName = edName.trim()
+    if (!newName) { alert('정류장 이름을 입력하세요.'); return }
+    const lat = parseFloat(edLat), lng = parseFloat(edLng)
+    const hasCoord = Number.isFinite(lat) && Number.isFinite(lng)
+    setEdSaving(true)
+    try {
+      const res = await fetch('/api/campus/stop-coords', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ oldName, newName, ...(hasCoord ? { lat, lng } : {}), force: true }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok || d.ok === false) throw new Error(d.error ?? `${res.status}`)
+      setEditModal(null)
+      flash(`'${newName}' 저장됨${hasCoord ? ' · 좌표 핀 반영(시스템 지도)' : ''}`)
+      load()
+    } catch (e) { alert(`저장 실패: ${(e as Error).message}`) } finally { setEdSaving(false) }
+  }
+
   if (loading) return <div className="flex justify-center py-12"><div className="w-7 h-7 border-4 border-[#004EA2] border-t-transparent rounded-full animate-spin" /></div>
 
   // 한 방향 리스트 (등원/하원) — 호차 카드 내부에서 좌/우로 나란히
@@ -228,6 +285,9 @@ export default function BusStopSettingsView({ campusName }: { campusName?: strin
                 <td className="w-5 text-center text-[10px] text-[#94A3B8]">{i + 1}</td>
                 <td className="py-1 pr-1">
                   <span className="text-[12px] text-[#1E293B] leading-tight">{r.stop}</span>
+                  {coords[r.stop]
+                    ? <span className="ml-1 text-[9px] text-[#16A34A]" title={`좌표 ${coords[r.stop].lat.toFixed(5)}, ${coords[r.stop].lng.toFixed(5)}`}>📍</span>
+                    : <span className="ml-1 text-[9px] text-[#CBD5E1]" title="좌표 없음">📍</span>}
                   {!r.hasStudents && <span className="ml-1 text-[9px] text-[#94A3B8]">(빈)</span>}
                 </td>
                 <td className="py-1 w-[116px]">
@@ -235,9 +295,10 @@ export default function BusStopSettingsView({ campusName }: { campusName?: strin
                     className={`w-[110px] border rounded px-1.5 py-1 text-[13px] focus:outline-none focus:ring-1 focus:ring-[#004EA2] ${
                       dirtyOf(dir, bus, r) ? 'border-[#F59E0B] bg-[#FFFBEB] ring-1 ring-[#F59E0B]' : 'border-[#E2E8F0]'}`} />
                 </td>
-                <td className="w-5 text-center">
+                <td className="w-10 text-center whitespace-nowrap">
+                  <button onClick={() => openEdit(dir, bus, r.stop)} title="이름·주소·좌표 수정" className="text-[#94A3B8] hover:text-[#004EA2] text-xs">✎</button>
                   {!r.hasStudents && (
-                    <button onClick={() => deleteStop(dir, bus, r.stop)} title="삭제" className="text-[#CBD5E1] hover:text-[#EF4444] text-sm leading-none">×</button>
+                    <button onClick={() => deleteStop(dir, bus, r.stop)} title="삭제" className="ml-1 text-[#CBD5E1] hover:text-[#EF4444] text-sm leading-none">×</button>
                   )}
                 </td>
               </tr>
@@ -301,6 +362,52 @@ export default function BusStopSettingsView({ campusName }: { campusName?: strin
           </div>
         ))}
       </div>
+
+      {/* 정류장 편집 모달: 이름·주소(좌표 자동)·좌표 */}
+      {editModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[120] px-4" onClick={() => setEditModal(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-5" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold text-[#1E293B] text-base mb-1">정류장 수정</h3>
+            <p className="text-[11px] text-[#64748B] mb-4">{editModal.bus} · {editModal.dir === 'arr' ? '등원' : '하원'} · 원래 이름 「{editModal.stop}」</p>
+
+            <label className="block text-xs font-semibold text-[#1E293B] mb-1">정류장 이름</label>
+            <input value={edName} onChange={e => setEdName(e.target.value)}
+              className="w-full border border-[#E2E8F0] rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-[#004EA2]" placeholder="정류장 이름" />
+
+            <label className="block text-xs font-semibold text-[#1E293B] mb-1">주소·장소 검색 (Kakao)</label>
+            <div className="flex gap-1.5 mb-2">
+              <input value={edAddr} onChange={e => setEdAddr(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') doGeocode() }}
+                className="flex-1 border border-[#E2E8F0] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]" placeholder="예: 중계동 청구3차 아파트" />
+              <button onClick={doGeocode} disabled={geoLoading || !edAddr.trim()}
+                className="text-xs font-bold text-white bg-[#004EA2] rounded-lg px-3 disabled:opacity-40">{geoLoading ? '검색…' : '검색'}</button>
+            </div>
+            {geoResults.length > 0 && (
+              <div className="border border-[#E2E8F0] rounded-lg divide-y divide-[#F1F5F9] mb-3 max-h-44 overflow-auto">
+                {geoResults.map((g, i) => (
+                  <button key={i} onClick={() => pickGeo(g)} className="w-full text-left px-3 py-2 hover:bg-[#EAF2FB]">
+                    <div className="text-[13px] text-[#1E293B] font-medium">{g.name}</div>
+                    <div className="text-[11px] text-[#64748B]">{g.address}</div>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <label className="block text-xs font-semibold text-[#1E293B] mb-1">좌표 (위도 / 경도)</label>
+            <div className="flex gap-1.5 mb-1 items-center">
+              <input value={edLat} onChange={e => setEdLat(e.target.value)} placeholder="위도(lat)"
+                className="flex-1 border border-[#E2E8F0] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]" />
+              <input value={edLng} onChange={e => setEdLng(e.target.value)} placeholder="경도(lng)"
+                className="flex-1 border border-[#E2E8F0] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]" />
+            </div>
+            <p className="text-[11px] text-[#94A3B8] mb-4">좌표를 저장하면 시스템 지도에 핀이 표시되고, 거기서 핀을 끌어 미세조정할 수 있습니다.</p>
+
+            <div className="flex gap-2">
+              <button onClick={() => setEditModal(null)} className="flex-1 border border-[#E2E8F0] text-[#64748B] font-semibold py-2.5 rounded-xl text-sm">취소</button>
+              <button onClick={saveEdit} disabled={edSaving} className="flex-1 bg-[#004EA2] text-white font-semibold py-2.5 rounded-xl text-sm disabled:opacity-50">{edSaving ? '저장 중…' : '수정 저장'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
