@@ -17,25 +17,23 @@ interface TimeGroup { session_name: string; busMap: Record<string, Student[]> }
 interface RegStop { stop_name: string; bus_name: string; direction: string; default_time: string | null }
 interface MasterResp { buses: Bus[]; timeGroups: TimeGroup[]; registeredStops: RegStop[] }
 
-type Filter = '전체' | '유치부' | '초등부' | '5일' | '3일' | '2일'
-const FILTERS: Filter[] = ['전체', '유치부', '초등부', '5일', '3일', '2일']
+type Filter = '유치부' | '매일반' | '3일반' | '화목반'
+const FILTERS: Filter[] = ['유치부', '매일반', '3일반', '화목반']
 const FILTER_LABEL: Record<Filter, string> = {
-  '전체': '전체', '유치부': '유치부', '초등부': '초등부(5·3·2일)', '5일': '5일(매일반)', '3일': '3일(월수금)', '2일': '2일(화목)',
+  '유치부': '유치부', '매일반': '매일반(5일)', '3일반': '3일반(월수금)', '화목반': '화목반(화목)',
 }
 
 function sessMatch(name: string, filter: Filter, dir: 'arr' | 'dep'): boolean {
-  if (filter === '전체') return true
   if (name.includes('방과후')) {
     if (name.includes('유치부')) return filter === '유치부'
-    if (dir === 'dep') return filter === '5일' || filter === '초등부'
+    if (dir === 'dep') return filter === '매일반'  // 초등 방과후 하원 → 매일반
     return filter === '유치부'
   }
   if (filter === '유치부') return name.includes('유치부')
-  if (filter === '초등부') return !name.includes('유치부')
-  if (filter === '5일') return name.includes('매일반') || name.includes('5일')
-  if (filter === '3일') return name.includes('월수금') || name.includes('3일')
-  if (filter === '2일') return name.includes('화목') || name.includes('2일')
-  return true
+  if (filter === '매일반') return name.includes('매일반') || name.includes('5일')
+  if (filter === '3일반') return name.includes('월수금') || name.includes('3일')
+  if (filter === '화목반') return name.includes('화목') || name.includes('2일')
+  return false
 }
 
 function normalizeTime(t: string | null | undefined): string {
@@ -63,7 +61,7 @@ export default function BusStopSettingsView({ campusName }: { campusName?: strin
   void campusName
   const [loading, setLoading] = useState(true)
   const [raw, setRaw] = useState<{ arr: MasterResp; dep: MasterResp } | null>(null)
-  const [filter, setFilter] = useState<Filter>('전체')
+  const [filter, setFilter] = useState<Filter>('유치부')
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
   // 편집 오버레이 `${dir}|${filter}|${bus}|${stop}` → 시간
@@ -112,12 +110,11 @@ export default function BusStopSettingsView({ campusName }: { campusName?: strin
         }
       }
     }
-    if (filter === '전체') {
-      for (const rs of resp.registeredStops ?? []) {
-        const c = ensure(rs.bus_name, rs.stop_name.trim())
-        const t = normalizeTime(rs.default_time)
-        if (t && c.times.length === 0) c.times.push(t)
-      }
+    // 학생 0명 등록 정류장(registered)도 노출 — 세션 무관(후보 정류장)
+    for (const rs of resp.registeredStops ?? []) {
+      const c = ensure(rs.bus_name, rs.stop_name.trim())
+      const t = normalizeTime(rs.default_time)
+      if (t && c.times.length === 0) c.times.push(t)
     }
     const out: Record<string, Row[]> = {}
     for (const bus of buses.map(b => b.name)) {
@@ -167,12 +164,9 @@ export default function BusStopSettingsView({ campusName }: { campusName?: strin
   async function persist(dir: Dir, bus: string, r: Row): Promise<number> {
     if (!dirtyOf(dir, bus, r)) return 0
     const cur = val(dir, bus, r)
-    if (filter === '전체') {
-      await postRegistered(bus, r.stop, dir, cur)
-      return cur ? await pushTime(bus, r.stop, dir, '', cur) : 0
-    }
+    await postRegistered(bus, r.stop, dir, cur)              // 정류장 기본 시간 항상 기록
     let pushed = 0
-    if (cur) for (const sess of r.sess) pushed += await pushTime(bus, r.stop, dir, sess, cur)
+    if (cur) for (const sess of r.sess) pushed += await pushTime(bus, r.stop, dir, sess, cur)  // 해당 세션 학생 시간 반영
     return pushed
   }
 
@@ -242,7 +236,7 @@ export default function BusStopSettingsView({ campusName }: { campusName?: strin
                       dirtyOf(dir, bus, r) ? 'border-[#F59E0B] bg-[#FFFBEB] ring-1 ring-[#F59E0B]' : 'border-[#E2E8F0]'}`} />
                 </td>
                 <td className="w-5 text-center">
-                  {filter === '전체' && !r.hasStudents && (
+                  {!r.hasStudents && (
                     <button onClick={() => deleteStop(dir, bus, r.stop)} title="삭제" className="text-[#CBD5E1] hover:text-[#EF4444] text-sm leading-none">×</button>
                   )}
                 </td>
@@ -250,16 +244,14 @@ export default function BusStopSettingsView({ campusName }: { campusName?: strin
             ))}
           </tbody>
         </table>
-        {filter === '전체' && (
-          <div className="flex items-center gap-1 px-1.5 py-1.5">
-            <input value={add.stop} onChange={e => setAddStop(prev => ({ ...prev, [k]: { ...add, stop: e.target.value } }))}
-              placeholder="새 정류장" className="flex-1 min-w-0 border border-[#E2E8F0] rounded px-1.5 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-[#004EA2]" />
-            <input type="time" value={add.time} onChange={e => setAddStop(prev => ({ ...prev, [k]: { ...add, time: e.target.value } }))}
-              className="w-[110px] border border-[#E2E8F0] rounded px-1.5 py-1 text-[12px]" />
-            <button onClick={() => addNewStop(dir, bus)} disabled={saving || !add.stop.trim()}
-              className="text-[10px] font-bold text-white bg-[#16A34A] hover:bg-[#15803D] rounded px-1.5 py-1.5 disabled:opacity-40">추가</button>
-          </div>
-        )}
+        <div className="flex items-center gap-1 px-1.5 py-1.5">
+          <input value={add.stop} onChange={e => setAddStop(prev => ({ ...prev, [k]: { ...add, stop: e.target.value } }))}
+            placeholder="새 정류장" className="flex-1 min-w-0 border border-[#E2E8F0] rounded px-1.5 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-[#004EA2]" />
+          <input type="time" value={add.time} onChange={e => setAddStop(prev => ({ ...prev, [k]: { ...add, time: e.target.value } }))}
+            className="w-[110px] border border-[#E2E8F0] rounded px-1.5 py-1 text-[12px]" />
+          <button onClick={() => addNewStop(dir, bus)} disabled={saving || !add.stop.trim()}
+            className="text-[10px] font-bold text-white bg-[#16A34A] hover:bg-[#15803D] rounded px-1.5 py-1.5 disabled:opacity-40">추가</button>
+        </div>
       </div>
     )
   }
@@ -284,7 +276,7 @@ export default function BusStopSettingsView({ campusName }: { campusName?: strin
       <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
         <p className="text-xs text-[#64748B]">
           호차별 <b className="text-[#3B82F6]">등원(승차)</b>·<b className="text-[#DC2626]">하원(하차)</b> 정류장·시간 (가장 이른 시간 기준).
-          {filter === '전체' ? ' 저장 시 그 정류장 전 세션 학생 시간이 바뀝니다.' : ` 저장 시 '${FILTER_LABEL[filter]}' 세션 학생 시간만 바뀝니다.`}
+          {` 저장 시 '${FILTER_LABEL[filter]}' 세션 학생 시간이 바뀝니다.`}
         </p>
         <button onClick={saveAll} disabled={saving || dirtyCount === 0}
           className="text-xs font-bold text-white bg-[#004EA2] hover:bg-[#003E83] rounded-lg px-3 py-2 disabled:opacity-40 whitespace-nowrap">
