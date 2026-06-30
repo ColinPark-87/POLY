@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import { useState, useEffect } from 'react'
 import { createClient as createBrowserClient } from '@/lib/supabase/client'
@@ -82,183 +82,6 @@ export default function LoginPage() {
       return
     }
     window.location.href = '/smartboard'
-  }
-
-  // 부팅 자동시작 파일(.vbs) 다운로드 — cmd창 없이 크롬 최소화 + 자동로그인 실행
-  function downloadStartupFile(num: number) {
-    const url = `${window.location.origin}/smartboard?computer=${num}`
-    const vbs = [
-      `' 폴리 출석 시스템 자동시작 - 컴퓨터${num}`,
-      `' 사용법: 이 파일을 시작프로그램 폴더에 넣으세요 (Win+R -> shell:startup)`,
-      `Set ws = CreateObject("WScript.Shell")`,
-      `chromePath = ""`,
-      `paths = Array( _`,
-      `  "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe", _`,
-      `  "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe", _`,
-      `  ws.ExpandEnvironmentStrings("%LOCALAPPDATA%") & "\\Google\\Chrome\\Application\\chrome.exe" )`,
-      `Set fso = CreateObject("Scripting.FileSystemObject")`,
-      `For Each p In paths`,
-      `  If fso.FileExists(p) Then chromePath = p : Exit For`,
-      `Next`,
-      `If chromePath = "" Then chromePath = "chrome.exe"`,
-      `' 2 = 최소화 상태로 실행 (창 안 보임)`,
-      `ws.Run """" & chromePath & """ --app=""${url}"" --start-minimized", 2, False`,
-    ].join('\r\n')
-
-    const blob = new Blob([vbs], { type: 'text/vbscript' })
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = `폴리출석_컴퓨터${num}.vbs`
-    a.click()
-    URL.revokeObjectURL(a.href)
-  }
-
-  // AHK 도우미 스크립트 생성
-  function buildAhk(num: number) {
-    const url = `${window.location.origin}/smartboard?computer=${num}`
-    // 컴퓨터별 고유 제목 prefix — 다른 교실 창과 절대 안 섞임
-    const tag = `POLY_ATTENDANCE_${num}_`
-    return [
-      `; 폴리 출석 도우미 - 컴퓨터${num}`,
-      `#NoTrayIcon`,
-      `#SingleInstance, Force`,
-      `SetTitleMatchMode, 2`,
-      `DetectHiddenWindows, On`,
-      `chromePath := ""`,
-      `for i, p in [A_ProgramFiles "\\Google\\Chrome\\Application\\chrome.exe"`,
-      `  , "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe"`,
-      `  , A_AppData "\\..\\Local\\Google\\Chrome\\Application\\chrome.exe"]`,
-      `  if FileExist(p)`,
-      `  {`,
-      `    chromePath := p`,
-      `    break`,
-      `  }`,
-      `if (chromePath = "")`,
-      `  chromePath := "chrome.exe"`,
-      `state := ""`,
-      `Loop`,
-      `{`,
-      `  ; 이 교실 제목의 모든 창 수집 (숨김 포함)`,
-      `  WinGet, plist, List, ${tag}`,
-      `  if (plist = 0)`,
-      `  {`,
-      `    ; 창 하나도 없으면 새로 실행`,
-      `    Run, "%chromePath%" --no-first-run --disable-session-crashed-bubble --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --app="${url}", , Min`,
-      `    WinWait, ${tag}, , 30`,
-      `    state := ""`,
-      `    Sleep, 1000`,
-      `    continue`,
-      `  }`,
-      `  ; 중복 창 정리 — 첫 번째만 남기고 닫음 (쌓임 방지)`,
-      `  if (plist > 1)`,
-      `  {`,
-      `    Loop, % plist`,
-      `    {`,
-      `      if (A_Index = 1)`,
-      `        continue`,
-      `      dupid := plist%A_Index%`,
-      `      WinClose, ahk_id %dupid%`,
-      `    }`,
-      `    state := ""`,
-      `  }`,
-      `  primary := plist1`,
-      `  WinGetTitle, t, ahk_id %primary%`,
-      `  if InStr(t, "_ACTIVE")`,
-      `  {`,
-      `    ; 수업시간: 상태가 막 바뀐 순간에만 1회 띄움 (포커스 가로채기·깜빡임 방지)`,
-      `    if (state != "ACTIVE")`,
-      `    {`,
-      `      WinShow, ahk_id %primary%`,
-      `      WinRestore, ahk_id %primary%`,
-      `      WinMaximize, ahk_id %primary%`,
-      `      WinActivate, ahk_id %primary%`,
-      `      state := "ACTIVE"`,
-      `    }`,
-      `  }`,
-      `  else if InStr(t, "_IDLE")`,
-      `  {`,
-      `    ; 대기시간: 막 바뀐 순간 1회 완전히 숨김 (작업표시줄에서도 사라짐)`,
-      `    if (state != "IDLE")`,
-      `    {`,
-      `      WinHide, ahk_id %primary%`,
-      `      state := "IDLE"`,
-      `    }`,
-      `  }`,
-      `  Sleep, 1500`,
-      `}`,
-    ].join('\r\n')
-  }
-
-  // UTF-8 → base64 (한글 안전)
-  function utf8ToBase64(s: string) {
-    const bytes = new TextEncoder().encode(s)
-    let bin = ''
-    bytes.forEach(b => { bin += String.fromCharCode(b) })
-    return btoa(bin)
-  }
-
-  // 원클릭 자동설치 .bat — AHK 설치 + 도우미 등록 + 실행 전부 자동
-  function downloadAutoInstaller(num: number, roomName: string) {
-    const ahkB64 = utf8ToBase64(buildAhk(num))
-    const bat = [
-      `@echo off`,
-      `chcp 65001 >nul`,
-      `title 폴리 출석 자동설치 - ${roomName || ('컴퓨터' + num)}`,
-      `echo ============================================`,
-      `echo   폴리 출석 시스템 자동 설치`,
-      `echo   교실: ${roomName || ('컴퓨터' + num)} (컴퓨터${num})`,
-      `echo ============================================`,
-      `echo.`,
-      `echo [정리] 실행 중 도우미 종료 + 옛 충돌 파일 제거...`,
-      `taskkill /F /IM AutoHotkey.exe >nul 2>&1`,
-      `taskkill /F /IM AutoHotkeyU64.exe >nul 2>&1`,
-      `taskkill /F /IM AutoHotkeyU32.exe >nul 2>&1`,
-      `set "STARTUP=%AppData%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup"`,
-      `del /q "%STARTUP%\\폴리출석*.vbs" >nul 2>&1`,
-      `del /q "%STARTUP%\\폴리출석도우미*.ahk" >nul 2>&1`,
-      `del /q "%STARTUP%\\폴리출석_컴퓨터*.ahk" >nul 2>&1`,
-      `echo [1/3] AutoHotkey 설치 확인...`,
-      `set "AHK_OK="`,
-      `if exist "%ProgramFiles%\\AutoHotkey\\AutoHotkey.exe" set "AHK_OK=1"`,
-      `if exist "%ProgramFiles%\\AutoHotkey\\v1.1.37.02\\AutoHotkeyU64.exe" set "AHK_OK=1"`,
-      `if defined AHK_OK (`,
-      `  echo     이미 설치됨`,
-      `) else (`,
-      `  echo     다운로드 중... 잠시 기다려주세요`,
-      `  powershell -ExecutionPolicy Bypass -Command "try{Invoke-WebRequest -Uri 'https://www.autohotkey.com/download/ahk-install.exe' -OutFile \\"$env:TEMP\\ahk.exe\\"}catch{exit 1}"`,
-      `  echo     설치 중...`,
-      `  "%TEMP%\\ahk.exe" /S`,
-      `  timeout /t 5 /nobreak >nul`,
-      `)`,
-      `echo [2/3] 도우미 파일 생성...`,
-      `powershell -ExecutionPolicy Bypass -Command "[IO.File]::WriteAllText([Environment]::GetFolderPath('Startup')+'\\폴리출석도우미.ahk', [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${ahkB64}')))"`,
-      `echo [3/3] 실행...`,
-      `start "" "%AppData%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\폴리출석도우미.ahk"`,
-      `echo.`,
-      `echo  완료! 컴퓨터를 켤 때마다 자동 실행됩니다.`,
-      `echo  수업 시간이 되면 출석판이 자동으로 화면에 뜹니다.`,
-      `echo  이 창은 닫아도 됩니다.`,
-      `echo.`,
-      `pause`,
-    ].join('\r\n')
-
-    // UTF-8 BOM 추가 (cmd 한글 표시)
-    const blob = new Blob(['﻿' + bat], { type: 'application/octet-stream' })
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = `폴리출석_원클릭설치_${roomName || ('컴퓨터' + num)}.bat`
-    a.click()
-    URL.revokeObjectURL(a.href)
-  }
-
-  // AHK 파일만 다운로드 (수동 설치용)
-  function downloadAhkFile(num: number) {
-    const blob = new Blob([buildAhk(num)], { type: 'text/plain' })
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = `폴리출석도우미_컴퓨터${num}.ahk`
-    a.click()
-    URL.revokeObjectURL(a.href)
   }
 
   function saveOrClearId() {
@@ -437,7 +260,7 @@ export default function LoginPage() {
             {/* 컴퓨터 로그인: 1~11 선택 */}
             {isCampus && mode === 'computer' && (
               <div>
-                <p className="text-xs text-[#64748B] mb-2">교실명 = 바로 로그인 · ⚡ = 자동설치(원클릭)</p>
+                <p className="text-xs text-[#64748B] mb-2">교실명을 누르면 바로 로그인됩니다.</p>
                 <div className="grid grid-cols-3 gap-2">
                   {(smartRooms.length ? smartRooms : Array.from({ length: 11 }, (_, i) => ({ num: i + 1, display_name: '' }))).map(r => (
                     <div key={r.num} className="flex flex-col rounded-xl border-2 border-[#E2E8F0] overflow-hidden">
@@ -449,29 +272,11 @@ export default function LoginPage() {
                         <span className="text-sm font-bold text-[#1E293B]">{r.display_name || `컴퓨터${r.num}`}</span>
                         <span className="text-[9px] text-[#94A3B8]">컴퓨터{r.num}</span>
                       </button>
-                      <button type="button"
-                        onClick={() => downloadAutoInstaller(r.num, r.display_name)}
-                        className="text-[9px] text-white bg-[#004EA2] hover:bg-[#003E83] py-1 border-t border-[#E2E8F0] font-bold"
-                      >⚡ 자동설치</button>
                     </div>
                   ))}
                 </div>
                 {loading && <p className="text-xs text-[#004EA2] text-center mt-2">로그인 중...</p>}
                 {error && <p className="text-[#EF4444] text-xs text-center mt-2">{error}</p>}
-                <details className="mt-3 text-[11px] text-[#64748B]" open>
-                  <summary className="cursor-pointer text-[#004EA2] font-medium">⚡ 자동설치 사용법 (교실당 1번)</summary>
-                  <ol className="mt-1.5 space-y-1 list-decimal list-inside">
-                    <li>그 교실 컴퓨터에서 이 화면 열기</li>
-                    <li>해당 교실의 <b>⚡ 자동설치</b> 버튼 클릭 → 파일 받기</li>
-                    <li>받은 파일 <b>더블클릭</b> (검은 창 뜸)</li>
-                    <li>「Windows의 PC 보호」 경고 뜨면 → <b>추가 정보</b> → <b>실행</b></li>
-                    <li>자동으로 설치·등록·실행됨. 검은 창 닫으면 끝</li>
-                  </ol>
-                  <p className="mt-1.5 text-[#94A3B8]">이후 컴퓨터 켤 때마다: 자동 로그인 → 평소 안 보임 → 수업시간엔 출석판 전체화면 자동 팝업 → 체크 완료하면 다시 숨김</p>
-                  <p className="mt-1 text-[#94A3B8]">단순 버전(자동팝업 없이 최소화만):
-                    <button type="button" onClick={() => downloadStartupFile(1)} className="text-[#004EA2] underline ml-1">.vbs 받기</button>
-                  </p>
-                </details>
               </div>
             )}
 

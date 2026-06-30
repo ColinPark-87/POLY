@@ -3,10 +3,12 @@
 import { useEffect, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import RouteMapView from './RouteMapView'
+import BusStopSettingsView from './BusStopSettingsView'
 import { PresenceBadge } from '@/components/campus/PresenceBadge'
 import { sameStop } from '@/lib/utils/stop-name'
 
 const DAYS = ['월', '화', '수', '목', '금'] as const
+const JUNGKYE_CAMPUS_ID = 'ebb499c6-8fb4-4207-9f34-a75c1d29d973'  // 호차별 정류장 세팅 탭은 중계 전용
 const DAY_DOT_COLOR = ['#2196F3','#9C27B0','#4CAF50','#FF9800','#E91E63']
 
 // 서로 최대한 구분되는 팔레트 (겹침/유사색 제거) — RouteMapView와 동일
@@ -197,7 +199,7 @@ export default function VehiclesPage() {
   const today = new Date()
   const todayStr = [today.getFullYear(), String(today.getMonth()+1).padStart(2,'0'), String(today.getDate()).padStart(2,'0')].join('-')
 
-  const [tab, setTab] = useState<'master'|'today'|'map'>('map')
+  const [tab, setTab] = useState<'master'|'today'|'map'|'busstops'>('map')
   const [fullscreen, setFullscreen] = useState(false)
   // 지도 탭(RouteMapView) 편집 상태 — presence '편집 중' 표시에 합산
   const [mapEditing, setMapEditing] = useState(false)
@@ -1225,7 +1227,7 @@ export default function VehiclesPage() {
       <div className="flex items-center gap-1 mb-2 flex-shrink-0 border-b border-[#E2E8F0]">
         <h1 className="text-sm font-bold text-[#1E293B] whitespace-nowrap pr-2 hidden md:block">차량 관리</h1>
         <div className="flex gap-0 overflow-x-auto">
-          {([['map','시스템'],['today','모바일'],['master','학생 설정']] as const)
+          {([['map','시스템'],['today','모바일'],['master','학생 설정'],...(campusId === JUNGKYE_CAMPUS_ID ? [['busstops','호차별 정류장']] as const : [])] as const)
             .filter(([k]) => !vehiclesRestricted || k === 'today' || k === 'map')
             .map(([k, label]) => (
             <button key={k} onClick={() => setTab(k)}
@@ -1421,6 +1423,9 @@ export default function VehiclesPage() {
       {/* ═══ 변경/기록 탭 (좌: 승인 대기 | 우: 변경 기록) ════════ */}
       {/* ═══ 노선 지도 탭 ════════════════════════════════════════ */}
       {tab === 'map' && <RouteMapView campusId={campusId} campusName={campusName} fullscreen={fullscreen} showPresence={false} onEditingChange={setMapEditing} />}
+
+      {/* ═══ 호차별 정류장 세팅 탭 (중계 전용) ════════════════════ */}
+      {tab === 'busstops' && campusId === JUNGKYE_CAMPUS_ID && <BusStopSettingsView campusName={campusName} />}
 
       </div>{/* /탭 콘텐츠 */}
 
