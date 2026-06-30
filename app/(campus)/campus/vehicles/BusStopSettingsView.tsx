@@ -1,10 +1,10 @@
 'use client'
 
-// 호차별 정류장 세팅 (중계 전용) — 호차 카드 안에 등원(승차)·하원(하차) 정류장을 나란히.
-// 정류장마다 [수정] → 이름·시간·운행요일(끄기)·주소(좌표)·좌표를 한 번에 편집하고 정류장별로 저장.
-// 시간 시드 = 기존 학생 운행시간의 '가장 이른 시간'(시스템 탭과 동일).
-// 저장: bulk_update_location_time(세션별)로 학생 시간 변경 / remove_stop_days로 요일 제거 /
-//       stop-coords PATCH로 이름·좌표(시스템 지도 핀) / registered_stops 기본값.
+// 호차별 정류장 세팅 (중계 전용) — 평면 인라인 편집표.
+// 호차별 [등원/하원] 표에서 정류장마다 한 행: 정류장명 · 시간 · 좌표 · 주소검색 · 저장.
+// 모두 그 자리에서 편집(팝업 없음), 정류장별로 [저장]. 운행요일 점은 끄기(그날 탑승 제거) 클릭.
+// 시간 시드 = 기존 학생 운행시간의 가장 이른 시간(시스템 탭과 동일).
+// 저장: stop-coords PATCH(이름·좌표→시스템 지도 핀) / bulk_update_location_time(학생 시간) / registered_stops(기본값) / remove_stop_days(요일 끄기).
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
@@ -48,7 +48,6 @@ function normalizeTime(t: string | null | undefined): string {
   return `${String(h).padStart(2, '0')}:${m[2]}`
 }
 
-// 학생이 한 호차에서 갖는 (정류장, 시간, 요일) — 요일별 장소/시간 반영
 function stopDayTriples(s: Student): [string, string, string][] {
   const out: [string, string, string][] = []
   const days = s.days ?? []
@@ -66,6 +65,7 @@ function stopDayTriples(s: Student): [string, string, string][] {
 
 interface Row { stop: string; time: string; sess: string[]; days: string[]; hasStudents: boolean }
 type Dir = 'arr' | 'dep'
+interface Draft { name: string; time: string; lat: string; lng: string; addr: string }
 
 export default function BusStopSettingsView({ campusName }: { campusName?: string }) {
   void campusName
@@ -74,20 +74,10 @@ export default function BusStopSettingsView({ campusName }: { campusName?: strin
   const [filter, setFilter] = useState<Filter>('유치부')
   const [msg, setMsg] = useState('')
   const [coords, setCoords] = useState<Record<string, { lat: number; lng: number }>>({})
+  const [drafts, setDrafts] = useState<Record<string, Draft>>({})
+  const [geoKey, setGeoKey] = useState<string | null>(null)
+  const [savingKey, setSavingKey] = useState<string | null>(null)
   const [addStop, setAddStop] = useState<Record<string, { stop: string; time: string }>>({})
-  const [addSaving, setAddSaving] = useState(false)
-
-  // 정류장 수정 모달
-  const [editModal, setEditModal] = useState<{ dir: Dir; bus: string; row: Row } | null>(null)
-  const [edName, setEdName] = useState('')
-  const [edTime, setEdTime] = useState('')
-  const [edDays, setEdDays] = useState<string[]>([])
-  const [edAddr, setEdAddr] = useState('')
-  const [edLat, setEdLat] = useState('')
-  const [edLng, setEdLng] = useState('')
-  const [geoResults, setGeoResults] = useState<{ name: string; address: string; lat: number; lng: number }[]>([])
-  const [geoLoading, setGeoLoading] = useState(false)
-  const [edSaving, setEdSaving] = useState(false)
 
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(''), 3200) }
 
@@ -100,6 +90,7 @@ export default function BusStopSettingsView({ campusName }: { campusName?: strin
     ]) as [MasterResp, MasterResp, { coords?: Record<string, { lat: number; lng: number }> }]
     setRaw({ arr, dep })
     setCoords(cd.coords ?? {})
+    setDrafts({})
     setLoading(false)
   }, [])
 
@@ -131,7 +122,7 @@ export default function BusStopSettingsView({ campusName }: { campusName?: strin
         }
       }
     }
-    for (const rs of resp.registeredStops ?? []) {  // 학생 0명 등록 정류장도 후보로
+    for (const rs of resp.registeredStops ?? []) {
       const c = ensure(rs.bus_name, rs.stop_name.trim())
       const t = normalizeTime(rs.default_time)
       if (t && c.times.length === 0) c.times.push(t)
@@ -153,7 +144,25 @@ export default function BusStopSettingsView({ campusName }: { campusName?: strin
   const depRows = useMemo(() => buildDir('dep'), [buildDir])
   const rowsOf = (dir: Dir, bus: string) => (dir === 'arr' ? arrRows : depRows)[bus] ?? []
 
-  // ── 저장 헬퍼 (모두 await, 실패 시 throw → 빠짐없이 저장) ──
+  const dkey = (dir: Dir, bus: string, stop: string) => `${dir}|${bus}|${stop}`
+  const seedDraft = (dir: Dir, bus: string, r: Row): Draft => {
+    const c = coords[r.stop]
+    return { name: r.stop, time: r.time, lat: c ? String(c.lat) : '', lng: c ? String(c.lng) : '', addr: '' }
+  }
+  const getDraft = (dir: Dir, bus: string, r: Row): Draft => drafts[dkey(dir, bus, r.stop)] ?? seedDraft(dir, bus, r)
+  const setDraft = (dir: Dir, bus: string, r: Row, patch: Partial<Draft>) => {
+    const k = dkey(dir, bus, r.stop)
+    setDrafts(prev => ({ ...prev, [k]: { ...(prev[k] ?? seedDraft(dir, bus, r)), ...patch } }))
+  }
+  const isDirty = (dir: Dir, bus: string, r: Row): boolean => {
+    const d = drafts[dkey(dir, bus, r.stop)]
+    if (!d) return false
+    const c = coords[r.stop]
+    const baseLat = c ? String(c.lat) : '', baseLng = c ? String(c.lng) : ''
+    return d.name !== r.stop || d.time !== r.time || d.lat !== baseLat || d.lng !== baseLng
+  }
+
+  // ── 저장 헬퍼 ──
   async function postRegistered(bus: string, stop: string, dir: Dir, time: string) {
     const res = await fetch('/api/campus/registered-stops', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -170,7 +179,7 @@ export default function BusStopSettingsView({ campusName }: { campusName?: strin
     if (!res.ok) throw new Error(`시간:${d.error ?? res.status}`)
     return d.updated ?? 0
   }
-  async function removeDays(bus: string, stop: string, dir: Dir, sessionName: string, days: string[]): Promise<number> {
+  async function removeDayApi(bus: string, stop: string, dir: Dir, sessionName: string, days: string[]): Promise<number> {
     const res = await fetch('/api/campus/vehicles', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'remove_stop_days', bus_name: bus, location: stop, direction: dir, session_name: sessionName, days }),
@@ -180,147 +189,188 @@ export default function BusStopSettingsView({ campusName }: { campusName?: strin
     return d.updated ?? 0
   }
 
+  async function geocodeRow(dir: Dir, bus: string, r: Row) {
+    const d = getDraft(dir, bus, r)
+    if (!d.addr.trim()) return
+    const k = dkey(dir, bus, r.stop)
+    setGeoKey(k)
+    try {
+      const res = await fetch(`/api/geocode?q=${encodeURIComponent(d.addr.trim())}`)
+      const j = await res.json().catch(() => ({}))
+      const first = (j.results ?? [])[0]
+      if (!first) { flash('검색 결과 없음'); return }
+      setDraft(dir, bus, r, { lat: String(first.lat), lng: String(first.lng) })
+      flash(`📍 ${first.name} 좌표 적용 (저장 눌러 반영)`)
+    } finally { setGeoKey(null) }
+  }
+
+  async function saveRow(dir: Dir, bus: string, r: Row) {
+    const d = getDraft(dir, bus, r)
+    const oldName = r.stop, newName = d.name.trim()
+    if (!newName) { alert('정류장 이름을 입력하세요.'); return }
+    const lat = parseFloat(d.lat), lng = parseFloat(d.lng)
+    const hasCoord = Number.isFinite(lat) && Number.isFinite(lng)
+    const cOld = coords[oldName]
+    const coordChanged = hasCoord && (!cOld || cOld.lat !== lat || cOld.lng !== lng)
+    const nameChanged = newName !== oldName
+    const timeChanged = d.time !== r.time
+    if (!nameChanged && !coordChanged && !timeChanged) { flash('변경 없음'); return }
+    const k = dkey(dir, bus, r.stop)
+    setSavingKey(k)
+    try {
+      if (nameChanged || coordChanged) {
+        const res = await fetch('/api/campus/stop-coords', {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ oldName, newName, ...(hasCoord ? { lat, lng } : {}), force: true }),
+        })
+        const j = await res.json().catch(() => ({}))
+        if (!res.ok || j.ok === false) throw new Error(`이름/좌표:${j.error ?? res.status}`)
+      }
+      const eff = newName
+      let tc = 0
+      if (timeChanged) {
+        await postRegistered(bus, eff, dir, d.time)
+        if (d.time) for (const sess of r.sess) tc += await pushTime(bus, eff, dir, sess, d.time)
+      }
+      const parts: string[] = []
+      if (nameChanged) parts.push('이름')
+      if (coordChanged) parts.push('좌표(핀)')
+      if (timeChanged) parts.push(`시간(학생 ${tc}명)`)
+      flash(`'${eff}' 저장됨 · ${parts.join(' · ')}`)
+      setDrafts(prev => { const n = { ...prev }; delete n[k]; return n })
+      load()
+    } catch (e) { alert(`저장 실패: ${(e as Error).message}`) } finally { setSavingKey(null) }
+  }
+
+  async function removeDay(dir: Dir, bus: string, r: Row, day: string) {
+    if (!confirm(`${bus} '${r.stop}' ${day}요일 탑승을 제거할까요? (${FILTER_LABEL[filter]} 세션 학생)`)) return
+    const k = dkey(dir, bus, r.stop)
+    setSavingKey(k)
+    try {
+      let n = 0
+      for (const sess of r.sess) n += await removeDayApi(bus, r.stop, dir, sess, [day])
+      flash(`${day}요일 제거됨 · 학생 ${n}명`); load()
+    } catch (e) { alert(`요일 제거 실패: ${(e as Error).message}`) } finally { setSavingKey(null) }
+  }
+
   async function addNewStop(dir: Dir, bus: string) {
     const k = `${dir}|${bus}`; const a = addStop[k]; const stop = (a?.stop ?? '').trim()
     if (!stop) return
-    setAddSaving(true)
+    setSavingKey('add|' + k)
     try {
       await postRegistered(bus, stop, dir, a.time || '')
       setAddStop(prev => ({ ...prev, [k]: { stop: '', time: '' } }))
       flash(`${bus} '${stop}' 추가됨 (${dir === 'arr' ? '등원' : '하원'})`); load()
-    } catch (e) { alert(`추가 실패: ${(e as Error).message}`) } finally { setAddSaving(false) }
+    } catch (e) { alert(`추가 실패: ${(e as Error).message}`) } finally { setSavingKey(null) }
   }
   async function deleteStop(dir: Dir, bus: string, stop: string) {
     if (!confirm(`${bus} '${stop}' (${dir === 'arr' ? '등원' : '하원'}) 정류장을 삭제할까요?`)) return
-    setAddSaving(true)
+    setSavingKey('del|' + dkey(dir, bus, stop))
     try {
       await fetch('/api/campus/registered-stops', {
         method: 'DELETE', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ bus_name: bus, stop_name: stop, direction: dir }),
       })
       flash(`${bus} '${stop}' 삭제됨`); load()
-    } catch (e) { alert(`삭제 실패: ${(e as Error).message}`) } finally { setAddSaving(false) }
-  }
-
-  // ── 정류장 수정 모달 ──
-  function openEdit(dir: Dir, bus: string, row: Row) {
-    setEditModal({ dir, bus, row })
-    setEdName(row.stop); setEdTime(row.time); setEdDays([...row.days])
-    setEdAddr(''); setGeoResults([])
-    const c = coords[row.stop]
-    setEdLat(c ? String(c.lat) : ''); setEdLng(c ? String(c.lng) : '')
-  }
-  function toggleDay(d: string, active: boolean) {
-    if (!active) return  // 미운행 요일은 이 탭에서 켤 수 없음(학생설정에서)
-    setEdDays(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d])
-  }
-  async function doGeocode() {
-    if (!edAddr.trim()) return
-    setGeoLoading(true)
-    try {
-      const res = await fetch(`/api/geocode?q=${encodeURIComponent(edAddr.trim())}`)
-      const d = await res.json().catch(() => ({}))
-      setGeoResults(d.results ?? [])
-    } finally { setGeoLoading(false) }
-  }
-  function pickGeo(r: { name: string; address: string; lat: number; lng: number }) {
-    setEdLat(String(r.lat)); setEdLng(String(r.lng)); setGeoResults([])
-  }
-  async function saveEdit() {
-    if (!editModal) return
-    const { dir, bus, row } = editModal
-    const oldName = row.stop, newName = edName.trim()
-    if (!newName) { alert('정류장 이름을 입력하세요.'); return }
-    const lat = parseFloat(edLat), lng = parseFloat(edLng)
-    const hasCoord = Number.isFinite(lat) && Number.isFinite(lng)
-    const cOld = coords[oldName]
-    const coordChanged = hasCoord && (!cOld || cOld.lat !== lat || cOld.lng !== lng)
-    const nameChanged = newName !== oldName
-    const timeChanged = edTime !== row.time
-    const removed = row.days.filter(d => !edDays.includes(d))
-    setEdSaving(true)
-    try {
-      // 1) 이름/좌표 (학생명단·등록정류장·오버라이드까지 일괄 반영) — 먼저 해서 이후 이름 기준 통일
-      if (nameChanged || coordChanged) {
-        const res = await fetch('/api/campus/stop-coords', {
-          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ oldName, newName, ...(hasCoord ? { lat, lng } : {}), force: true }),
-        })
-        const d = await res.json().catch(() => ({}))
-        if (!res.ok || d.ok === false) throw new Error(`이름/좌표:${d.error ?? res.status}`)
-      }
-      const effName = newName
-      let timeCnt = 0, dayCnt = 0
-      // 2) 시간 변경 → 학생 실제 시간 반영 + 기본값
-      if (timeChanged) {
-        await postRegistered(bus, effName, dir, edTime)
-        if (edTime) for (const sess of row.sess) timeCnt += await pushTime(bus, effName, dir, sess, edTime)
-      }
-      // 3) 요일 끄기 → 그날 그 정류장 탑승 제거
-      if (removed.length) for (const sess of row.sess) dayCnt += await removeDays(bus, effName, dir, sess, removed)
-      setEditModal(null)
-      const parts = []
-      if (nameChanged) parts.push('이름')
-      if (coordChanged) parts.push('좌표(핀)')
-      if (timeChanged) parts.push(`시간(학생 ${timeCnt}명)`)
-      if (removed.length) parts.push(`요일제거 ${removed.join('·')}(학생 ${dayCnt}명)`)
-      flash(`'${effName}' 저장됨${parts.length ? ' · ' + parts.join(' · ') : ''}`)
-      load()
-    } catch (e) { alert(`저장 실패: ${(e as Error).message}`) } finally { setEdSaving(false) }
+    } catch (e) { alert(`삭제 실패: ${(e as Error).message}`) } finally { setSavingKey(null) }
   }
 
   if (loading) return <div className="flex justify-center py-12"><div className="w-7 h-7 border-4 border-[#004EA2] border-t-transparent rounded-full animate-spin" /></div>
 
-  const DirList = ({ dir, bus }: { dir: Dir; bus: string }) => {
+  const inputCls = 'border border-[#E2E8F0] rounded px-1.5 py-1 text-[12px] focus:outline-none focus:ring-1 focus:ring-[#004EA2]'
+
+  const DirTable = ({ dir, bus }: { dir: Dir; bus: string }) => {
     const rows = rowsOf(dir, bus)
     const color = dir === 'arr' ? '#3B82F6' : '#DC2626'
     const label = dir === 'arr' ? '등원(승차)' : '하원(하차)'
     const k = `${dir}|${bus}`
     const add = addStop[k] ?? { stop: '', time: '' }
     return (
-      <div className="min-w-0">
-        <div className="text-[11px] font-bold px-2 py-1 border-b" style={{ color, borderColor: color + '55' }}>{label} · {rows.length}</div>
-        <table className="w-full text-sm">
+      <div className="overflow-x-auto">
+        <div className="text-[12px] font-bold px-2 py-1.5" style={{ color }}>{label} · {rows.length}</div>
+        <table className="w-full text-sm min-w-[640px]">
+          <thead>
+            <tr className="text-[11px] text-[#64748B] bg-[#F8FAFC] border-y border-[#EEF2F7]">
+              <th className="w-5 py-1.5"></th>
+              <th className="text-left py-1.5 font-medium px-1">정류장명 · 운행요일</th>
+              <th className="w-[96px] py-1.5 font-medium">시간</th>
+              <th className="w-[200px] py-1.5 font-medium">좌표 (위도/경도)</th>
+              <th className="text-left py-1.5 font-medium px-1">주소·장소 검색</th>
+              <th className="w-[88px] py-1.5 font-medium">저장</th>
+            </tr>
+          </thead>
           <tbody>
-            {rows.length === 0 && <tr><td className="text-center text-[#94A3B8] text-xs py-3">없음</td></tr>}
-            {rows.map((r, i) => (
-              <tr key={r.stop} className="border-b border-[#F4F6F9]">
-                <td className="w-5 text-center text-[10px] text-[#94A3B8] align-top pt-1.5">{i + 1}</td>
-                <td className="py-1 pr-1">
-                  <div className="flex items-center gap-1">
-                    <span className="text-[12px] text-[#1E293B] leading-tight">{r.stop}</span>
-                    {coords[r.stop]
-                      ? <span className="text-[9px] text-[#16A34A]" title={`좌표 ${coords[r.stop].lat.toFixed(5)}, ${coords[r.stop].lng.toFixed(5)}`}>📍</span>
-                      : <span className="text-[9px] text-[#CBD5E1]" title="좌표 없음">📍</span>}
-                    {!r.hasStudents && <span className="text-[9px] text-[#94A3B8]">(빈)</span>}
-                  </div>
-                  {/* 운행 요일 점 */}
-                  <div className="flex gap-0.5 mt-0.5">
-                    {DAYS.map(d => (
-                      <span key={d} className="w-3.5 h-3.5 rounded-full text-[7px] font-bold flex items-center justify-center"
-                        style={r.days.includes(d) ? { background: color, color: '#fff' } : { background: '#F1F5F9', color: '#CBD5E1' }}>{d}</span>
-                    ))}
-                  </div>
-                </td>
-                <td className="py-1 w-[58px] text-[13px] text-[#334155] tabular-nums align-top pt-1.5">{r.time || '–'}</td>
-                <td className="w-12 text-center whitespace-nowrap align-top pt-1">
-                  <button onClick={() => openEdit(dir, bus, r)} className="text-[11px] font-bold text-[#004EA2] border border-[#004EA2] rounded px-1.5 py-0.5 hover:bg-[#EAF2FB]">수정</button>
-                  {!r.hasStudents && (
-                    <button onClick={() => deleteStop(dir, bus, r.stop)} title="삭제" className="ml-1 text-[#CBD5E1] hover:text-[#EF4444] text-sm leading-none">×</button>
-                  )}
-                </td>
-              </tr>
-            ))}
+            {rows.length === 0 && <tr><td colSpan={6} className="text-center text-[#94A3B8] text-xs py-3">없음</td></tr>}
+            {rows.map((r, i) => {
+              const d = getDraft(dir, bus, r)
+              const k2 = dkey(dir, bus, r.stop)
+              const busy = savingKey === k2
+              const hasCoord = !!coords[r.stop]
+              return (
+                <tr key={r.stop} className={`border-b border-[#F4F6F9] ${isDirty(dir, bus, r) ? 'bg-[#FFFBEB]' : ''}`}>
+                  <td className="text-center text-[10px] text-[#94A3B8] align-top pt-2">{i + 1}</td>
+                  <td className="py-1 px-1 align-top">
+                    <input value={d.name} onChange={e => setDraft(dir, bus, r, { name: e.target.value })} className={`w-full ${inputCls}`} />
+                    <div className="flex gap-0.5 mt-1">
+                      {DAYS.map(day => {
+                        const on = r.days.includes(day)
+                        return (
+                          <button key={day} type="button" disabled={!on || busy}
+                            onClick={() => removeDay(dir, bus, r, day)}
+                            title={on ? `${day}요일 운행 — 누르면 제거` : `${day}요일 미운행`}
+                            className="w-4 h-4 rounded-full text-[7px] font-bold flex items-center justify-center disabled:cursor-default"
+                            style={on ? { background: color, color: '#fff' } : { background: '#F1F5F9', color: '#CBD5E1' }}>{day}</button>
+                        )
+                      })}
+                    </div>
+                  </td>
+                  <td className="py-1 align-top">
+                    <input type="time" value={d.time} onChange={e => setDraft(dir, bus, r, { time: e.target.value })} className={`w-[88px] ${inputCls}`} />
+                  </td>
+                  <td className="py-1 align-top">
+                    <div className="flex gap-1 items-center">
+                      <input value={d.lat} onChange={e => setDraft(dir, bus, r, { lat: e.target.value })} placeholder="위도" className={`w-[92px] ${inputCls}`} />
+                      <input value={d.lng} onChange={e => setDraft(dir, bus, r, { lng: e.target.value })} placeholder="경도" className={`w-[92px] ${inputCls}`} />
+                      <span className="text-[10px]" style={{ color: hasCoord ? '#16A34A' : '#CBD5E1' }} title={hasCoord ? '시스템 지도에 핀 있음' : '좌표 없음'}>📍</span>
+                    </div>
+                  </td>
+                  <td className="py-1 px-1 align-top">
+                    <div className="flex gap-1">
+                      <input value={d.addr} onChange={e => setDraft(dir, bus, r, { addr: e.target.value })}
+                        onKeyDown={e => { if (e.key === 'Enter') geocodeRow(dir, bus, r) }}
+                        placeholder="주소·장소 입력 후 검색" className={`flex-1 min-w-[120px] ${inputCls}`} />
+                      <button onClick={() => geocodeRow(dir, bus, r)} disabled={geoKey === k2 || !d.addr.trim()}
+                        className="text-[11px] font-bold text-[#004EA2] border border-[#004EA2] rounded px-2 disabled:opacity-40 whitespace-nowrap">{geoKey === k2 ? '검색…' : '검색'}</button>
+                    </div>
+                  </td>
+                  <td className="py-1 text-center align-top whitespace-nowrap">
+                    <button onClick={() => saveRow(dir, bus, r)} disabled={busy || !isDirty(dir, bus, r)}
+                      className="text-[11px] font-bold text-white bg-[#004EA2] rounded px-2.5 py-1 disabled:opacity-30">{busy ? '…' : '저장'}</button>
+                    {!r.hasStudents && (
+                      <button onClick={() => deleteStop(dir, bus, r.stop)} title="삭제" className="ml-1 text-[#CBD5E1] hover:text-[#EF4444] text-sm leading-none">×</button>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
+            {/* 새 정류장 추가 */}
+            <tr className="bg-[#FAFBFC]">
+              <td></td>
+              <td className="px-1 py-1.5">
+                <input value={add.stop} onChange={e => setAddStop(prev => ({ ...prev, [k]: { ...add, stop: e.target.value } }))}
+                  placeholder="새 정류장명" className={`w-full ${inputCls}`} />
+              </td>
+              <td className="py-1.5">
+                <input type="time" value={add.time} onChange={e => setAddStop(prev => ({ ...prev, [k]: { ...add, time: e.target.value } }))} className={`w-[88px] ${inputCls}`} />
+              </td>
+              <td colSpan={2} className="text-[10px] text-[#94A3B8] px-1">추가 후 행에서 좌표·주소 설정</td>
+              <td className="text-center py-1.5">
+                <button onClick={() => addNewStop(dir, bus)} disabled={savingKey === 'add|' + k || !add.stop.trim()}
+                  className="text-[11px] font-bold text-white bg-[#16A34A] rounded px-2.5 py-1 disabled:opacity-40">추가</button>
+              </td>
+            </tr>
           </tbody>
         </table>
-        <div className="flex items-center gap-1 px-1.5 py-1.5">
-          <input value={add.stop} onChange={e => setAddStop(prev => ({ ...prev, [k]: { ...add, stop: e.target.value } }))}
-            placeholder="새 정류장" className="flex-1 min-w-0 border border-[#E2E8F0] rounded px-1.5 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-[#004EA2]" />
-          <input type="time" value={add.time} onChange={e => setAddStop(prev => ({ ...prev, [k]: { ...add, time: e.target.value } }))}
-            className="w-[110px] border border-[#E2E8F0] rounded px-1.5 py-1 text-[12px]" />
-          <button onClick={() => addNewStop(dir, bus)} disabled={addSaving || !add.stop.trim()}
-            className="text-[10px] font-bold text-white bg-[#16A34A] hover:bg-[#15803D] rounded px-1.5 py-1.5 disabled:opacity-40">추가</button>
-        </div>
       </div>
     )
   }
@@ -341,93 +391,25 @@ export default function BusStopSettingsView({ campusName }: { campusName?: strin
         ))}
       </div>
       <p className="text-xs text-[#64748B] mb-3">
-        호차별 <b className="text-[#3B82F6]">등원</b>·<b className="text-[#DC2626]">하원</b> 정류장. 시간은 현재 운행시간(가장 이른)에서 가져왔습니다.
-        정류장 <b>[수정]</b>에서 이름·시간·운행요일(끄기)·주소·좌표를 바꾸고 정류장별로 저장합니다.
-        {` ('${FILTER_LABEL[filter]}' 세션 학생에 반영)`}
+        정류장마다 이름·시간·좌표·주소를 그 자리에서 고치고 <b>[저장]</b>. 좌표 저장 시 시스템 지도에 핀 표시(거기서 드래그 미세조정).
+        운행요일 점을 누르면 그날 탑승 제거. <b>(&apos;{FILTER_LABEL[filter]}&apos; 세션 학생에 반영)</b>
       </p>
 
-      <div className="grid gap-4">
+      <div className="grid gap-5">
         {buses.map(bus => (
           <div key={bus.id} className="border border-[#E2E8F0] rounded-xl overflow-hidden bg-white">
-            <div className="flex items-center justify-between px-3 py-2 bg-[#F1F5F9] border-b border-[#E2E8F0]">
+            <div className="px-3 py-2 bg-[#F1F5F9] border-b border-[#E2E8F0]">
               <span className="font-bold text-sm text-[#1E293B]">{bus.name}
                 <span className="text-[#94A3B8] font-normal"> (등원 {rowsOf('arr', bus.name).length} · 하원 {rowsOf('dep', bus.name).length})</span>
               </span>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 sm:divide-x divide-[#EEF2F7]">
-              <DirList dir="arr" bus={bus.name} />
-              <DirList dir="dep" bus={bus.name} />
+            <div className="divide-y divide-[#E2E8F0]">
+              <DirTable dir="arr" bus={bus.name} />
+              <DirTable dir="dep" bus={bus.name} />
             </div>
           </div>
         ))}
       </div>
-
-      {/* 정류장 수정 모달 */}
-      {editModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[120] px-4" onClick={() => setEditModal(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-5 max-h-[92vh] overflow-auto" onClick={e => e.stopPropagation()}>
-            <h3 className="font-bold text-[#1E293B] text-base mb-1">정류장 수정</h3>
-            <p className="text-[11px] text-[#64748B] mb-4">{editModal.bus} · {editModal.dir === 'arr' ? '등원' : '하원'} · 「{editModal.row.stop}」</p>
-
-            <label className="block text-xs font-semibold text-[#1E293B] mb-1">정류장 이름</label>
-            <input value={edName} onChange={e => setEdName(e.target.value)}
-              className="w-full border border-[#E2E8F0] rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-[#004EA2]" />
-
-            <label className="block text-xs font-semibold text-[#1E293B] mb-1">{editModal.dir === 'arr' ? '승차' : '하차'} 시간</label>
-            <input type="time" value={edTime} onChange={e => setEdTime(e.target.value)}
-              className="w-[130px] border border-[#E2E8F0] rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-[#004EA2]" />
-
-            <label className="block text-xs font-semibold text-[#1E293B] mb-1">운행 요일 <span className="font-normal text-[#94A3B8]">(끄면 그날 이 정류장 탑승 제거 · 켜기는 학생설정)</span></label>
-            <div className="flex gap-1.5 mb-3">
-              {DAYS.map(d => {
-                const wasActive = editModal.row.days.includes(d)
-                const on = edDays.includes(d)
-                return (
-                  <button key={d} type="button" onClick={() => toggleDay(d, wasActive)} disabled={!wasActive}
-                    className={`w-9 h-9 rounded-lg text-sm font-bold border transition-colors ${
-                      on ? 'bg-[#004EA2] text-white border-[#004EA2]'
-                        : wasActive ? 'bg-white text-[#DC2626] border-[#DC2626] line-through'
-                        : 'bg-[#F8FAFC] text-[#CBD5E1] border-[#E2E8F0] cursor-not-allowed'}`}>
-                    {d}
-                  </button>
-                )
-              })}
-            </div>
-
-            <label className="block text-xs font-semibold text-[#1E293B] mb-1">주소·장소 검색 (Kakao)</label>
-            <div className="flex gap-1.5 mb-2">
-              <input value={edAddr} onChange={e => setEdAddr(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') doGeocode() }}
-                className="flex-1 border border-[#E2E8F0] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]" placeholder="예: 중계동 청구3차" />
-              <button onClick={doGeocode} disabled={geoLoading || !edAddr.trim()}
-                className="text-xs font-bold text-white bg-[#004EA2] rounded-lg px-3 disabled:opacity-40">{geoLoading ? '검색…' : '검색'}</button>
-            </div>
-            {geoResults.length > 0 && (
-              <div className="border border-[#E2E8F0] rounded-lg divide-y divide-[#F1F5F9] mb-3 max-h-44 overflow-auto">
-                {geoResults.map((g, i) => (
-                  <button key={i} onClick={() => pickGeo(g)} className="w-full text-left px-3 py-2 hover:bg-[#EAF2FB]">
-                    <div className="text-[13px] text-[#1E293B] font-medium">{g.name}</div>
-                    <div className="text-[11px] text-[#64748B]">{g.address}</div>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            <label className="block text-xs font-semibold text-[#1E293B] mb-1">좌표 (위도 / 경도)</label>
-            <div className="flex gap-1.5 mb-1">
-              <input value={edLat} onChange={e => setEdLat(e.target.value)} placeholder="위도(lat)"
-                className="flex-1 border border-[#E2E8F0] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]" />
-              <input value={edLng} onChange={e => setEdLng(e.target.value)} placeholder="경도(lng)"
-                className="flex-1 border border-[#E2E8F0] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]" />
-            </div>
-            <p className="text-[11px] text-[#94A3B8] mb-4">좌표 저장 시 시스템 지도에 핀 표시 · 거기서 핀을 끌어 미세조정.</p>
-
-            <div className="flex gap-2">
-              <button onClick={() => setEditModal(null)} className="flex-1 border border-[#E2E8F0] text-[#64748B] font-semibold py-2.5 rounded-xl text-sm">취소</button>
-              <button onClick={saveEdit} disabled={edSaving} className="flex-1 bg-[#004EA2] text-white font-semibold py-2.5 rounded-xl text-sm disabled:opacity-50">{edSaving ? '저장 중…' : '저장'}</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
