@@ -5,6 +5,7 @@ import { selectOrphanOverrides, buildSynthEntry } from '@/lib/utils/today-overri
 import { applyEnrollmentSchedule, applyBulkTimeToSchedule } from '@/lib/utils/vehicle-schedule'
 import { conflictBody } from '@/lib/vehicles/conflict'
 import { logUsage } from '@/lib/usage-log'
+import { normStop } from '@/lib/utils/stop-name'
 
 type Day = '월' | '화' | '수' | '목' | '금'
 
@@ -902,6 +903,41 @@ export async function POST(request: NextRequest) {
       if (error) failedLoc++
     }
     return NextResponse.json({ ok: failedLoc === 0, updated: toUpdate.length - failedLoc, failed: failedLoc })
+  }
+
+  if (action === 'remove_stop_days') {
+    // 특정 호차·방향·정류장에서 지정 요일 탑승 제거 (그 요일에 그 정류장 타던 학생만)
+    const { bus_name, direction: dir, location, session_name, days } = body
+    if (!bus_name || !location || !Array.isArray(days) || days.length === 0) return NextResponse.json({ error: '필수 값 누락' }, { status: 400 })
+    const schedKey = dir === 'arr' ? 'arr_schedule' : 'dep_schedule'
+    const cleanLoc = (v: string | null | undefined) => normStop((v ?? '').replace(/^\d{1,2}:\d{2}(?:\s*[-~]\s*\d{1,2}:\d{2})?\s+/, ''))
+    const target = cleanLoc(location)
+    const { data: sessions } = await service.from('class_sessions').select('id').eq('campus_id', campusId).ilike('name', `%${session_name ?? ''}%`)
+    const sessionIds = (sessions ?? []).map((s: { id: string }) => s.id)
+    if (!sessionIds.length) return NextResponse.json({ ok: true, updated: 0 })
+    const { data: classes } = await service.from('classes').select('id').in('session_id', sessionIds)
+    const classIds = (classes ?? []).map((c: { id: string }) => c.id)
+    if (!classIds.length) return NextResponse.json({ ok: true, updated: 0 })
+    const { data: enrollments } = await service.from('class_enrollments')
+      .select('student_id, class_id, arr_schedule, dep_schedule').in('class_id', classIds).eq('is_waitlist', false)
+    const toUpdate: { student_id: string; class_id: string; sched: Record<string, string> }[] = []
+    for (const enr of enrollments ?? []) {
+      const cur = { ...(enr[schedKey as keyof typeof enr] as Record<string, string> ?? {}) }
+      let changed = false
+      for (const d of days as string[]) {
+        if (cur[d] === bus_name && cleanLoc(cur[d + '_loc']) === target) {
+          delete cur[d]; delete cur[d + '_loc']; delete cur[d + '_time']; changed = true
+        }
+      }
+      if (changed) toUpdate.push({ student_id: enr.student_id, class_id: enr.class_id, sched: cur })
+    }
+    let failed = 0
+    for (const u of toUpdate) {
+      const { error } = await service.from('class_enrollments').update({ [schedKey]: u.sched })
+        .eq('student_id', u.student_id).eq('class_id', u.class_id)
+      if (error) failed++
+    }
+    return NextResponse.json({ ok: failed === 0, updated: toUpdate.length - failed, failed })
   }
 
   if (action === 'bulk_set_time') {
