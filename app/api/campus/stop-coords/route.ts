@@ -161,26 +161,30 @@ export async function PATCH(request: NextRequest) {
   }
 
   // 2) class_enrollments: {day}_loc 값이 oldName인 것 newName으로 변경.
-  const { data: sessions } = await service.from('class_sessions').select('id').eq('campus_id', campusId)
-  const sessionIds = (sessions ?? []).map(s => s.id)
+  //    ⚠️버그수정: 기존 classIds `.in()`는 반 많으면 URL한도 초과로 0행(무음) → 개설반 개명 미반영.
+  //    class_enrollments.campus_id 로 직접 조회(=.in 회피).
   let enrChanged = 0
-  if (sessionIds.length) {
-    const { data: classes } = await service.from('classes').select('id').in('session_id', sessionIds)
-    const classIds = (classes ?? []).map(c => c.id)
-    if (classIds.length) {
-      const { data: enrollments } = await service
-        .from('class_enrollments').select('id, arr_schedule, dep_schedule').in('class_id', classIds)
-      const toUpdate: { id: string; arr_schedule: object; dep_schedule: object }[] = []
-      for (const enr of enrollments ?? []) {
-        const arr = renameStopInSchedule(enr.arr_schedule as Record<string, string> | null, oldName, newName)
-        const dep = renameStopInSchedule(enr.dep_schedule as Record<string, string> | null, oldName, newName)
-        if (arr.changed || dep.changed) toUpdate.push({ id: enr.id, arr_schedule: arr.sched, dep_schedule: dep.sched })
-      }
-      for (const row of toUpdate) {
-        const { error } = await service.from('class_enrollments')
-          .update({ arr_schedule: row.arr_schedule, dep_schedule: row.dep_schedule }).eq('id', row.id)
-        if (error) errs.push(`enr:${error.message}`); else enrChanged++
-      }
+  {
+    // 1000행 상한 회피: range 페이지네이션으로 전 enrollment 조회
+    const enrollments: { id: string; arr_schedule: unknown; dep_schedule: unknown }[] = []
+    for (let from = 0; ; from += 1000) {
+      const { data, error: enrSelErr } = await service
+        .from('class_enrollments').select('id, arr_schedule, dep_schedule').eq('campus_id', campusId).range(from, from + 999)
+      if (enrSelErr) { errs.push(`enr-sel:${enrSelErr.message}`); break }
+      if (!data || data.length === 0) break
+      enrollments.push(...data)
+      if (data.length < 1000) break
+    }
+    const toUpdate: { id: string; arr_schedule: object; dep_schedule: object }[] = []
+    for (const enr of enrollments) {
+      const arr = renameStopInSchedule(enr.arr_schedule as Record<string, string> | null, oldName, newName)
+      const dep = renameStopInSchedule(enr.dep_schedule as Record<string, string> | null, oldName, newName)
+      if (arr.changed || dep.changed) toUpdate.push({ id: enr.id, arr_schedule: arr.sched, dep_schedule: dep.sched })
+    }
+    for (const row of toUpdate) {
+      const { error } = await service.from('class_enrollments')
+        .update({ arr_schedule: row.arr_schedule, dep_schedule: row.dep_schedule }).eq('id', row.id)
+      if (error) errs.push(`enr:${error.message}`); else enrChanged++
     }
   }
   result.enrChanged = enrChanged
