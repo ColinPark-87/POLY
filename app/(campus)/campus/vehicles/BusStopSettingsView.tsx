@@ -72,12 +72,6 @@ function stopDayTriples(s: Student): [string, string, string][] {
   return out
 }
 
-function chunk<T>(arr: T[], size: number): T[][] {
-  const out: T[][] = []
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size))
-  return out
-}
-
 interface Row { stop: string; time: string; sess: string[]; days: string[]; students: StuRef[]; hasStudents: boolean }
 interface Draft { name: string; time: string; lat: string; lng: string; addr: string }
 
@@ -346,8 +340,8 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
   const q = search.trim().toLowerCase()
   const matchRows = (dir: Dir, bus: string) => q ? rowsOf(dir, bus).filter(r => r.stop.toLowerCase().includes(q)) : rowsOf(dir, bus)
 
-  // 정류장 카드 (반 카드 대응): 색 헤더 + 학생명단 2열
-  const StopCard = ({ dir, bus, r, i, width }: { dir: Dir; bus: string; r: Row; i: number; width: string }) => {
+  // 정류장 카드 (반 카드 대응): 색 헤더 + 학생명단 2열. 고정 좁은 폭(퍼짐 방지)
+  const StopCard = ({ dir, bus, r, i }: { dir: Dir; bus: string; r: Row; i: number }) => {
     const k = dkey(dir, bus, r.stop)
     const d = dForKey(k, r)
     const busy = savingKey === k
@@ -356,36 +350,35 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
     const hasCoord = !!coords[r.stop]
     const color = dirColor(dir)
     return (
-      <div className="flex-shrink-0 rounded-[9px] border-[1.5px] border-[#e0e0e0] bg-white shadow-sm overflow-hidden flex flex-col self-stretch" style={{ width, minWidth: '210px' }}>
+      <div className="flex-shrink-0 w-[164px] rounded-md border border-[#e0e0e0] bg-white shadow-sm overflow-hidden flex flex-col self-start">
         {/* 헤더: 정류장명 · 시간 · 인원 */}
-        <div className="px-1.5 py-1 text-white select-none" style={{ background: color }}>
-          <div className="flex items-center gap-1">
-            <span className="text-[8px] font-bold opacity-70 w-3 text-center flex-shrink-0">{i + 1}</span>
+        <div className="px-1 py-0.5 text-white select-none" style={{ background: color }}>
+          <div className="flex items-center gap-0.5">
             {editing
-              ? <input value={d.name} onChange={e => setDraftK(k, r, { name: e.target.value })} className="flex-1 min-w-0 text-[11px] text-[#1a1a1a] rounded px-1 py-0.5" />
-              : <span className="font-extrabold text-[11px] leading-tight truncate flex-1" title={r.stop}>{r.stop}{hasCoord ? '' : <span className="opacity-60 font-normal"> (좌표없음)</span>}</span>}
-            <span className="text-[9px] font-bold bg-white/30 px-1 py-px rounded flex-shrink-0 tabular-nums">{r.time || '–'}</span>
-            <span className="text-[9px] font-bold bg-white/30 px-1 py-px rounded flex-shrink-0">{r.students.length}</span>
+              ? <input value={d.name} onChange={e => setDraftK(k, r, { name: e.target.value })} className="flex-1 min-w-0 text-[11px] text-[#1a1a1a] rounded px-1 py-px" />
+              : <span className="font-extrabold text-[10.5px] leading-tight truncate flex-1" title={hasCoord ? r.stop : r.stop + ' (좌표없음)'}>{r.stop}{hasCoord ? '' : <span className="opacity-60 font-normal">*</span>}</span>}
+            <span className="text-[9px] font-bold bg-white/25 px-1 rounded flex-shrink-0 tabular-nums">{r.time || '–'}</span>
+            <span className="text-[9px] font-bold bg-white/25 px-1 rounded flex-shrink-0">{r.students.length}</span>
           </div>
         </div>
 
         {/* 학생명단 2열 */}
-        <div className="flex-1 overflow-y-auto max-h-[200px]">
+        <div className="overflow-y-auto max-h-[180px]">
           <div className="grid grid-cols-2">
             {r.students.map((s, si) => (
               <div key={s.id}
-                className="flex items-center gap-0.5 px-1 border-b border-r border-[#f0f0f0]"
-                style={{ minHeight: '18px', background: si % 2 === 0 ? '#fafafa' : '#fff' }}>
-                <span className="text-[8px] text-[#ccc] w-3 text-right flex-shrink-0">{si + 1}</span>
-                <span className="text-[10px] font-semibold text-[#1a1a1a] truncate flex-1 leading-tight">{s.name}</span>
-                <button onClick={() => removeRider(dir, bus, r.stop, s)} title="빼기" className="text-[#ccc] hover:text-[#EF4444] text-[11px] leading-none flex-shrink-0">×</button>
+                className="flex items-center px-0.5 border-b border-r border-[#f0f0f0]"
+                style={{ minHeight: '15px', background: si % 2 === 0 ? '#fafafa' : '#fff' }}>
+                <span className="text-[7px] text-[#ccc] w-2 text-right flex-shrink-0">{si + 1}</span>
+                <span className="text-[9.5px] font-semibold text-[#1a1a1a] truncate flex-1 leading-none px-0.5">{s.name}</span>
+                <button onClick={() => removeRider(dir, bus, r.stop, s)} title="빼기" className="text-[#ccc] hover:text-[#EF4444] text-[10px] leading-none flex-shrink-0">×</button>
               </div>
             ))}
-            {r.students.length === 0 && <div className="col-span-2 h-[18px] flex items-center justify-center text-[#CBD5E1] text-[9px]">탑승 학생 없음</div>}
+            {r.students.length === 0 && <div className="col-span-2 h-[15px] flex items-center justify-center text-[#CBD5E1] text-[8px]">없음</div>}
           </div>
           {adding && (
-            <div className="relative p-1 border-b border-[#f0f0f0]">
-              <input autoFocus value={riderQ} onChange={e => searchRiders(e.target.value)} placeholder="학생 이름 검색" className={`w-full ${inputCls}`} />
+            <div className="relative p-0.5 border-b border-[#f0f0f0]">
+              <input autoFocus value={riderQ} onChange={e => searchRiders(e.target.value)} placeholder="학생 검색" className={`w-full ${inputCls}`} />
               {riderResults.length > 0 && (
                 <div className="absolute z-10 left-1 right-1 mt-0.5 bg-white border border-[#E2E8F0] rounded-lg shadow-lg max-h-40 overflow-auto">
                   {riderResults.map(s => (
@@ -447,13 +440,13 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
         )}
 
         {/* 푸터: 학생+ · 수정 · 지도 · 삭제 */}
-        <div className="border-t border-[#EEF2F7] px-1 py-1 flex items-center gap-1 text-[10px] bg-[#FCFCFD]">
+        <div className="border-t border-[#EEF2F7] px-0.5 py-0.5 flex items-center gap-0.5 text-[9px] bg-[#FCFCFD]">
           <button onClick={() => { setAddRiderKey(a => a === k ? null : k); setRiderQ(''); setRiderResults([]) }}
-            className={`font-bold border rounded px-1.5 py-0.5 ${adding ? 'bg-[#16A34A] text-white border-[#16A34A]' : 'text-[#16A34A] border-[#16A34A]'}`}>학생+</button>
+            className={`font-bold border rounded px-1 leading-tight py-px ${adding ? 'bg-[#16A34A] text-white border-[#16A34A]' : 'text-[#16A34A] border-[#16A34A]'}`}>학생+</button>
           <button onClick={() => { if (editing) setEditKey(null); else { setEditKey(k); setCoordOpen(false); setDraftK(k, r, {}) } }}
-            className={`font-bold border rounded px-1.5 py-0.5 ${editing ? 'bg-[#004EA2] text-white border-[#004EA2]' : 'text-[#004EA2] border-[#004EA2]'}`}>수정</button>
-          {onLocateStop && <button onClick={() => onLocateStop(r.stop, bus)} title="시스템 지도에서 위치수정" className="font-bold text-[#004EA2] border border-[#004EA2] rounded px-1.5 py-0.5">지도</button>}
-          {!r.hasStudents && <button onClick={() => deleteStop(dir, bus, r.stop)} title="정류장 삭제" className="ml-auto text-[#CBD5E1] hover:text-[#EF4444] font-bold">삭제</button>}
+            className={`font-bold border rounded px-1 leading-tight py-px ${editing ? 'bg-[#004EA2] text-white border-[#004EA2]' : 'text-[#004EA2] border-[#004EA2]'}`}>수정</button>
+          {onLocateStop && <button onClick={() => onLocateStop(r.stop, bus)} title="시스템 지도에서 위치수정" className="font-bold text-[#004EA2] border border-[#004EA2] rounded px-1 leading-tight py-px">지도</button>}
+          {!r.hasStudents && <button onClick={() => deleteStop(dir, bus, r.stop)} title="정류장 삭제" className="ml-auto text-[#CBD5E1] hover:text-[#EF4444] font-bold px-0.5">삭제</button>}
         </div>
       </div>
     )
@@ -468,42 +461,35 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
     const isCollapsed = q ? false : collapsed.has(bk)
     const studentN = rows.reduce((n, r) => n + r.students.length, 0)
     const add = addStop[bk] ?? { stop: '', time: '' }
-    const cardRows = chunk(rows, 4)
     return (
       <div>
         {/* 밴드 헤더 */}
-        <div className="flex items-center justify-between mb-2 pb-1.5" style={{ borderBottom: `2px solid ${color}` }}>
-          <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between mb-1 pb-1" style={{ borderBottom: `2px solid ${color}` }}>
+          <div className="flex items-center gap-1.5">
             <button onClick={() => setCollapsed(prev => { const n = new Set(prev); n.has(bk) ? n.delete(bk) : n.add(bk); return n })}
-              className="text-[#94A3B8] hover:text-[#1E293B] text-[11px] leading-none w-5 h-5 flex items-center justify-center rounded hover:bg-[#F1F5F9]">
+              className="text-[#94A3B8] hover:text-[#1E293B] text-[10px] leading-none w-4 h-4 flex items-center justify-center rounded hover:bg-[#F1F5F9]">
               {isCollapsed ? '▶' : '▼'}
             </button>
-            <span className="text-[13px] font-extrabold" style={{ color }}>{bus} {dirLabel(dir)}</span>
-            <span className="text-[11px] text-[#94A3B8]">정류장 {rows.length} · 학생 {studentN}명</span>
+            <span className="text-[12px] font-extrabold" style={{ color }}>{bus} {dirLabel(dir)}</span>
+            <span className="text-[10px] text-[#94A3B8]">정류장 {rows.length} · 학생 {studentN}명</span>
           </div>
         </div>
 
         {!isCollapsed && (
-          <div className="overflow-x-auto -mx-1 px-1 pb-1 space-y-1.5">
-            {cardRows.map((rowCards, ri) => {
-              const cols = Math.min(rowCards.length, 4)
-              const width = `calc((100% - ${(cols - 1) * 6}px) / ${cols})`
-              return (
-                <div key={ri} className="flex flex-nowrap sm:flex-wrap gap-[6px]" style={{ minWidth: 'max-content' }}>
-                  {rowCards.map((r, ci) => <StopCard key={r.stop} dir={dir} bus={bus} r={r} i={ri * 4 + ci} width={width} />)}
-                </div>
-              )
-            })}
+          <div className="flex flex-wrap items-start gap-1 pb-1">
+            {rows.map((r, i) => <StopCard key={r.stop} dir={dir} bus={bus} r={r} i={i} />)}
             {/* 새 정류장 추가 */}
             {!q && (
-              <div className="flex gap-1.5 items-end pt-0.5">
-                <input value={add.stop} onChange={e => setAddStop(prev => ({ ...prev, [bk]: { ...add, stop: e.target.value } }))} placeholder="새 정류장명" className={`w-40 ${inputCls}`} />
-                <input type="time" value={add.time} onChange={e => setAddStop(prev => ({ ...prev, [bk]: { ...add, time: e.target.value } }))} className={`w-28 ${inputCls}`} />
-                <button onClick={() => addNewStop(dir, bus)} disabled={savingKey === 'addstop|' + bk || !add.stop.trim()}
-                  className="text-[11px] font-bold border px-2 py-1 rounded disabled:opacity-40" style={{ color, borderColor: color }}>+ 정류장 추가</button>
+              <div className="flex-shrink-0 w-[164px] rounded-md border border-dashed border-[#CBD5E1] bg-[#FAFBFC] p-1 flex flex-col gap-0.5 self-start">
+                <input value={add.stop} onChange={e => setAddStop(prev => ({ ...prev, [bk]: { ...add, stop: e.target.value } }))} placeholder="새 정류장명" className={`w-full ${inputCls}`} />
+                <div className="flex gap-0.5">
+                  <input type="time" value={add.time} onChange={e => setAddStop(prev => ({ ...prev, [bk]: { ...add, time: e.target.value } }))} className={`flex-1 min-w-0 ${inputCls}`} />
+                  <button onClick={() => addNewStop(dir, bus)} disabled={savingKey === 'addstop|' + bk || !add.stop.trim()}
+                    className="text-[10px] font-bold border px-1.5 rounded disabled:opacity-40" style={{ color, borderColor: color }}>추가</button>
+                </div>
               </div>
             )}
-            {rows.length === 0 && <div className="text-[11px] text-[#CBD5E1] py-2">정류장 없음</div>}
+            {rows.length === 0 && <div className="text-[10px] text-[#CBD5E1] py-2">정류장 없음</div>}
           </div>
         )}
       </div>
@@ -535,9 +521,9 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
       </div>
 
       {/* 밴드: 호차별 등원·하원 */}
-      <div className="space-y-5">
+      <div className="space-y-3">
         {buses.map(bus => (
-          <div key={bus.id} className="space-y-4">
+          <div key={bus.id} className="space-y-2">
             <Band dir="arr" bus={bus.name} />
             <Band dir="dep" bus={bus.name} />
           </div>
