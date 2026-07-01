@@ -3283,8 +3283,8 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false,
                               }}>
                               {isSpot ? '+' : boardingNumByName.get(stop.name)}
                             </div>
-                            {/* 정류장 헤더 — 클릭 시 작은 팝업으로 명단·좌표설정 (카드는 접힌 채 유지) */}
-                            <button onClick={() => setStopPopup(p => p?.bus === bus.name && p?.stop === stop.name ? null : { bus: bus.name, stop: stop.name })} className="w-full text-left">
+                            {/* 정류장 헤더 (읽기전용) — 명단은 '탑승 N명' 옆 이름칩. 편집은 호차별 정류장 탭에서 */}
+                            <div className="w-full text-left">
                               <div className="flex items-baseline justify-between gap-2">
                                 <span className="text-[13px] font-bold text-[#0F172A] truncate">
                                   {stop.name}
@@ -3292,17 +3292,18 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false,
                                     <span className="ml-1.5 text-[9px] text-[#F59E0B] font-black bg-[#FFFBEB] px-1.5 py-0.5 rounded-full align-middle">좌표 없음</span>
                                   )}
                                 </span>
-                                <span className="flex items-center gap-1 shrink-0">
-                                  <span className="text-[13px] font-black text-[#0F172A]" style={{ fontVariantNumeric: 'tabular-nums' }}>
-                                    {stop.time ? normalizeTime(stop.time) : '--:--'}
-                                  </span>
-                                  <span className="text-[#CBD5E1] text-[11px]">›</span>
+                                <span className="text-[13px] font-black text-[#0F172A] shrink-0" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                                  {stop.time ? normalizeTime(stop.time) : '--:--'}
                                 </span>
                               </div>
-                              <div className="text-[10px] text-[#94A3B8] font-bold tracking-wide uppercase mt-0.5">
-                                탑승 <span className="text-[#475569]" style={{ fontVariantNumeric: 'tabular-nums' }}>{stop.students.length}</span>명
+                              <div className="mt-1 flex flex-wrap items-baseline gap-x-1 gap-y-1">
+                                <span className="text-[10px] text-[#94A3B8] font-bold tracking-wide uppercase mr-0.5">탑승 <span className="text-[#475569]" style={{ fontVariantNumeric: 'tabular-nums' }}>{stop.students.length}</span>명</span>
+                                {stop.students.map(s => (
+                                  <span key={s.student_id} className="text-[11px] font-semibold text-[#334155] bg-[#F1F5F9] rounded px-1.5 py-0.5">{s.name}</span>
+                                ))}
+                                {stop.students.length === 0 && <span className="text-[10px] text-[#CBD5E1]">탑승 없음</span>}
                               </div>
-                            </button>
+                            </div>
                             {stopPopup?.bus === bus.name && stopPopup?.stop === stop.name && (
                               // 위치 조정(검색·핀 이동) 중에는 지도를 가리지 않도록 하단 컴팩트 시트로 축소
                               // (검색 결과·저장은 그대로 유지, 지도/핀은 시트 위쪽에서 보이고 드래그 가능)
