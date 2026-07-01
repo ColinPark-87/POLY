@@ -678,14 +678,14 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
               title={ro ? '학생 추가 신청(데스크 승인)' : '상시 탑승 추가(개설반, 요일 반복)'} className={`font-bold border rounded px-1 py-px ${ro ? 'col-span-2' : ''} ${adding ? 'bg-[#16A34A] text-white border-[#16A34A]' : 'text-[#16A34A] border-[#16A34A]'}`}>{ro ? '학생추가 신청' : '학생+'}</button>
             {!ro && <button onClick={() => { setAddDayKey(a => a === k ? null : k); setAddRiderKey(null); setRiderQ(''); setRiderResults([]) }}
               title={`${selDate} 당일만 탑승(1회, 개설반)`} className={`font-bold border rounded px-1 py-px ${dayAdding ? 'bg-[#EA580C] text-white border-[#EA580C]' : 'text-[#EA580C] border-[#EA580C]'}`}>당일+</button>}
-            {!ro && onLocateStop
-              ? <button onClick={() => onLocateStop(r.stop, bus)} title={hasCoord ? '시스템 지도로 이동 → 핀 드래그' : '지도에서 핀 찍어 좌표 설정'}
-                  className="font-bold border rounded px-1 py-px bg-[#004EA2] text-white border-[#004EA2]">지도</button>
-              : null}
-            {!ro && <button onClick={() => { if (coording) setCoordKey(null); else { setCoordKey(k); setGeoResults([]); const c = coords[r.stop]; setCoordDraft({ lat: c ? String(c.lat) : '', lng: c ? String(c.lng) : '', addr: '' }) } }}
-              title={hasCoord ? '좌표 설정됨 — 수정' : '좌표 없음 — 입력 필요'}
-              className={`font-bold border rounded px-1 py-px ${coording ? 'bg-[#EA580C] text-white border-[#EA580C]' : hasCoord ? 'bg-[#004EA2] text-white border-[#004EA2]' : 'text-[#B45309] border-[#F59E0B] bg-[#FEF3C7] animate-pulse'}`}>{hasCoord ? '좌표' : '좌표!'}</button>}
-            {!ro && <button onClick={() => deleteStop(dir, bus, r)} title="정류장 삭제(학생 있으면 배정 해제 후 삭제)" className="col-span-2 text-[#EF4444] border border-[#FCA5A5] rounded px-1 py-px font-bold hover:bg-[#FEF2F2]">정류장 삭제</button>}
+            {/* 좌표 유무에 따라 버튼 1개: 없으면 [좌표](주소검색), 있으면 [지도](세부조정) — 순서 혼란 방지 */}
+            {!ro && (hasCoord
+              ? (onLocateStop && <button onClick={() => onLocateStop(r.stop, bus)} title="시스템 지도로 이동 → 핀 드래그로 세부조정"
+                  className="col-span-2 font-bold border rounded px-1 py-px bg-[#004EA2] text-white border-[#004EA2]">지도 세부조정</button>)
+              : <button onClick={() => { if (coording) setCoordKey(null); else { setCoordKey(k); setGeoResults([]); setCoordDraft({ lat: '', lng: '', addr: '' }) } }}
+                  title="좌표 없음 — 주소검색으로 위치 설정"
+                  className={`col-span-2 font-bold border rounded px-1 py-px ${coording ? 'bg-[#EA580C] text-white border-[#EA580C]' : 'text-[#B45309] border-[#F59E0B] bg-[#FEF3C7] animate-pulse'}`}>좌표 설정</button>)}
+            {!ro && !r.hasStudents && adds.length === 0 && <button onClick={() => deleteStop(dir, bus, r)} title="빈 정류장 삭제" className="col-span-2 text-[#EF4444] border border-[#FCA5A5] rounded px-1 py-px font-bold hover:bg-[#FEF2F2]">정류장 삭제</button>}
           </div>
           {/* 탑승자 명단 (칩) — 요일 미탑승/결석은 흐림, 당일추가는 주황 */}
           <div className="px-1.5 py-0.5 flex flex-wrap gap-1 items-center min-w-0">
@@ -959,7 +959,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
             className={`text-[13px] font-bold border rounded-lg px-3 py-1.5 ${adding ? 'bg-[#16A34A] text-white border-[#16A34A]' : 'text-[#16A34A] border-[#16A34A]'}`}>{ro ? '학생추가 신청' : '학생+'}</button>
           {!ro && <button onClick={() => { setAddDayKey(a => a === k ? null : k); setAddRiderKey(null); setRiderQ(''); setRiderResults([]) }}
             className={`text-[13px] font-bold border rounded-lg px-3 py-1.5 ${dayAdding ? 'bg-[#EA580C] text-white border-[#EA580C]' : 'text-[#EA580C] border-[#EA580C]'}`}>당일+</button>}
-          {!ro && <button onClick={() => deleteStop(dir, bus, r)} className="ml-auto text-[13px] font-bold border border-[#FCA5A5] text-[#EF4444] rounded-lg px-3 py-1.5 hover:bg-[#FEF2F2]">정류장 삭제</button>}
+          {!ro && !r.hasStudents && adds.length === 0 && <button onClick={() => deleteStop(dir, bus, r)} className="ml-auto text-[13px] font-bold border border-[#FCA5A5] text-[#EF4444] rounded-lg px-3 py-1.5 hover:bg-[#FEF2F2]">정류장 삭제</button>}
         </div>
         {(adding || dayAdding) && (
           <div className="relative px-2.5 py-2 border-t border-[#EEF2F7]" style={{ background: dayAdding ? '#FFF7ED' : '#F0FDF4' }}>

@@ -4045,7 +4045,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false,
                 <p className="text-[10px] font-bold text-white/55">핀을 끌거나 지도를 눌러 위치 조정</p>
               </div>
               <button
-                onClick={() => { setCandidateStop(null); setCandidateCoord(null) }}
+                onClick={() => { const nm = candidateStop; setCandidateStop(null); setCandidateCoord(null); if (onCoordSaved && nm) onCoordSaved(nm) }}
                 className="px-3 py-2 rounded-xl text-[12px] font-black text-white/90 bg-white/10 hover:bg-white/20 transition-colors shrink-0">
                 취소
               </button>
