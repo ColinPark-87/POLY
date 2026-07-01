@@ -1,10 +1,10 @@
 'use client'
 
-// 호차별 정류장 세팅 (중계 전용) — 개설반 '반편성 현황관리'와 동일 구조.
-// (호차×방향)=밴드(세션 대응): "1호차 등원" 한 줄, "1호차 하원" 한 줄.
-//   밴드 = 색 헤더(접기·이름·정류장/학생 수) + 정류장 카드 행(반 카드 대응, calc 폭).
-//   정류장 카드 = 색 헤더(정류장명·시간·인원) + 학생명단 2열 그리드(최대 18=9×2). 이모지 없음.
-// 수정: 카드 [수정] 펼침(시간·이름·좌표·운행요일). [학생+]/×=명단 추가·제거. [지도]=시스템 지도 위치수정.
+// 호차별 정류장 세팅 (중계 전용) — 엑셀 배차표식.
+// 상단 = 호차 선택 탭(호차별 정리). 호차 안에 세션별 섹션(유치부/매일반/3일반/화목반), 각 섹션 등원·하원 표.
+// 표 = 시간 | 장소 | 탑승자 명단 | 작업 (정류장별 그룹 1행, 시간순).
+//   시간·장소 = 셀 클릭 인라인 개별 수정(일괄 폼 없음). 좌표 = [좌표] 팝오버(주소검색/핀) 또는 [지도] 드래그.
+//   학생 추가 검색 = 개설반 현황(enrolled) 소스. 학생명 = 분리 칩.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
@@ -56,7 +56,6 @@ function normalizeTime(t: string | null | undefined): string {
   return `${String(h).padStart(2, '0')}:${m[2]}`
 }
 
-// 학생이 한 호차에서 갖는 (정류장, 시간, 요일) — 요일별 장소/시간 반영
 function stopDayTriples(s: Student): [string, string, string][] {
   const out: [string, string, string][] = []
   const days = s.days ?? []
@@ -73,7 +72,7 @@ function stopDayTriples(s: Student): [string, string, string][] {
 }
 
 interface Row { stop: string; time: string; sess: string[]; days: string[]; students: StuRef[]; hasStudents: boolean }
-interface Draft { name: string; time: string; lat: string; lng: string; addr: string }
+const GRID = 'grid grid-cols-[56px_190px_1fr_120px]'
 
 export default function BusStopSettingsView({ campusName, onLocateStop }: { campusName?: string; onLocateStop?: (stop: string, bus: string) => void }) {
   void campusName
@@ -82,20 +81,25 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
 
   const [loading, setLoading] = useState(true)
   const [raw, setRaw] = useState<{ arr: MasterResp; dep: MasterResp } | null>(null)
-  const [filter, setFilter] = useState<Filter>('유치부')
+  const [selectedBus, setSelectedBus] = useState('')
   const [msg, setMsg] = useState('')
   const [coords, setCoords] = useState<Record<string, { lat: number; lng: number }>>({})
-  const [drafts, setDrafts] = useState<Record<string, Draft>>({})
-  const [editKey, setEditKey] = useState<string | null>(null)
-  const [addRiderKey, setAddRiderKey] = useState<string | null>(null)
-  const [coordOpen, setCoordOpen] = useState(false)
-  const [geoKey, setGeoKey] = useState<string | null>(null)
   const [savingKey, setSavingKey] = useState<string | null>(null)
-  const [addStop, setAddStop] = useState<Record<string, { stop: string; time: string }>>({})
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())  // 밴드키 `${dir}|${bus}`
   const [search, setSearch] = useState('')
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())  // `${bus}|${filter}`
+  // 인라인 셀 편집
+  const [cellEdit, setCellEdit] = useState<{ key: string; field: 'time' | 'name' } | null>(null)
+  const [cellVal, setCellVal] = useState('')
+  // 좌표 팝오버
+  const [coordKey, setCoordKey] = useState<string | null>(null)
+  const [coordDraft, setCoordDraft] = useState<{ lat: string; lng: string; addr: string }>({ lat: '', lng: '', addr: '' })
+  const [geoBusy, setGeoBusy] = useState(false)
+  // 학생 추가
+  const [addRiderKey, setAddRiderKey] = useState<string | null>(null)
   const [riderQ, setRiderQ] = useState('')
   const [riderResults, setRiderResults] = useState<{ id: string; name: string; english_name: string | null }[]>([])
+  // 새 정류장
+  const [addStop, setAddStop] = useState<Record<string, { stop: string; time: string }>>({})
 
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(''), 3200) }
 
@@ -108,15 +112,15 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
     ]) as [MasterResp, MasterResp, { coords?: Record<string, { lat: number; lng: number }> }]
     setRaw({ arr, dep })
     setCoords(cd.coords ?? {})
-    setDrafts({})
     setLoading(false)
   }, [])
 
   useEffect(() => { load() }, [load])
 
   const buses: Bus[] = useMemo(() => (raw ? (raw.arr.buses?.length ? raw.arr.buses : raw.dep.buses) ?? [] : []), [raw])
+  useEffect(() => { if (buses.length && !buses.some(b => b.name === selectedBus)) setSelectedBus(buses[0].name) }, [buses, selectedBus])
 
-  const buildDir = useCallback((dir: Dir): Record<string, Row[]> => {
+  const buildDir = useCallback((flt: Filter, dir: Dir): Record<string, Row[]> => {
     if (!raw) return {}
     const resp = raw[dir]
     const cellByBus: Record<string, Record<string, { times: string[]; sess: Set<string>; days: Set<string>; stu: Map<string, StuRef>; hasStudents: boolean }>> = {}
@@ -126,7 +130,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
       return cellByBus[bus][stop]
     }
     for (const tg of resp.timeGroups ?? []) {
-      if (!sessMatch(tg.session_name, filter, dir)) continue
+      if (!sessMatch(tg.session_name, flt, dir)) continue
       for (const [bus, students] of Object.entries(tg.busMap ?? {})) {
         for (const s of students) {
           for (const [stop, t, day] of stopDayTriples(s)) {
@@ -159,17 +163,16 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
         .sort((a, b) => (a.time || 'zz').localeCompare(b.time || 'zz') || a.stop.localeCompare(b.stop, 'ko'))
     }
     return out
-  }, [raw, filter, buses])
+  }, [raw, buses])
 
-  const arrRows = useMemo(() => buildDir('arr'), [buildDir])
-  const depRows = useMemo(() => buildDir('dep'), [buildDir])
-  const rowsOf = (dir: Dir, bus: string) => (dir === 'arr' ? arrRows : depRows)[bus] ?? []
+  const built = useMemo(() => {
+    const res = {} as Record<Filter, { arr: Record<string, Row[]>; dep: Record<string, Row[]> }>
+    for (const f of FILTERS) res[f] = { arr: buildDir(f, 'arr'), dep: buildDir(f, 'dep') }
+    return res
+  }, [buildDir])
+  const rowsOf = (flt: Filter, dir: Dir, bus: string) => built[flt]?.[dir]?.[bus] ?? []
 
   const dkey = (dir: Dir, bus: string, stop: string) => `${dir}|${bus}|${stop}`
-  const seedDraft = (r: Row): Draft => {
-    const c = coords[r.stop]
-    return { name: r.stop, time: r.time, lat: c ? String(c.lat) : '', lng: c ? String(c.lng) : '', addr: '' }
-  }
 
   // ── 저장 헬퍼 ──
   async function postRegistered(bus: string, stop: string, dir: Dir, time: string) {
@@ -197,72 +200,60 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
     if (!res.ok) throw new Error(`요일:${d.error ?? res.status}`)
     return d.updated ?? 0
   }
-
-  function dForKey(k: string, r: Row): Draft { return drafts[k] ?? seedDraft(r) }
-  function setDraftK(k: string, r: Row, patch: Partial<Draft>) {
-    setDrafts(prev => ({ ...prev, [k]: { ...(prev[k] ?? seedDraft(r)), ...patch } }))
-  }
-  function isDirtyK(k: string, r: Row): boolean {
-    const d = drafts[k]; if (!d) return false
-    const c = coords[r.stop]; const bl = c ? String(c.lat) : '', bg = c ? String(c.lng) : ''
-    return d.name !== r.stop || d.time !== r.time || d.lat !== bl || d.lng !== bg
+  async function renameApi(oldName: string, newName: string, coord?: { lat: number; lng: number }) {
+    const res = await fetch('/api/campus/stop-coords', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ oldName, newName, ...(coord ? { lat: coord.lat, lng: coord.lng } : {}), force: true }),
+    })
+    const j = await res.json().catch(() => ({}))
+    if (!res.ok || j.ok === false) throw new Error(`이름/좌표:${j.error ?? res.status}`)
   }
 
-  async function geocodeRow(k: string, r: Row) {
-    const d = dForKey(k, r)
-    if (!d.addr.trim()) return
-    setGeoKey(k)
+  // ── 인라인 개별 저장 ──
+  async function saveTime(dir: Dir, bus: string, r: Row, newTime: string) {
+    if (newTime === r.time) return
+    const k = dkey(dir, bus, r.stop); setSavingKey(k)
     try {
-      const res = await fetch(`/api/geocode?q=${encodeURIComponent(d.addr.trim())}`)
+      await postRegistered(bus, r.stop, dir, newTime)
+      let n = 0
+      if (newTime) for (const sess of r.sess) n += await pushTime(bus, r.stop, dir, sess, newTime)
+      flash(`'${r.stop}' 시간 ${newTime || '지움'} 저장 (학생 ${n}명)`); load()
+    } catch (e) { alert(`시간 저장 실패: ${(e as Error).message}`) } finally { setSavingKey(null) }
+  }
+  async function saveName(dir: Dir, bus: string, r: Row, newName: string) {
+    const nm = newName.trim()
+    if (!nm || nm === r.stop) return
+    const k = dkey(dir, bus, r.stop); setSavingKey(k)
+    try {
+      await renameApi(r.stop, nm)
+      flash(`정류장명 '${r.stop}' → '${nm}' 변경됨`); load()
+    } catch (e) { alert(`이름 변경 실패: ${(e as Error).message}`) } finally { setSavingKey(null) }
+  }
+  async function saveCoord(dir: Dir, bus: string, r: Row) {
+    const lat = parseFloat(coordDraft.lat), lng = parseFloat(coordDraft.lng)
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) { alert('위도·경도를 확인하세요.'); return }
+    const k = dkey(dir, bus, r.stop); setSavingKey(k)
+    try {
+      await renameApi(r.stop, r.stop, { lat, lng })
+      setCoordKey(null); flash(`'${r.stop}' 좌표(핀) 저장됨`); load()
+    } catch (e) { alert(`좌표 저장 실패: ${(e as Error).message}`) } finally { setSavingKey(null) }
+  }
+  async function geocode() {
+    if (!coordDraft.addr.trim()) return
+    setGeoBusy(true)
+    try {
+      const res = await fetch(`/api/geocode?q=${encodeURIComponent(coordDraft.addr.trim())}`)
       const j = await res.json().catch(() => ({}))
       const first = (j.results ?? [])[0]
       if (!first) { flash('검색 결과 없음'); return }
-      setDraftK(k, r, { lat: String(first.lat), lng: String(first.lng) })
+      setCoordDraft(d => ({ ...d, lat: String(first.lat), lng: String(first.lng) }))
       flash(`${first.name} 좌표 적용 (저장 눌러 반영)`)
-    } finally { setGeoKey(null) }
-  }
-
-  async function saveRow(dir: Dir, bus: string, r: Row) {
-    const k = dkey(dir, bus, r.stop)
-    const d = dForKey(k, r)
-    const oldName = r.stop, newName = d.name.trim()
-    if (!newName) { alert('정류장 이름을 입력하세요.'); return }
-    const lat = parseFloat(d.lat), lng = parseFloat(d.lng)
-    const hasCoord = Number.isFinite(lat) && Number.isFinite(lng)
-    const cOld = coords[oldName]
-    const coordChanged = hasCoord && (!cOld || cOld.lat !== lat || cOld.lng !== lng)
-    const nameChanged = newName !== oldName
-    const timeChanged = d.time !== r.time
-    if (!nameChanged && !coordChanged && !timeChanged) { flash('변경 없음'); return }
-    setSavingKey(k)
-    try {
-      if (nameChanged || coordChanged) {
-        const res = await fetch('/api/campus/stop-coords', {
-          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ oldName, newName, ...(hasCoord ? { lat, lng } : {}), force: true }),
-        })
-        const j = await res.json().catch(() => ({}))
-        if (!res.ok || j.ok === false) throw new Error(`이름/좌표:${j.error ?? res.status}`)
-      }
-      const eff = newName
-      let tc = 0
-      if (timeChanged) {
-        await postRegistered(bus, eff, dir, d.time)
-        if (d.time) for (const sess of r.sess) tc += await pushTime(bus, eff, dir, sess, d.time)
-      }
-      const parts: string[] = []
-      if (nameChanged) parts.push('이름'); if (coordChanged) parts.push('좌표(핀)'); if (timeChanged) parts.push(`시간(학생 ${tc}명)`)
-      flash(`'${eff}' 저장됨 · ${parts.join(' · ')}`)
-      setDrafts(prev => { const n = { ...prev }; delete n[k]; return n })
-      setEditKey(null)
-      load()
-    } catch (e) { alert(`저장 실패: ${(e as Error).message}`) } finally { setSavingKey(null) }
+    } finally { setGeoBusy(false) }
   }
 
   async function removeDay(dir: Dir, bus: string, r: Row, day: string) {
-    if (!confirm(`${bus} '${r.stop}' ${dirLabel(dir)} ${day}요일 탑승을 제거할까요? (${FILTER_LABEL[filter]} 세션 학생)`)) return
-    const k = dkey(dir, bus, r.stop)
-    setSavingKey(k)
+    if (!confirm(`${bus} '${r.stop}' ${dirLabel(dir)} ${day}요일 탑승을 제거할까요?`)) return
+    const k = dkey(dir, bus, r.stop); setSavingKey(k)
     try {
       let n = 0
       for (const sess of r.sess) n += await removeDayApi(bus, r.stop, dir, sess, [day])
@@ -312,13 +303,13 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
     } catch (e) { alert(`추가 실패: ${(e as Error).message}`) } finally { setSavingKey(null) }
   }
 
-  async function addNewStop(dir: Dir, bus: string) {
-    const k = `${dir}|${bus}`; const a = addStop[k]; const stop = (a?.stop ?? '').trim()
+  async function addNewStop(dir: Dir, bus: string, flt: Filter) {
+    const bk = `${dir}|${bus}|${flt}`; const a = addStop[bk]; const stop = (a?.stop ?? '').trim()
     if (!stop) return
-    setSavingKey('addstop|' + k)
+    setSavingKey('addstop|' + bk)
     try {
       await postRegistered(bus, stop, dir, a.time || '')
-      setAddStop(prev => ({ ...prev, [k]: { stop: '', time: '' } }))
+      setAddStop(prev => ({ ...prev, [bk]: { stop: '', time: '' } }))
       flash(`${bus} '${stop}' 추가됨`); load()
     } catch (e) { alert(`추가 실패: ${(e as Error).message}`) } finally { setSavingKey(null) }
   }
@@ -338,54 +329,79 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
 
   const inputCls = 'border border-[#E2E8F0] rounded px-1.5 py-1 text-[12px] focus:outline-none focus:ring-1 focus:ring-[#004EA2]'
   const q = search.trim().toLowerCase()
-  const matchRows = (dir: Dir, bus: string) => q ? rowsOf(dir, bus).filter(r => r.stop.toLowerCase().includes(q)) : rowsOf(dir, bus)
 
-  // 엑셀 배차표식 표 행: 시간 | 장소 | 탑승자(명단) | 작업. 정류장별 그룹 1행.
-  const GRID = 'grid grid-cols-[52px_180px_1fr_112px]'
+  const startCell = (k: string, field: 'time' | 'name', cur: string) => { setCellEdit({ key: k, field }); setCellVal(cur) }
+  const commitCell = (dir: Dir, bus: string, r: Row) => {
+    if (!cellEdit) return
+    const { field } = cellEdit; const val = cellVal
+    setCellEdit(null)
+    if (field === 'time') saveTime(dir, bus, r, val)
+    else saveName(dir, bus, r, val)
+  }
+
+  // 엑셀 배차표 표 행 (정류장 그룹)
   const StopRow = ({ dir, bus, r, i }: { dir: Dir; bus: string; r: Row; i: number }) => {
     const k = dkey(dir, bus, r.stop)
-    const d = dForKey(k, r)
     const busy = savingKey === k
-    const editing = editKey === k
+    const editing = cellEdit?.key === k
     const adding = addRiderKey === k
+    const coording = coordKey === k
     const hasCoord = !!coords[r.stop]
     const color = dirColor(dir)
     return (
       <div className="border-b border-[#EEF2F7] last:border-0" style={{ borderLeft: `3px solid ${color}` }}>
         <div className={`${GRID} items-center text-[11px] ${i % 2 === 0 ? 'bg-white' : 'bg-[#FAFBFC]'} hover:bg-[#F5F8FC]`}>
-          {/* 시간 */}
-          <div className="px-1 py-1 font-bold tabular-nums text-center border-r border-[#F1F5F9]" style={{ color }}>{r.time || '–'}</div>
-          {/* 장소 */}
-          <div className="px-1.5 py-1 border-r border-[#F1F5F9] min-w-0">
-            <div className="font-semibold text-[#1E293B] truncate" title={r.stop}>{r.stop}{!hasCoord && <span className="text-[#F59E0B] font-normal"> *</span>}</div>
-            {r.days.length > 0 && r.days.length < 5 && <div className="text-[9px] text-[#94A3B8]">{r.days.join('·')}</div>}
+          {/* 시간 (클릭 인라인) */}
+          <div className="px-1 py-1 border-r border-[#F1F5F9] text-center">
+            {editing && cellEdit!.field === 'time'
+              ? <input type="time" autoFocus value={cellVal} onChange={e => setCellVal(e.target.value)}
+                  onBlur={() => commitCell(dir, bus, r)} onKeyDown={e => { if (e.key === 'Enter') commitCell(dir, bus, r); else if (e.key === 'Escape') setCellEdit(null) }}
+                  className="w-full border border-[#004EA2] rounded px-0.5 py-px text-[11px]" />
+              : <button onClick={() => startCell(k, 'time', r.time)} title="클릭해 시간 변경" className="font-bold tabular-nums hover:underline" style={{ color }}>{r.time || '–'}</button>}
           </div>
-          {/* 탑승자 명단 */}
-          <div className="px-1.5 py-1 flex flex-wrap gap-x-1.5 gap-y-0.5 items-center min-w-0">
+          {/* 장소 (클릭 인라인 이름변경) + 요일 */}
+          <div className="px-1.5 py-1 border-r border-[#F1F5F9] min-w-0">
+            {editing && cellEdit!.field === 'name'
+              ? <input autoFocus value={cellVal} onChange={e => setCellVal(e.target.value)}
+                  onBlur={() => commitCell(dir, bus, r)} onKeyDown={e => { if (e.key === 'Enter') commitCell(dir, bus, r); else if (e.key === 'Escape') setCellEdit(null) }}
+                  className="w-full border border-[#004EA2] rounded px-1 py-px text-[11px]" />
+              : <button onClick={() => startCell(k, 'name', r.stop)} title="클릭해 정류장명 변경" className="font-semibold text-[#1E293B] truncate hover:underline block w-full text-left">
+                  {r.stop}{!hasCoord && <span className="text-[#F59E0B] font-normal"> *</span>}</button>}
+            {r.days.length > 0 && r.days.length < 5 && (
+              <div className="flex gap-0.5 mt-0.5">
+                {r.days.map(day => (
+                  <button key={day} onClick={() => removeDay(dir, bus, r, day)} disabled={busy} title={`${day}요일 — 누르면 제거`}
+                    className="text-[8px] font-bold rounded-full w-3 h-3 flex items-center justify-center" style={{ background: color, color: '#fff' }}>{day}</button>
+                ))}
+              </div>
+            )}
+          </div>
+          {/* 탑승자 명단 (칩) */}
+          <div className="px-1.5 py-1 flex flex-wrap gap-1 items-center min-w-0">
             {r.students.map((s, si) => (
-              <span key={s.id} className="inline-flex items-center text-[11px] text-[#334155] whitespace-nowrap">
-                <span className="text-[8px] text-[#CBD5E1] mr-0.5">{si + 1}</span>{s.name}
-                <button onClick={() => removeRider(dir, bus, r.stop, s)} title="빼기" className="text-[#D1D5DB] hover:text-[#EF4444] ml-0.5 leading-none">×</button>
+              <span key={s.id} className="inline-flex items-center gap-0.5 bg-[#F1F5F9] rounded px-1 py-px text-[11px] text-[#334155] whitespace-nowrap">
+                <span className="text-[8px] text-[#94A3B8]">{si + 1}</span>{s.name}
+                <button onClick={() => removeRider(dir, bus, r.stop, s)} title="빼기" className="text-[#B6C0CC] hover:text-[#EF4444] leading-none">×</button>
               </span>
             ))}
             {r.students.length === 0 && <span className="text-[10px] text-[#CBD5E1]">탑승 없음</span>}
-            <span className="text-[9px] font-bold text-[#94A3B8] ml-0.5">({r.students.length})</span>
+            <span className="text-[9px] font-bold text-[#94A3B8]">({r.students.length})</span>
           </div>
           {/* 작업 */}
           <div className="px-1 py-0.5 flex items-center gap-0.5 justify-end text-[9px]">
             <button onClick={() => { setAddRiderKey(a => a === k ? null : k); setRiderQ(''); setRiderResults([]) }}
               className={`font-bold border rounded px-1 py-px ${adding ? 'bg-[#16A34A] text-white border-[#16A34A]' : 'text-[#16A34A] border-[#16A34A]'}`}>학생+</button>
-            <button onClick={() => { if (editing) setEditKey(null); else { setEditKey(k); setCoordOpen(false); setDraftK(k, r, {}) } }}
-              className={`font-bold border rounded px-1 py-px ${editing ? 'bg-[#004EA2] text-white border-[#004EA2]' : 'text-[#004EA2] border-[#004EA2]'}`}>수정</button>
-            {onLocateStop && <button onClick={() => onLocateStop(r.stop, bus)} title="시스템 지도에서 위치수정" className="font-bold text-[#004EA2] border border-[#004EA2] rounded px-1 py-px">지도</button>}
+            <button onClick={() => { if (coording) setCoordKey(null); else { setCoordKey(k); const c = coords[r.stop]; setCoordDraft({ lat: c ? String(c.lat) : '', lng: c ? String(c.lng) : '', addr: '' }) } }}
+              className={`font-bold border rounded px-1 py-px ${coording ? 'bg-[#004EA2] text-white border-[#004EA2]' : 'text-[#004EA2] border-[#004EA2]'}`}>좌표</button>
+            {onLocateStop && <button onClick={() => onLocateStop(r.stop, bus)} title="시스템 지도에서 핀 드래그" className="font-bold text-[#004EA2] border border-[#004EA2] rounded px-1 py-px">지도</button>}
             {!r.hasStudents && <button onClick={() => deleteStop(dir, bus, r.stop)} title="정류장 삭제" className="text-[#CBD5E1] hover:text-[#EF4444] font-bold px-0.5">×</button>}
           </div>
         </div>
 
-        {/* 학생 검색(추가) */}
+        {/* 학생 추가 검색 (개설반) */}
         {adding && (
           <div className="relative px-2 py-1 bg-[#F0FDF4] border-t border-[#DCFCE7]">
-            <input autoFocus value={riderQ} onChange={e => searchRiders(e.target.value)} placeholder="개설반 학생 검색" className={`w-64 max-w-full ${inputCls}`} />
+            <input autoFocus value={riderQ} onChange={e => searchRiders(e.target.value)} placeholder="개설반 학생 이름 검색" className={`w-64 max-w-full ${inputCls}`} />
             {riderResults.length > 0 && (
               <div className="absolute z-20 left-2 mt-0.5 w-64 bg-white border border-[#E2E8F0] rounded-lg shadow-lg max-h-48 overflow-auto">
                 {riderResults.map(s => (
@@ -398,99 +414,61 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
           </div>
         )}
 
-        {/* 편집 펼침: 시간·이름·운행요일·좌표 */}
-        {editing && (
-          <div className="px-2 py-1.5 border-t border-[#EEF2F7] bg-[#FCFCFD] flex flex-wrap items-center gap-2">
-            <label className="flex items-center gap-1 text-[10px] text-[#94A3B8]">이름
-              <input value={d.name} onChange={e => setDraftK(k, r, { name: e.target.value })} className={`w-40 ${inputCls}`} /></label>
-            <label className="flex items-center gap-1 text-[10px] text-[#94A3B8]">시간
-              <input type="time" value={d.time} onChange={e => setDraftK(k, r, { time: e.target.value })} className={`w-28 ${inputCls}`} /></label>
-            <div className="flex items-center gap-1">
-              <span className="text-[10px] text-[#94A3B8]">요일(끄기)</span>
-              {DAYS.map(day => {
-                const on = r.days.includes(day)
-                return (
-                  <button key={day} type="button" disabled={!on || busy} onClick={() => removeDay(dir, bus, r, day)}
-                    title={on ? `${day}요일 운행 — 누르면 제거` : `${day}요일 미운행`}
-                    className="w-4 h-4 rounded-full text-[8px] font-bold flex items-center justify-center disabled:cursor-default"
-                    style={on ? { background: color, color: '#fff' } : { background: '#F1F5F9', color: '#CBD5E1' }}>{day}</button>
-                )
-              })}
-            </div>
-            <button type="button" onClick={() => setCoordOpen(o => !o)} className="text-[11px] font-semibold text-[#004EA2]">
-              {coordOpen ? '▾' : '▸'} 좌표·주소 {hasCoord ? '(설정됨)' : '(없음)'}
-            </button>
-            {coordOpen && (
-              <div className="flex items-center gap-1 basis-full">
-                <input value={d.addr} onChange={e => setDraftK(k, r, { addr: e.target.value })}
-                  onKeyDown={e => { if (e.key === 'Enter') geocodeRow(k, r) }} placeholder="주소검색" className={`w-56 ${inputCls}`} />
-                <button onClick={() => geocodeRow(k, r)} disabled={geoKey === k || !d.addr.trim()}
-                  className="text-[11px] font-bold text-white bg-[#004EA2] rounded px-2 py-1 disabled:opacity-40">{geoKey === k ? '…' : '검색'}</button>
-                <input value={d.lat} onChange={e => setDraftK(k, r, { lat: e.target.value })} placeholder="위도" className={`w-28 ${inputCls}`} />
-                <input value={d.lng} onChange={e => setDraftK(k, r, { lng: e.target.value })} placeholder="경도" className={`w-28 ${inputCls}`} />
-              </div>
-            )}
-            <div className="flex gap-1 ml-auto">
-              <button onClick={() => { setDrafts(prev => { const n = { ...prev }; delete n[k]; return n }); setEditKey(null) }}
-                className="text-[11px] border border-[#E2E8F0] text-[#64748B] font-semibold px-2 py-1 rounded">취소</button>
-              <button onClick={() => saveRow(dir, bus, r)} disabled={busy || !isDirtyK(k, r)}
-                className="text-[11px] bg-[#004EA2] text-white font-bold px-3 py-1 rounded disabled:opacity-30">{busy ? '저장…' : '저장'}</button>
-            </div>
+        {/* 좌표 팝오버 */}
+        {coording && (
+          <div className="px-2 py-1.5 bg-[#F8FAFC] border-t border-[#EEF2F7] flex flex-wrap items-center gap-1.5">
+            <input value={coordDraft.addr} onChange={e => setCoordDraft(d => ({ ...d, addr: e.target.value }))}
+              onKeyDown={e => { if (e.key === 'Enter') geocode() }} placeholder="주소검색" className={`w-52 ${inputCls}`} />
+            <button onClick={geocode} disabled={geoBusy || !coordDraft.addr.trim()} className="text-[11px] font-bold text-white bg-[#004EA2] rounded px-2 py-1 disabled:opacity-40">{geoBusy ? '…' : '검색'}</button>
+            <input value={coordDraft.lat} onChange={e => setCoordDraft(d => ({ ...d, lat: e.target.value }))} placeholder="위도" className={`w-28 ${inputCls}`} />
+            <input value={coordDraft.lng} onChange={e => setCoordDraft(d => ({ ...d, lng: e.target.value }))} placeholder="경도" className={`w-28 ${inputCls}`} />
+            <button onClick={() => saveCoord(dir, bus, r)} disabled={busy} className="text-[11px] bg-[#004EA2] text-white font-bold px-3 py-1 rounded disabled:opacity-30">저장</button>
+            <span className="text-[10px] text-[#94A3B8]">또는 [지도]에서 핀 드래그</span>
           </div>
         )}
       </div>
     )
   }
 
-  // (호차×방향) 밴드 = 세션 대응
-  const Band = ({ dir, bus }: { dir: Dir; bus: string }) => {
-    const rows = matchRows(dir, bus)
+  // 세션 섹션 안의 방향 표 (등원/하원)
+  const DirTable = ({ dir, bus, flt }: { dir: Dir; bus: string; flt: Filter }) => {
+    const all = rowsOf(flt, dir, bus)
+    const rows = q ? all.filter(r => r.stop.toLowerCase().includes(q)) : all
     if (q && rows.length === 0) return null
     const color = dirColor(dir)
-    const bk = `${dir}|${bus}`
-    const isCollapsed = q ? false : collapsed.has(bk)
+    const bk = `${dir}|${bus}|${flt}`
     const studentN = rows.reduce((n, r) => n + r.students.length, 0)
     const add = addStop[bk] ?? { stop: '', time: '' }
     return (
       <div>
-        {/* 밴드 헤더 */}
-        <div className="flex items-center justify-between mb-1 pb-1" style={{ borderBottom: `2px solid ${color}` }}>
-          <div className="flex items-center gap-1.5">
-            <button onClick={() => setCollapsed(prev => { const n = new Set(prev); n.has(bk) ? n.delete(bk) : n.add(bk); return n })}
-              className="text-[#94A3B8] hover:text-[#1E293B] text-[10px] leading-none w-4 h-4 flex items-center justify-center rounded hover:bg-[#F1F5F9]">
-              {isCollapsed ? '▶' : '▼'}
-            </button>
-            <span className="text-[12px] font-extrabold" style={{ color }}>{bus} {dirLabel(dir)}</span>
-            <span className="text-[10px] text-[#94A3B8]">정류장 {rows.length} · 학생 {studentN}명</span>
-          </div>
+        <div className="flex items-center gap-2 mb-1 mt-1.5 pb-0.5" style={{ borderBottom: `2px solid ${color}` }}>
+          <span className="text-[12px] font-extrabold" style={{ color }}>{dirLabel(dir)}</span>
+          <span className="text-[10px] text-[#94A3B8]">정류장 {rows.length} · 학생 {studentN}명</span>
         </div>
-
-        {!isCollapsed && (
-          <div className="border border-[#E2E8F0] rounded-md overflow-hidden">
-            {/* 칼럼 헤더 (엑셀 배차표: 시간·장소·명단) */}
-            <div className={`${GRID} text-[10px] font-bold text-[#64748B] bg-[#F1F5F9] border-b border-[#E2E8F0]`}>
-              <div className="px-1 py-1 text-center border-r border-[#E2E8F0]">시간</div>
-              <div className="px-1.5 py-1 border-r border-[#E2E8F0]">장소</div>
-              <div className="px-1.5 py-1">탑승자 명단</div>
-              <div className="px-1 py-1 text-right">작업</div>
-            </div>
-            {rows.map((r, i) => <StopRow key={r.stop} dir={dir} bus={bus} r={r} i={i} />)}
-            {rows.length === 0 && <div className="text-[10px] text-[#CBD5E1] py-2 px-2">정류장 없음</div>}
-            {/* 새 정류장 추가 */}
-            {!q && (
-              <div className="flex items-center gap-1 px-2 py-1 border-t border-[#EEF2F7] bg-[#FAFBFC]">
-                <span className="text-[10px] font-bold text-[#94A3B8]">+ 새 정류장</span>
-                <input type="time" value={add.time} onChange={e => setAddStop(prev => ({ ...prev, [bk]: { ...add, time: e.target.value } }))} className={`w-24 ${inputCls}`} />
-                <input value={add.stop} onChange={e => setAddStop(prev => ({ ...prev, [bk]: { ...add, stop: e.target.value } }))} placeholder="정류장명(장소)" className={`w-52 ${inputCls}`} />
-                <button onClick={() => addNewStop(dir, bus)} disabled={savingKey === 'addstop|' + bk || !add.stop.trim()}
-                  className="text-[10px] font-bold border px-2 py-1 rounded disabled:opacity-40" style={{ color, borderColor: color }}>추가</button>
-              </div>
-            )}
+        <div className="border border-[#E2E8F0] rounded-md overflow-hidden">
+          <div className={`${GRID} text-[10px] font-bold text-[#64748B] bg-[#F1F5F9] border-b border-[#E2E8F0]`}>
+            <div className="px-1 py-1 text-center border-r border-[#E2E8F0]">시간</div>
+            <div className="px-1.5 py-1 border-r border-[#E2E8F0]">장소</div>
+            <div className="px-1.5 py-1">탑승자 명단</div>
+            <div className="px-1 py-1 text-right">작업</div>
           </div>
-        )}
+          {rows.map((r, i) => <StopRow key={r.stop} dir={dir} bus={bus} r={r} i={i} />)}
+          {rows.length === 0 && <div className="text-[10px] text-[#CBD5E1] py-2 px-2">정류장 없음</div>}
+          {!q && (
+            <div className="flex items-center gap-1 px-2 py-1 border-t border-[#EEF2F7] bg-[#FAFBFC]">
+              <span className="text-[10px] font-bold text-[#94A3B8]">+ 새 정류장</span>
+              <input type="time" value={add.time} onChange={e => setAddStop(prev => ({ ...prev, [bk]: { ...add, time: e.target.value } }))} className={`w-24 ${inputCls}`} />
+              <input value={add.stop} onChange={e => setAddStop(prev => ({ ...prev, [bk]: { ...add, stop: e.target.value } }))} placeholder="정류장명(장소)" className={`w-52 ${inputCls}`} />
+              <button onClick={() => addNewStop(dir, bus, flt)} disabled={savingKey === 'addstop|' + bk || !add.stop.trim()}
+                className="text-[10px] font-bold border px-2 py-1 rounded disabled:opacity-40" style={{ color, borderColor: color }}>추가</button>
+            </div>
+          )}
+        </div>
       </div>
     )
   }
+
+  const bus = selectedBus
 
   return (
     <div className="pb-12">
@@ -498,14 +476,14 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
         <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[200] px-4 py-2.5 rounded-full bg-[#16A34A] text-white text-[13px] font-extrabold shadow-xl pointer-events-none">{msg}</div>
       )}
 
-      {/* 필터 + 검색 */}
+      {/* 호차 선택 탭 + 검색 */}
       <div className="flex items-center gap-2 mb-3 flex-wrap">
         <div className="flex flex-wrap gap-1.5">
-          {FILTERS.map(f => (
-            <button key={f} onClick={() => setFilter(f)}
+          {buses.map(b => (
+            <button key={b.id} onClick={() => setSelectedBus(b.name)}
               className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors ${
-                filter === f ? 'bg-[#004EA2] text-white' : 'bg-white border border-[#E2E8F0] text-[#64748B] hover:border-[#94A3B8]'}`}>
-              {FILTER_LABEL[f]}
+                bus === b.name ? 'bg-[#004EA2] text-white' : 'bg-white border border-[#E2E8F0] text-[#64748B] hover:border-[#94A3B8]'}`}>
+              {b.name}
             </button>
           ))}
         </div>
@@ -516,14 +494,34 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
         </div>
       </div>
 
-      {/* 밴드: 호차별 등원·하원 */}
+      {/* 선택 호차의 세션별 섹션 */}
       <div className="space-y-3">
-        {buses.map(bus => (
-          <div key={bus.id} className="space-y-2">
-            <Band dir="arr" bus={bus.name} />
-            <Band dir="dep" bus={bus.name} />
-          </div>
-        ))}
+        {FILTERS.map(f => {
+          const arrN = rowsOf(f, 'arr', bus).length, depN = rowsOf(f, 'dep', bus).length
+          if (arrN === 0 && depN === 0) return null
+          const ck = `${bus}|${f}`
+          const open = q ? true : !collapsed.has(ck)
+          return (
+            <div key={f} className="border border-[#E2E8F0] rounded-lg overflow-hidden bg-white">
+              <button onClick={() => setCollapsed(prev => { const n = new Set(prev); n.has(ck) ? n.delete(ck) : n.add(ck); return n })}
+                className="w-full flex items-center justify-between px-3 py-1.5 bg-[#F1F5F9] border-b border-[#E2E8F0] text-left hover:bg-[#E9EEF5]">
+                <span className="font-bold text-[13px] text-[#1E293B]">{FILTER_LABEL[f]}
+                  <span className="text-[#94A3B8] font-normal text-[11px]"> (등 {arrN} · 하 {depN})</span>
+                </span>
+                <span className="text-[#94A3B8] text-xs">{open ? '▾ 접기' : '▸ 펴기'}</span>
+              </button>
+              {open && (
+                <div className="px-2 pb-2">
+                  <DirTable dir="arr" bus={bus} flt={f} />
+                  <DirTable dir="dep" bus={bus} flt={f} />
+                </div>
+              )}
+            </div>
+          )
+        })}
+        {FILTERS.every(f => rowsOf(f, 'arr', bus).length === 0 && rowsOf(f, 'dep', bus).length === 0) && (
+          <div className="text-center text-[#CBD5E1] text-sm py-10">{bus ? `${bus} 정류장 데이터 없음` : '호차 없음'}</div>
+        )}
       </div>
     </div>
   )
