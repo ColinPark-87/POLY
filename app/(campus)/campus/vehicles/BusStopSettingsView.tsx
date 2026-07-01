@@ -18,7 +18,7 @@ interface Student {
   dayLocs?: Record<string, string>
   dayTimes?: Record<string, string>
 }
-interface StuRef { id: string; name: string; class_id: string }
+interface StuRef { id: string; name: string; class_id: string; days: string[] }
 const DAYS = ['월', '화', '수', '목', '금'] as const
 interface TimeGroup { session_name: string; busMap: Record<string, Student[]> }
 interface RegStop { stop_name: string; bus_name: string; direction: string; default_time: string | null }
@@ -124,7 +124,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
   const buildDir = useCallback((flt: Filter, dir: Dir): Record<string, Row[]> => {
     if (!raw) return {}
     const resp = raw[dir]
-    const cellByBus: Record<string, Record<string, { times: string[]; sess: Set<string>; days: Set<string>; stu: Map<string, StuRef>; hasStudents: boolean }>> = {}
+    const cellByBus: Record<string, Record<string, { times: string[]; sess: Set<string>; days: Set<string>; stu: Map<string, { id: string; name: string; class_id: string; days: Set<string> }>; hasStudents: boolean }>> = {}
     const ensure = (bus: string, stop: string) => {
       cellByBus[bus] ??= {}
       cellByBus[bus][stop] ??= { times: [], sess: new Set(), days: new Set(), stu: new Map(), hasStudents: false }
@@ -139,7 +139,11 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
             const c = ensure(bus, stop)
             c.hasStudents = true
             c.sess.add(tg.session_name)
-            if (s.name && s.student_id) c.stu.set(s.student_id, { id: s.student_id, name: s.name, class_id: s.class_id ?? '' })
+            if (s.name && s.student_id) {
+              let e = c.stu.get(s.student_id)
+              if (!e) { e = { id: s.student_id, name: s.name, class_id: s.class_id ?? '', days: new Set() }; c.stu.set(s.student_id, e) }
+              if (day) e.days.add(day)
+            }
             if (day) c.days.add(day)
             if (t) c.times.push(t)
           }
@@ -158,7 +162,8 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
         .map(([stop, c]) => ({
           stop, time: c.times.length ? c.times.slice().sort()[0] : '', sess: [...c.sess],
           days: DAYS.filter(d => c.days.has(d)),
-          students: [...c.stu.values()].sort((a, b) => a.name.localeCompare(b.name, 'ko')),
+          students: [...c.stu.values()].sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+            .map(e => ({ id: e.id, name: e.name, class_id: e.class_id, days: DAYS.filter(d => e.days.has(d)) })),
           hasStudents: c.hasStudents,
         }))
         .sort((a, b) => (a.time || 'zz').localeCompare(b.time || 'zz') || a.stop.localeCompare(b.stop, 'ko'))
@@ -303,6 +308,35 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
     } catch (e) { alert(`추가 실패: ${(e as Error).message}`) } finally { setSavingKey(null) }
   }
 
+  // 학생별 요일 토글 (이름 아래 요일 체크) — 켜기=add_rider 단일요일, 끄기=remove_rider_day
+  async function toggleRiderDay(dir: Dir, bus: string, r: Row, stu: StuRef, day: string, on: boolean) {
+    setSavingKey('sday|' + stu.id + day)
+    try {
+      if (on) {
+        const res = await fetch('/api/campus/vehicles', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'remove_rider_day', student_id: stu.id, direction: dir, day, bus_name: bus, date: todayStr }),
+        })
+        const d = await res.json().catch(() => ({}))
+        if (!res.ok || d.error) throw new Error(d.error ?? `${res.status}`)
+        flash(`'${stu.name}' ${day}요일 제외`)
+      } else {
+        const res = await fetch('/api/campus/vehicles', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'add_rider', student_id: stu.id, date: todayStr, direction: dir,
+            bus_name: bus, pickup_location: r.stop, pickup_time: r.time || undefined,
+            days: [day], session_name: r.sess[0] ?? undefined,
+          }),
+        })
+        const d = await res.json().catch(() => ({}))
+        if (!res.ok || d.error) throw new Error(d.error ?? `${res.status}`)
+        flash(`'${stu.name}' ${day}요일 추가`)
+      }
+      load()
+    } catch (e) { alert(`요일 변경 실패: ${(e as Error).message}`) } finally { setSavingKey(null) }
+  }
+
   async function addNewStop(dir: Dir, bus: string, flt: Filter) {
     const bk = `${dir}|${bus}|${flt}`; const a = addStop[bk]; const stop = (a?.stop ?? '').trim()
     if (!stop) return
@@ -361,12 +395,17 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
             <button onClick={() => startCell(k, 'name', r.stop)} title="클릭해 정류장명 변경"
               className={`font-semibold text-[#1E293B] truncate hover:underline block w-full text-left ${editing && cellEdit!.field === 'name' ? 'ring-1 ring-[#004EA2] rounded px-1' : ''}`}>
               {r.stop}{!hasCoord && <span className="text-[#F59E0B] font-normal"> *</span>}</button>
-            {r.days.length > 0 && r.days.length < 5 && (
-              <div className="flex gap-0.5 mt-0.5">
-                {r.days.map(day => (
-                  <button key={day} onClick={() => removeDay(dir, bus, r, day)} disabled={busy} title={`${day}요일 — 누르면 제거`}
-                    className="text-[8px] font-bold rounded-full w-3 h-3 flex items-center justify-center" style={{ background: color, color: '#fff' }}>{day}</button>
-                ))}
+            {r.hasStudents && (
+              <div className="flex gap-0.5 mt-0.5" title="정류장 운행요일 — 켜진 요일 누르면 해당 요일 전체 탑승 제거">
+                {DAYS.map(day => {
+                  const on = r.days.includes(day)
+                  return (
+                    <button key={day} onClick={() => on && removeDay(dir, bus, r, day)} disabled={!on || busy}
+                      title={on ? `${day}요일 운행 — 누르면 정류장 전체 제거` : `${day}요일 미운행`}
+                      className="text-[8px] font-bold rounded-full w-3 h-3 flex items-center justify-center disabled:cursor-default"
+                      style={on ? { background: color, color: '#fff' } : { background: '#F1F5F9', color: '#CBD5E1' }}>{day}</button>
+                  )
+                })}
               </div>
             )}
           </div>
@@ -381,12 +420,28 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
           </div>
           {/* 탑승자 명단 (칩) */}
           <div className="px-1.5 py-1 flex flex-wrap gap-1 items-center min-w-0">
-            {r.students.map((s, si) => (
-              <span key={s.id} className="inline-flex items-center gap-0.5 bg-[#F1F5F9] rounded px-1 py-px text-[11px] text-[#334155] whitespace-nowrap">
-                <span className="text-[8px] text-[#94A3B8]">{si + 1}</span>{s.name}
-                <button onClick={() => removeRider(dir, bus, r.stop, s)} title="빼기" className="text-[#B6C0CC] hover:text-[#EF4444] leading-none">×</button>
-              </span>
-            ))}
+            {r.students.map((s, si) => {
+              const sd = s.days.length ? s.days : r.days
+              return (
+                <span key={s.id} className="inline-flex flex-col gap-0.5 bg-[#F1F5F9] rounded px-1 py-0.5 whitespace-nowrap">
+                  <span className="flex items-center gap-0.5 text-[11px] text-[#334155]">
+                    <span className="text-[8px] text-[#94A3B8]">{si + 1}</span>{s.name}
+                    <button onClick={() => removeRider(dir, bus, r.stop, s)} title="빼기" className="text-[#B6C0CC] hover:text-[#EF4444] leading-none ml-0.5">×</button>
+                  </span>
+                  <span className="flex gap-0.5" title="학생 운행요일 — 눌러 켜고/끄기">
+                    {DAYS.map(day => {
+                      const on = sd.includes(day)
+                      return (
+                        <button key={day} onClick={() => toggleRiderDay(dir, bus, r, s, day, on)} disabled={savingKey === 'sday|' + s.id + day}
+                          title={`${s.name} ${day}요일 ${on ? '탑승 — 눌러 제외' : '미탑승 — 눌러 추가'}`}
+                          className="text-[7px] font-bold rounded-full w-2.5 h-2.5 flex items-center justify-center"
+                          style={on ? { background: color, color: '#fff' } : { background: '#E2E8F0', color: '#94A3B8' }}>{day}</button>
+                      )
+                    })}
+                  </span>
+                </span>
+              )
+            })}
             {r.students.length === 0 && <span className="text-[10px] text-[#CBD5E1]">탑승 없음</span>}
             <span className="text-[9px] font-bold text-[#94A3B8]">({r.students.length})</span>
           </div>

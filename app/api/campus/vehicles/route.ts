@@ -694,6 +694,46 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, enrollment_updated: true })
   }
 
+  if (action === 'remove_rider_day') {
+    // 특정 학생의 특정 요일(그 호차) 탑승 제거 — 학생별 요일 체크 해제용
+    const { student_id, direction: dir, day, bus_name } = body
+    if (!student_id || !day) return NextResponse.json({ error: 'student_id·day 필요' }, { status: 400 })
+    const { data: allMonthRows } = await service.from('class_sessions').select('month').eq('campus_id', campusId)
+    const availableMonths = [...new Set((allMonthRows ?? []).map((s: { month: string }) => s.month))].sort((a, b) => {
+      const parse = (m: string) => { const parts = m.match(/\d+/g); if (!parts || parts.length < 2) return 0; return Number(parts[0]) * 100 + Number(parts[1]) }
+      return parse(b) - parse(a)
+    })
+    const targetMonth = pickTargetMonth(availableMonths)
+    const { data: campusSessions } = await service.from('class_sessions').select('id').eq('campus_id', campusId).eq('month', targetMonth)
+    const sessIds = (campusSessions ?? []).map((s: { id: string }) => s.id)
+    const { data: targetClasses } = sessIds.length
+      ? await service.from('classes').select('id').in('session_id', sessIds) : { data: null }
+    const classIds = (targetClasses ?? []).map((c: { id: string }) => c.id)
+    const { data: enrList } = classIds.length
+      ? await service.from('class_enrollments').select('class_id, arr_schedule, dep_schedule')
+          .eq('student_id', student_id).in('class_id', classIds).eq('is_waitlist', false)
+      : { data: null }
+    const schedKey = dir === 'arr' ? 'arr_schedule' : 'dep_schedule'
+    let changed = 0
+    for (const enr of (enrList ?? []) as { class_id: string; arr_schedule: Record<string, string>; dep_schedule: Record<string, string> }[]) {
+      const sched = { ...((enr[schedKey] ?? {}) as Record<string, string>) }
+      if (sched[day] === undefined) continue
+      if (bus_name && sched[day] !== bus_name) continue  // 다른 호차 요일은 건드리지 않음
+      delete sched[day]; delete sched[day + '_loc']; delete sched[day + '_time']
+      const { error } = await service.from('class_enrollments').update({ [schedKey]: sched })
+        .eq('student_id', student_id).eq('class_id', enr.class_id)
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      changed++
+    }
+    // 오늘 요일이 제거 대상이면 override도 정리
+    const ovDayMap: Record<number, string> = { 1: '월', 2: '화', 3: '수', 4: '목', 5: '금' }
+    if (body.date && ovDayMap[new Date(body.date).getDay()] === day) {
+      await service.from('pickup_overrides').delete()
+        .eq('student_id', student_id).eq('campus_id', campusId).eq('date', body.date).eq('direction', dir)
+    }
+    return NextResponse.json({ ok: true, changed })
+  }
+
   if (action === 'add_bus') {
     const { name, capacity } = body
     const { data: existing } = await service.from('campus_buses').select('id').eq('campus_id', campusId).eq('name', name).maybeSingle()
