@@ -587,7 +587,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
               return (
                 <span key={s.id} className="inline-flex flex-col gap-0.5 bg-[#F1F5F9] rounded px-1 py-0.5 whitespace-nowrap" style={{ opacity: rides ? 1 : 0.4 }}>
                   <span className="flex items-center gap-0.5 text-[11px] text-[#334155]">
-                    <span className="text-[8px] text-[#94A3B8]">{si + 1}</span><span className={rides ? '' : 'line-through'}>{s.name}</span>
+                    <span className="text-[8px] text-[#94A3B8]">{si + 1}</span><span className={`font-bold ${rides ? '' : 'line-through'}`}>{s.name}</span>
                     <button onClick={() => removeRider(dir, bus, r.stop, s)} title="빼기(상시)" className="text-[#B6C0CC] hover:text-[#EF4444] leading-none ml-0.5">×</button>
                   </span>
                   <span className="flex gap-0.5" title="학생 운행요일 — 눌러 켜고/끄기">
@@ -709,18 +709,16 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
       <div>
         <div className="flex items-center gap-2 mb-0.5 pb-0.5" style={{ borderBottom: `2px solid ${color}` }}>
           <span className="text-[13px] font-extrabold" style={{ color }}>{dirLabel(dir)}</span>
-          <span className="flex items-center gap-1 ml-auto">
-            <span className="text-[11px] font-bold text-white rounded px-1.5 py-0.5" style={{ background: color }}>정류장 {rows.length}</span>
-            <span className="text-[11px] font-bold rounded px-1.5 py-0.5" style={{ background: color + '22', color }}>탑승 {studentN}명</span>
-          </span>
+          <span className="text-[11px] font-bold text-white rounded px-1.5 py-0.5" style={{ background: color }}>정류장 {rows.length}</span>
+          <span className="text-[11px] font-bold rounded px-1.5 py-0.5" style={{ background: color + '22', color }}>탑승 {studentN}명</span>
         </div>
         <div className="border border-[#E2E8F0] rounded-md overflow-hidden">
           <div className={`${GRID} text-[10px] font-bold text-[#64748B] bg-[#F1F5F9] border-b border-[#E2E8F0]`}>
             <div className="px-0.5 py-0.5 text-center border-r border-[#E2E8F0]">시간</div>
-            <div className="px-1 py-0.5 border-r border-[#E2E8F0]">장소</div>
+            <div className="px-1 py-0.5 text-center border-r border-[#E2E8F0]">장소</div>
             <div className="px-0.5 py-0.5 text-center border-r border-[#E2E8F0]">인원</div>
             <div className="px-1 py-0.5 text-center border-r border-[#E2E8F0]">작업</div>
-            <div className="px-1 py-0.5">탑승자 명단</div>
+            <div className="px-1 py-0.5 text-center">탑승자 명단</div>
           </div>
           {rows.map((r, i) => <Fragment key={r.stop}>{StopRow({ dir, bus, r, i })}</Fragment>)}
           {rows.length === 0 && <div className="text-[10px] text-[#CBD5E1] py-2 px-2">정류장 없음</div>}
@@ -814,7 +812,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
             return (
               <span key={s.id} className="inline-flex flex-col gap-0.5 bg-[#F1F5F9] rounded-lg px-1.5 py-1" style={{ opacity: rides ? 1 : 0.4 }}>
                 <span className="flex items-center gap-1 text-[13px] text-[#334155]">
-                  <span className="text-[9px] text-[#94A3B8]">{si + 1}</span><span className={rides ? '' : 'line-through'}>{s.name}</span>
+                  <span className="text-[9px] text-[#94A3B8]">{si + 1}</span><span className={`font-bold ${rides ? '' : 'line-through'}`}>{s.name}</span>
                   <button onClick={() => removeRider(dir, bus, r.stop, s)} className="text-[#B6C0CC] hover:text-[#EF4444] text-[13px] leading-none">×</button>
                 </span>
                 <span className="flex gap-0.5">
@@ -989,15 +987,12 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
         return (
           <div>
             <div className="flex flex-wrap gap-1.5 mb-3">
-              {avail.map(f => {
-                const arrN = rowsOf(f, 'arr', bus).length, depN = rowsOf(f, 'dep', bus).length
-                return (
-                  <button key={f} onClick={() => setSelSession(f)}
-                    className={`px-3.5 py-1.5 rounded-lg text-sm font-bold transition-colors ${active === f ? 'bg-[#004EA2] text-white' : 'bg-white border border-[#E2E8F0] text-[#64748B] hover:border-[#94A3B8]'}`}>
-                    {FILTER_LABEL[f]}<span className={`ml-1 text-[11px] font-normal ${active === f ? 'text-white/70' : 'text-[#94A3B8]'}`}>등{arrN}·하{depN}</span>
-                  </button>
-                )
-              })}
+              {avail.map(f => (
+                <button key={f} onClick={() => setSelSession(f)}
+                  className={`px-3.5 py-1.5 rounded-lg text-sm font-bold transition-colors ${active === f ? 'bg-[#004EA2] text-white' : 'bg-white border border-[#E2E8F0] text-[#64748B] hover:border-[#94A3B8]'}`}>
+                  {FILTER_LABEL[f]}
+                </button>
+              ))}
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
               {DirTable({ dir: 'arr', bus, flt: active })}
