@@ -4132,36 +4132,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false,
         {/* ── 지도 FAB 컨트롤 (좌하단 — 명단·추가·이동·홈 한 줄 세로. 줌은 마우스 스크롤로 대체) */}
         <div className="absolute z-[1000] pointer-events-auto" style={{ bottom: 30, left: 10 }}>
           <div className="flex flex-col rounded-xl overflow-hidden shadow-lg ring-1 ring-[#E2E8F0] bg-white">
-            <button onClick={() => setRosterOpen(v => !v)}
-              title="호차 명단 — 선택 호차 전체 탑승생 학생설정 보기·수정"
-              className="w-9 h-9 flex items-center justify-center transition-colors active:scale-95 text-[15px]"
-              style={rosterOpen ? { background: '#4338CA', color: '#fff' } : { color: '#4338CA' }}>
-              📋
-            </button>
-            <div className="h-px bg-[#E2E8F0]" />
-            <button
-              onClick={() => {
-                setAddStopModal({ bus: selectedBuses.length === 1 ? selectedBuses[0] : '', dir, sessionName: '' })
-                setAddStopName(''); setAddStopTime(''); setAddStopPlacing(false); setAddStopCardPos(null)
-                setCandidateStop(null); setCandidateCoord(null)
-              }}
-              title="정류장 추가 — 지도에 빈 정류장 등록 (탑승장소·호차설정·학생 매칭에 자동 반영)"
-              className="w-9 h-9 flex items-center justify-center transition-colors active:scale-95 text-[#004EA2] hover:bg-[#EAF2FB]">
-              <svg className="w-[17px] h-[17px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 21s-7-6.3-7-11a7 7 0 0 1 14 0c0 4.7-7 11-7 11z" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 7v6M9 10h6" />
-              </svg>
-            </button>
-            <div className="h-px bg-[#E2E8F0]" />
-            <button onClick={() => { setAdjustMode(v => !v); setPendingMove(null); pendingMarkerRef.current = null }} title="정류장 이동 — 정류장 핀을 끌어 좌표 변경"
-              className="w-9 h-9 flex items-center justify-center transition-colors active:scale-95"
-              style={adjustMode ? { background: '#16A34A', color: '#fff' } : { color: '#16A34A' }}>
-              <svg className="w-[16px] h-[16px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 21s-7-6.3-7-11a7 7 0 1 1 14 0c0 4.7-7 11-7 11z" />
-                <circle cx="12" cy="10" r="2.4" />
-              </svg>
-            </button>
-            <div className="h-px bg-[#E2E8F0]" />
+            {/* 탭통합: 호차명단(호차설정)·정류장추가·정류장이동 제거 → 호차별 정류장 탭에서 관리. 홈만 유지 */}
             <button onClick={fabCenterSchool} title="학원 중심으로"
               className="w-9 h-9 flex items-center justify-center text-[#004EA2] hover:bg-[#EAF2FB] transition-colors active:scale-95">
               <svg className="w-[17px] h-[17px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
@@ -4212,24 +4183,10 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false,
             className="shrink-0 w-6 h-6 flex items-center justify-center rounded-lg text-[#5F6368] hover:bg-black/5 text-[15px] leading-none">−</button>
         </div>
 
-        {/* 페이지 네비게이션 — 리모컨 모드 버튼 (다크) */}
-        <div className="flex gap-1 p-1 rounded-xl shrink-0" style={{ background: '#F1F3F4' }}>
-          {([
-            { n: 1 as const, label: '노선', icon: '🗺️' },
-            { n: 2 as const, label: '오늘', icon: '📅' },
-            { n: 3 as const, label: '변경', icon: '🔁' },
-            { n: 4 as const, label: '탑승장소설정', icon: '📍' },
-            { n: 5 as const, label: '호차설정', icon: '🚌' },
-          ]).map(t => (
-            <button key={t.n} onClick={() => { setSidebarPage(t.n); if (t.n === 5) setBusSettingsOpen(true) }}
-              className={`relative flex-1 flex flex-col items-center justify-center gap-0.5 py-1.5 rounded-lg transition-all ${sidebarPage === t.n ? 'bg-[#1A73E8] text-white shadow-sm' : 'text-[#5F6368] hover:bg-black/5'}`}>
-              <span className="text-[13px] leading-none">{t.icon}</span>
-              <span className="text-[9px] font-black leading-tight text-center break-keep">{t.label}</span>
-              {t.n === 4 && sidebarPage !== 4 && setStopsCount < allStops.length && allStops.length > 0 && (
-                <span className="absolute top-1 right-1.5 w-1.5 h-1.5 rounded-full bg-[#F59E0B]" />
-              )}
-            </button>
-          ))}
+        {/* 탭통합: 오늘·변경·탑승장소설정·호차설정 페이지 제거 → 노선만(호차별 정류장 탭이 대체) */}
+        <div className="flex items-center justify-center gap-1 py-1 rounded-xl shrink-0" style={{ background: '#F1F3F4' }}>
+          <span className="text-[13px] leading-none">🗺️</span>
+          <span className="text-[11px] font-black text-[#1A73E8]">노선 지도</span>
         </div>
 
         {/* ─ Page 1: 컴팩트 다크 리모컨 (노선 조작) ─ */}
