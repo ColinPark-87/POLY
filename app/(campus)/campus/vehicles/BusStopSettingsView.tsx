@@ -8,7 +8,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-interface Bus { id: string; name: string; sort_order: number }
+interface Bus { id: string; name: string; sort_order: number; capacity?: number | null; driver?: string | null; driver_phone?: string | null; safety?: string | null; safety_phone?: string | null; kt_name?: string | null; kt_phone?: string | null }
 interface Student {
   student_id?: string
   class_id?: string
@@ -73,7 +73,7 @@ function stopDayTriples(s: Student): [string, string, string][] {
 
 interface Row { stop: string; time: string; sess: string[]; days: string[]; students: StuRef[]; hasStudents: boolean }
 interface OvRow { student_id: string; bus_name: string | null; location: string | null; pickup_time: string | null; is_absent: boolean; direction: string; name: string }
-const GRID = 'grid grid-cols-[52px_176px_56px_142px_1fr]'  // 시간 | 장소 | 탑승인원 | 작업(2x2) | 탑승자명단
+const GRID = 'grid grid-cols-[46px_1fr_44px_116px_minmax(0,2.2fr)]'  // 시간 | 장소 | 탑승인원 | 작업(2x2) | 탑승자명단
 
 export default function BusStopSettingsView({ campusName, onLocateStop }: { campusName?: string; onLocateStop?: (stop: string, bus: string) => void }) {
   void campusName
@@ -109,6 +109,8 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
   const [isMobile, setIsMobile] = useState(false)  // 모바일=슬라이드 뷰(세션×방향 1장씩), 지도/좌표 숨김
   const [slideIdx, setSlideIdx] = useState(0)
   const slideRef = useRef<HTMLDivElement>(null)
+  const [busEditOpen, setBusEditOpen] = useState(false)  // 히어로 호차설정 편집
+  const [busEdit, setBusEdit] = useState({ driver: '', driver_phone: '', safety: '', safety_phone: '', capacity: '' })
 
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(''), 3200) }
 
@@ -332,6 +334,26 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
     } catch (e) { alert(`추가 실패: ${(e as Error).message}`) } finally { setSavingKey(null) }
   }
 
+  // 호차 설정 저장(기사·차량정원·안전선생님) — update_bus (kt는 기존값 보존)
+  async function saveBus(b: Bus) {
+    setSavingKey('bus|' + b.id)
+    try {
+      const res = await fetch('/api/campus/vehicles', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update_bus', bus_id: b.id, name: b.name, force: true,
+          driver: busEdit.driver, driver_phone: busEdit.driver_phone,
+          safety: busEdit.safety, safety_phone: busEdit.safety_phone,
+          kt_name: b.kt_name ?? '', kt_phone: b.kt_phone ?? '',
+          capacity: busEdit.capacity,
+        }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok || d.error) throw new Error(d.error ?? `${res.status}`)
+      setBusEditOpen(false); flash(`${b.name} 설정 저장`); load()
+    } catch (e) { alert(`호차 설정 저장 실패: ${(e as Error).message}`) } finally { setSavingKey(null) }
+  }
+
   // 당일만 탑승 추가 (override, 선택 날짜 1회) — 개설반 검색, 다른 호차 중복 가능, 날짜 바뀌면 사라짐
   async function addDayRider(dir: Dir, bus: string, r: Row, stu: { id: string; name: string }) {
     setSavingKey('dayadd|' + stu.id)
@@ -485,6 +507,8 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
     const weekly = r.students.filter(s => ridesOn(s, r) && !ab.has(s.id)).length
     return weekly + ovAdds(dir, bus, r.stop).length
   }
+  // 호차 해당일 총 탑승(방향별) = 전 세션 합
+  const busTotalFor = (busName: string, dir: Dir) => FILTERS.reduce((n, f) => n + rowsOf(f, dir, busName).reduce((m, r) => m + dayCount(r, dir, busName), 0), 0)
 
   const startCell = (k: string, field: 'time' | 'name', cur: string) => { setCellEdit({ key: k, field }); setCellVal(cur) }
   const commitCell = (dir: Dir, bus: string, r: Row) => {
@@ -512,12 +536,12 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
       <div className="border-b border-[#EEF2F7] last:border-0" style={{ borderLeft: `3px solid ${color}` }}>
         <div className={`${GRID} items-center text-[11px] ${i % 2 === 0 ? 'bg-white' : 'bg-[#FAFBFC]'} hover:bg-[#F5F8FC]`}>
           {/* 시간 (클릭 → 아래 편집행) */}
-          <div className="px-1 py-1 border-r border-[#F1F5F9] text-center">
+          <div className="px-1 py-0.5 border-r border-[#F1F5F9] text-center">
             <button onClick={() => startCell(k, 'time', r.time)} title="클릭해 시간 변경"
               className={`font-bold tabular-nums hover:underline ${editing && cellEdit!.field === 'time' ? 'ring-1 ring-[#004EA2] rounded px-1' : ''}`} style={{ color }}>{r.time || '–'}</button>
           </div>
           {/* 장소 (클릭 → 아래 편집행) + 요일 */}
-          <div className="px-1.5 py-1 border-r border-[#F1F5F9] min-w-0">
+          <div className="px-1.5 py-0.5 border-r border-[#F1F5F9] min-w-0">
             <button onClick={() => startCell(k, 'name', r.stop)} title="클릭해 정류장명 변경"
               className={`font-semibold text-[#1E293B] truncate hover:underline block w-full text-left ${editing && cellEdit!.field === 'name' ? 'ring-1 ring-[#004EA2] rounded px-1' : ''}`}>
               {r.stop}{!hasCoord && <span className="text-[#F59E0B] font-normal"> *</span>}</button>
@@ -536,7 +560,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
             )}
           </div>
           {/* 탑승인원 (선택 날짜 기준) */}
-          <div className="px-0.5 py-1 border-r border-[#F1F5F9] flex flex-col items-center justify-center">
+          <div className="px-0.5 py-0.5 border-r border-[#F1F5F9] flex flex-col items-center justify-center">
             <span className="text-[15px] font-extrabold leading-none tabular-nums" style={{ color }}>{cnt}</span>
             {selDay && cnt !== r.students.length && <span className="text-[8px] text-[#94A3B8] mt-0.5">주간 {r.students.length}</span>}
           </div>
@@ -547,14 +571,16 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
             <button onClick={() => { setAddDayKey(a => a === k ? null : k); setAddRiderKey(null); setRiderQ(''); setRiderResults([]) }}
               title={`${selDate} 당일만 탑승(1회, 개설반)`} className={`font-bold border rounded px-1 py-px ${dayAdding ? 'bg-[#EA580C] text-white border-[#EA580C]' : 'text-[#EA580C] border-[#EA580C]'}`}>당일+</button>
             {onLocateStop
-              ? <button onClick={() => onLocateStop(r.stop, bus)} title="시스템 지도로 이동 → 핀 드래그로 위치수정" className="font-bold text-[#004EA2] border border-[#004EA2] rounded px-1 py-px">지도</button>
+              ? <button onClick={() => onLocateStop(r.stop, bus)} title={hasCoord ? '시스템 지도로 이동 → 핀 드래그' : '좌표 없음 — 먼저 [좌표] 입력'}
+                  className={`font-bold border rounded px-1 py-px ${hasCoord ? 'bg-[#004EA2] text-white border-[#004EA2]' : 'text-[#CBD5E1] border-[#E2E8F0] bg-[#F8FAFC]'}`}>지도</button>
               : <span />}
             <button onClick={() => { if (coording) setCoordKey(null); else { setCoordKey(k); const c = coords[r.stop]; setCoordDraft({ lat: c ? String(c.lat) : '', lng: c ? String(c.lng) : '', addr: '' }) } }}
-              className={`font-bold border rounded px-1 py-px ${coording ? 'bg-[#004EA2] text-white border-[#004EA2]' : 'text-[#004EA2] border-[#004EA2]'}`}>좌표</button>
+              title={hasCoord ? '좌표 설정됨 — 수정' : '좌표 없음 — 입력 필요'}
+              className={`font-bold border rounded px-1 py-px ${coording ? 'bg-[#EA580C] text-white border-[#EA580C]' : hasCoord ? 'bg-[#004EA2] text-white border-[#004EA2]' : 'text-[#B45309] border-[#F59E0B] bg-[#FEF3C7] animate-pulse'}`}>{hasCoord ? '좌표' : '좌표!'}</button>
             {!r.hasStudents && adds.length === 0 && <button onClick={() => deleteStop(dir, bus, r.stop)} title="정류장 삭제" className="col-span-2 text-[#CBD5E1] hover:text-[#EF4444] font-bold">정류장 삭제</button>}
           </div>
           {/* 탑승자 명단 (칩) — 요일 미탑승/결석은 흐림, 당일추가는 주황 */}
-          <div className="px-1.5 py-1 flex flex-wrap gap-1 items-center min-w-0">
+          <div className="px-1.5 py-0.5 flex flex-wrap gap-1 items-center min-w-0">
             {r.students.map((s, si) => {
               const sd = s.days.length ? s.days : r.days
               const rides = ridesOn(s, r) && !absent.has(s.id)
@@ -681,17 +707,17 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
     const add = addStop[bk] ?? { stop: '', time: '' }
     return (
       <div>
-        <div className="flex items-center gap-2 mb-1 mt-1.5 pb-0.5" style={{ borderBottom: `2px solid ${color}` }}>
+        <div className="flex items-center gap-2 mb-0.5 pb-0.5" style={{ borderBottom: `2px solid ${color}` }}>
           <span className="text-[12px] font-extrabold" style={{ color }}>{dirLabel(dir)}</span>
-          <span className="text-[10px] text-[#94A3B8]">정류장 {rows.length} · 탑승 {studentN}명{selDay ? ` (${selDate} ${selDay})` : ''}</span>
+          <span className="text-[10px] text-[#94A3B8]">정류장 {rows.length} · 탑승 {studentN}명</span>
         </div>
         <div className="border border-[#E2E8F0] rounded-md overflow-hidden">
           <div className={`${GRID} text-[10px] font-bold text-[#64748B] bg-[#F1F5F9] border-b border-[#E2E8F0]`}>
-            <div className="px-1 py-1 text-center border-r border-[#E2E8F0]">시간</div>
-            <div className="px-1.5 py-1 border-r border-[#E2E8F0]">장소</div>
-            <div className="px-0.5 py-1 text-center border-r border-[#E2E8F0]">탑승<br />인원</div>
-            <div className="px-1 py-1 border-r border-[#E2E8F0]">작업</div>
-            <div className="px-1.5 py-1">탑승자 명단</div>
+            <div className="px-0.5 py-0.5 text-center border-r border-[#E2E8F0]">시간</div>
+            <div className="px-1 py-0.5 border-r border-[#E2E8F0]">장소</div>
+            <div className="px-0.5 py-0.5 text-center border-r border-[#E2E8F0]">인원</div>
+            <div className="px-1 py-0.5 text-center border-r border-[#E2E8F0]">작업</div>
+            <div className="px-1 py-0.5">탑승자 명단</div>
           </div>
           {rows.map((r, i) => <Fragment key={r.stop}>{StopRow({ dir, bus, r, i })}</Fragment>)}
           {rows.length === 0 && <div className="text-[10px] text-[#CBD5E1] py-2 px-2">정류장 없음</div>}
@@ -710,6 +736,49 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
   }
 
   const bus = selectedBus
+
+  // ── 호차 히어로(얇은 1줄): 기사·정원·안전선생님·해당일 총탑승 + 설정편집 ──
+  const BusHero = ({ b }: { b: Bus }) => {
+    const arrT = busTotalFor(b.name, 'arr'), depT = busTotalFor(b.name, 'dep')
+    const cap = b.capacity ?? 0
+    const over = cap > 0 && Math.max(arrT, depT) > cap
+    const M = ({ label, val, sub }: { label: string; val?: string | null; sub?: string | null }) => (
+      <span className="flex items-baseline gap-1 whitespace-nowrap">
+        <span className="text-[10px] text-[#94A3B8]">{label}</span>
+        <span className="text-[12px] font-bold text-[#1E293B]">{val || '–'}</span>
+        {sub ? <span className="text-[10px] text-[#94A3B8]">{sub}</span> : null}
+      </span>
+    )
+    return (
+      <div className="rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-1 mb-2">
+        <div className="flex items-center gap-x-4 gap-y-0.5 flex-wrap">
+          <span className="text-[15px] font-extrabold text-[#004EA2]">{b.name}</span>
+          <M label="기사" val={b.driver} sub={b.driver_phone} />
+          <M label="정원" val={cap ? `${cap}석` : null} />
+          <M label="안전샘" val={b.safety} sub={b.safety_phone} />
+          <span className="flex items-baseline gap-1.5 whitespace-nowrap">
+            <span className="text-[10px] text-[#94A3B8]">{selDate.slice(5)}{selDay ? `(${selDay})` : ''} 탑승</span>
+            <span className="text-[13px] font-extrabold" style={{ color: ARR }}>등 {arrT}</span>
+            <span className="text-[13px] font-extrabold" style={{ color: DEP }}>하 {depT}</span>
+            {over && <span className="text-[10px] font-bold text-white bg-[#EF4444] rounded px-1">정원초과</span>}
+          </span>
+          <button onClick={() => { if (busEditOpen) { setBusEditOpen(false); return } setBusEdit({ driver: b.driver ?? '', driver_phone: b.driver_phone ?? '', safety: b.safety ?? '', safety_phone: b.safety_phone ?? '', capacity: b.capacity ? String(b.capacity) : '' }); setBusEditOpen(true) }}
+            className="ml-auto text-[11px] font-bold text-[#004EA2] border border-[#004EA2] rounded px-2 py-0.5">{busEditOpen ? '닫기' : '설정'}</button>
+        </div>
+        {busEditOpen && (
+          <div className="mt-1 pt-1 border-t border-[#E2E8F0] flex flex-wrap items-center gap-1.5">
+            <input value={busEdit.driver} onChange={e => setBusEdit(v => ({ ...v, driver: e.target.value }))} placeholder="기사명" className={`w-24 ${inputCls}`} />
+            <input value={busEdit.driver_phone} onChange={e => setBusEdit(v => ({ ...v, driver_phone: e.target.value }))} placeholder="기사 전화" className={`w-32 ${inputCls}`} />
+            <input value={busEdit.safety} onChange={e => setBusEdit(v => ({ ...v, safety: e.target.value }))} placeholder="안전선생님" className={`w-24 ${inputCls}`} />
+            <input value={busEdit.safety_phone} onChange={e => setBusEdit(v => ({ ...v, safety_phone: e.target.value }))} placeholder="안전 전화" className={`w-32 ${inputCls}`} />
+            <input value={busEdit.capacity} onChange={e => setBusEdit(v => ({ ...v, capacity: e.target.value.replace(/[^0-9]/g, '') }))} placeholder="정원" className={`w-16 ${inputCls}`} />
+            <button onClick={() => saveBus(b)} disabled={savingKey === 'bus|' + b.id} className="text-[11px] bg-[#004EA2] text-white font-bold px-3 py-1 rounded">저장</button>
+          </div>
+        )}
+      </div>
+    )
+  }
+  const busObj = buses.find(b => b.name === bus)
 
   // ── 모바일 정류장 카드 (지도·좌표 없음, 터치 큼) ──
   const MobileStopCard = ({ dir, bus, r }: { dir: Dir; bus: string; r: Row }) => {
@@ -818,6 +887,13 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
           <span className="text-[12px] font-bold text-[#004EA2] w-6">{selDay || '주말'}</span>
           <button onClick={() => printBuses([bus])} disabled={!bus} className="ml-auto text-sm font-semibold border border-[#004EA2] text-[#004EA2] rounded-lg px-3 py-1.5 disabled:opacity-40">인쇄</button>
         </div>
+        {/* 모바일 히어로: 당일 총 탑승인원만 */}
+        {bus && (
+          <div className="rounded-lg bg-[#EAF2FB] px-3 py-1.5 mb-2 flex items-center justify-between">
+            <span className="text-[13px] font-bold text-[#004EA2]">{bus} 당일 탑승</span>
+            <span className="text-[14px] font-extrabold"><span style={{ color: ARR }}>등 {busTotalFor(bus, 'arr')}</span> · <span style={{ color: DEP }}>하 {busTotalFor(bus, 'dep')}</span></span>
+          </div>
+        )}
         {slides.length === 0 ? (
           <div className="text-center text-[#CBD5E1] py-16 text-sm">{bus ? `${bus} 정류장 데이터 없음` : '호차 없음'}</div>
         ) : (
@@ -882,6 +958,9 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
         </div>
       </div>
 
+      {/* 호차 히어로(얇게) */}
+      {!q && busObj && BusHero({ b: busObj })}
+
       {/* 검색 중 = 전 호차 × 전 세션 매칭 정류장 (호차별 그룹) */}
       {q ? (
         <div className="space-y-4">
@@ -921,7 +1000,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
                 )
               })}
             </div>
-            <div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
               {DirTable({ dir: 'arr', bus, flt: active })}
               {DirTable({ dir: 'dep', bus, flt: active })}
             </div>
