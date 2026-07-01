@@ -81,7 +81,7 @@ interface Row { stop: string; time: string; sess: string[]; days: string[]; stud
 interface OvRow { student_id: string; bus_name: string | null; location: string | null; pickup_time: string | null; is_absent: boolean; direction: string; name: string }
 const GRID = 'grid grid-cols-[46px_1fr_44px_116px_minmax(0,2.2fr)]'  // 시간 | 장소 | 탑승인원 | 작업(2x2) | 탑승자명단
 
-export default function BusStopSettingsView({ campusName, onLocateStop, restricted = false }: { campusName?: string; onLocateStop?: (stop: string, bus: string) => void; restricted?: boolean }) {
+export default function BusStopSettingsView({ campusName, onLocateStop, restricted = false }: { campusName?: string; onLocateStop?: (stop: string, bus: string, init?: { lat: number; lng: number }) => void; restricted?: boolean }) {
   void campusName
   const ro = restricted  // 차량선생님(여사님): 직접수정 금지 → 보기 + 학생추가는 변경신청
   const today = new Date()
@@ -283,15 +283,6 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
       load()
     } catch (e) { alert(`이름 변경 실패: ${(e as Error).message}`) } finally { setSavingKey(null) }
   }
-  async function saveCoord(dir: Dir, bus: string, r: Row) {
-    const lat = parseFloat(coordDraft.lat), lng = parseFloat(coordDraft.lng)
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) { alert('위도·경도를 확인하세요.'); return }
-    const k = dkey(dir, bus, r.stop); setSavingKey(k)
-    try {
-      await renameApi(r.stop, r.stop, { lat, lng })
-      setCoordKey(null); flash(`'${r.stop}' 좌표(핀) 저장됨`); load()
-    } catch (e) { alert(`좌표 저장 실패: ${(e as Error).message}`) } finally { setSavingKey(null) }
-  }
   async function geocode() {
     if (!coordDraft.addr.trim()) return
     setGeoBusy(true)
@@ -430,6 +421,23 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
 
   // 당일만 탑승 추가 (override, 선택 날짜 1회) — 개설반 검색, 다른 호차 중복 가능, 날짜 바뀌면 사라짐
   async function addDayRider(dir: Dir, bus: string, r: Row, stu: { id: string; name: string }) {
+    // 그날 이미 다른 호차에 배정돼 있으면 경고 → 예/아니오 (예=그날만 이 호차로 이동, 원래 호차엔 그날 빠짐 = override)
+    const [yy, mm, dd] = selDate.split('-').map(Number)
+    const wd = yy ? (({ 1: '월', 2: '화', 3: '수', 4: '목', 5: '금' } as Record<number, string>)[new Date(yy, mm - 1, dd).getDay()] ?? '') : ''
+    let existBus: string | null = null
+    const ov = overrides[dir].find(o => o.student_id === stu.id && !o.is_absent)
+    if (ov?.bus_name) existBus = ov.bus_name
+    else if (raw && wd) {
+      for (const tg of raw[dir].timeGroups ?? []) {
+        for (const [bn, sts] of Object.entries(tg.busMap ?? {})) {
+          if (sts.some(s => s.student_id === stu.id && (s.days ?? []).includes(wd))) { existBus = bn; break }
+        }
+        if (existBus) break
+      }
+    }
+    if (existBus && existBus !== bus) {
+      if (!confirm(`'${stu.name}' 학생은 ${selDate}${wd ? `(${wd})` : ''} 이미 '${existBus}'에 배정돼 있습니다.\n\n${selDate} 그날만 '${bus}'로 이동시킬까요?\n(원래 '${existBus}'에서는 그날 빠집니다)`)) return
+    }
     setSavingKey('dayadd|' + stu.id)
     try {
       const res = await fetch('/api/campus/vehicles', {
@@ -438,8 +446,9 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
       })
       const d = await res.json().catch(() => ({}))
       if (!res.ok || d.error) throw new Error(d.error ?? `${res.status}`)
-      setRiderQ(''); setRiderResults([])
-      flash(`'${stu.name}' ${selDate} 당일 탑승 추가`); loadOverrides(selDate)
+      setRiderQ(''); setRiderResults([]); setAddDayKey(null)
+      flash(existBus && existBus !== bus ? `'${stu.name}' ${selDate} '${bus}'로 이동` : `'${stu.name}' ${selDate} 당일 탑승 추가`)
+      loadOverrides(selDate)
     } catch (e) { alert(`당일 추가 실패: ${(e as Error).message}`) } finally { setSavingKey(null) }
   }
   async function removeDayRider(dir: Dir, studentId: string, name: string) {
@@ -516,10 +525,9 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
       const sections = sessions.map(f => (['arr', 'dep'] as Dir[]).map(dir => {
         const rows = rowsOf(f, dir, busName)
         if (!rows.length) return ''
-        const ab = ovAbsentSet(dir)
         const body = rows.map(r => {
-          const adds = ovAdds(dir, busName, r.stop)
-          const riders = r.students.filter(s => ridesOn(s, r) && !ab.has(s.id))
+          const adds = ovAdds(dir, busName, r.stop, r.students)
+          const riders = r.students.filter(s => ridesHere(s, r, dir, busName))
           const cnt = riders.length + adds.length
           const dayTag = r.days.length && r.days.length < 5 ? ` <span class="d">(${r.days.join('')})</span>` : ''
           const parts = riders.map((s, i) => `<span class="nm"><b>${i + 1}</b> ${esc(s.name)}</span>`)
@@ -573,14 +581,23 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
     return ({ 1: '월', 2: '화', 3: '수', 4: '목', 5: '금' } as Record<number, string>)[new Date(y, m - 1, d).getDay()] ?? ''
   })()
   const ridesOn = (s: StuRef, r: Row) => !selDay || (s.days.length ? s.days : r.days).includes(selDay)
-  const ovAdds = (dir: Dir, bus: string, stop: string) => overrides[dir].filter(o => !o.is_absent && o.bus_name === bus && (o.location ?? '').trim() === stop)
-  const ovAbsentSet = (dir: Dir) => new Set(overrides[dir].filter(o => o.is_absent).map(o => o.student_id))
-  // 그 날짜 실제 탑승 인원 = (요일 타는 학생 − 당일결석) + 당일추가
-  const dayCount = (r: Row, dir: Dir, bus: string) => {
-    const ab = ovAbsentSet(dir)
-    const weekly = r.students.filter(s => ridesOn(s, r) && !ab.has(s.id)).length
-    return weekly + ovAdds(dir, bus, r.stop).length
+  const normStopC = (s: string | null | undefined) => (s ?? '').replace(/\s+/g, ' ').trim()
+  const sameStopC = (a: string | null | undefined, b: string | null | undefined) => normStopC(a) === normStopC(b)
+  // 학생별 그날 override(있으면 그날은 override가 우선 = 그날만 이동/결석)
+  const ovByStudent = (dir: Dir) => { const m = new Map<string, OvRow>(); for (const o of overrides[dir]) if (!m.has(o.student_id)) m.set(o.student_id, o); return m }
+  // 이 학생이 그날 이 (호차·정류장)에서 실제 타는가 — override 있으면 override 위치만, 없으면 주간요일
+  const ridesHere = (s: StuRef, r: Row, dir: Dir, bus: string) => {
+    const ov = ovByStudent(dir).get(s.id)
+    if (ov?.is_absent) return false
+    if (ov && !(ov.bus_name === bus && sameStopC(ov.location, r.stop))) return false  // 그날 다른 호차/정류장으로 이동됨
+    return ridesOn(s, r)
   }
+  // 당일추가(이동해 들어온) 학생 — 단, 이 정류장 주간명단에 이미 있으면 제외(중복 방지)
+  const ovAdds = (dir: Dir, bus: string, stop: string, weekly: StuRef[] = []) =>
+    overrides[dir].filter(o => !o.is_absent && o.bus_name === bus && sameStopC(o.location, stop) && !weekly.some(s => s.id === o.student_id))
+  // 그 날짜 실제 탑승 인원 = 주간(이동/결석 제외) + 당일 이동 들어온 학생
+  const dayCount = (r: Row, dir: Dir, bus: string) =>
+    r.students.filter(s => ridesHere(s, r, dir, bus)).length + ovAdds(dir, bus, r.stop, r.students).length
   // 호차 해당일 총 탑승(방향별) = 전 세션 합
   const busTotalFor = (busName: string, dir: Dir) => sessions.reduce((n, f) => n + rowsOf(f, dir, busName).reduce((m, r) => m + dayCount(r, dir, busName), 0), 0)
 
@@ -603,8 +620,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
     const coording = coordKey === k
     const hasCoord = !!coords[r.stop]
     const color = dirColor(dir)
-    const absent = ovAbsentSet(dir)
-    const adds = ovAdds(dir, bus, r.stop)
+    const adds = ovAdds(dir, bus, r.stop, r.students)
     const cnt = dayCount(r, dir, bus)
     return (
       <div className="border-b-2 border-[#CBD5E1] last:border-0" style={{ borderLeft: `3px solid ${color}` }}>
@@ -645,8 +661,8 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
             {!ro && <button onClick={() => { setAddDayKey(a => a === k ? null : k); setAddRiderKey(null); setRiderQ(''); setRiderResults([]) }}
               title={`${selDate} 당일만 탑승(1회, 개설반)`} className={`font-bold border rounded px-1 py-px ${dayAdding ? 'bg-[#EA580C] text-white border-[#EA580C]' : 'text-[#EA580C] border-[#EA580C]'}`}>당일+</button>}
             {!ro && onLocateStop
-              ? <button onClick={() => onLocateStop(r.stop, bus)} title={hasCoord ? '시스템 지도로 이동 → 핀 드래그' : '좌표 없음 — 먼저 [좌표] 입력'}
-                  className={`font-bold border rounded px-1 py-px ${hasCoord ? 'bg-[#004EA2] text-white border-[#004EA2]' : 'text-[#CBD5E1] border-[#E2E8F0] bg-[#F8FAFC]'}`}>지도</button>
+              ? <button onClick={() => onLocateStop(r.stop, bus)} title={hasCoord ? '시스템 지도로 이동 → 핀 드래그' : '지도에서 핀 찍어 좌표 설정'}
+                  className="font-bold border rounded px-1 py-px bg-[#004EA2] text-white border-[#004EA2]">지도</button>
               : null}
             {!ro && <button onClick={() => { if (coording) setCoordKey(null); else { setCoordKey(k); const c = coords[r.stop]; setCoordDraft({ lat: c ? String(c.lat) : '', lng: c ? String(c.lng) : '', addr: '' }) } }}
               title={hasCoord ? '좌표 설정됨 — 수정' : '좌표 없음 — 입력 필요'}
@@ -657,7 +673,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
           <div className="px-1.5 py-0.5 flex flex-wrap gap-1 items-center min-w-0">
             {r.students.map((s, si) => {
               const sd = s.days.length ? s.days : r.days
-              const rides = ridesOn(s, r) && !absent.has(s.id)
+              const rides = ridesHere(s, r, dir, bus)
               return (
                 <span key={s.id} className="inline-flex flex-col gap-0.5 bg-[#F1F5F9] rounded px-1 py-0.5 whitespace-nowrap" style={{ opacity: rides ? 1 : 0.4 }}>
                   <span className="flex items-center gap-0.5 text-[11px] text-[#334155]">
@@ -754,16 +770,21 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
           </div>
         )}
 
-        {/* 좌표 팝오버 */}
+        {/* 좌표 팝오버: 주소검색 → 지도에서 핀 드래그 → 저장 */}
         {coording && (
           <div className="px-2 py-1.5 bg-[#F8FAFC] border-t border-[#EEF2F7] flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] font-bold text-[#64748B]">① 주소검색</span>
             <input value={coordDraft.addr} onChange={e => setCoordDraft(d => ({ ...d, addr: e.target.value }))}
-              onKeyDown={e => { if (e.key === 'Enter') geocode() }} placeholder="주소검색" className={`w-52 ${inputCls}`} />
+              onKeyDown={e => { if (e.key === 'Enter') geocode() }} placeholder="주소·건물명" className={`w-48 ${inputCls}`} />
             <button onClick={geocode} disabled={geoBusy || !coordDraft.addr.trim()} className="text-[11px] font-bold text-white bg-[#004EA2] rounded px-2 py-1 disabled:opacity-40">{geoBusy ? '…' : '검색'}</button>
-            <input value={coordDraft.lat} onChange={e => setCoordDraft(d => ({ ...d, lat: e.target.value }))} placeholder="위도" className={`w-28 ${inputCls}`} />
-            <input value={coordDraft.lng} onChange={e => setCoordDraft(d => ({ ...d, lng: e.target.value }))} placeholder="경도" className={`w-28 ${inputCls}`} />
-            <button onClick={() => saveCoord(dir, bus, r)} disabled={busy} className="text-[11px] bg-[#004EA2] text-white font-bold px-3 py-1 rounded disabled:opacity-30">저장</button>
-            <span className="text-[10px] text-[#94A3B8]">또는 [지도]에서 핀 드래그</span>
+            {coordDraft.lat && coordDraft.lng && <span className="text-[10px] text-[#16A34A] font-bold">✓ 위치 찾음</span>}
+            <span className="text-[10px] font-bold text-[#64748B]">② 지도서 핀</span>
+            {onLocateStop && <button onClick={() => {
+              const la = parseFloat(coordDraft.lat), ln = parseFloat(coordDraft.lng)
+              onLocateStop(r.stop, bus, Number.isFinite(la) && Number.isFinite(ln) ? { lat: la, lng: ln } : undefined)
+              setCoordKey(null)
+            }} className="text-[11px] font-bold text-white bg-[#16A34A] rounded px-2 py-1">지도에서 핀 지정·저장</button>}
+            <span className="text-[10px] text-[#94A3B8]">주소검색 후 지도에서 핀 끌어 정확히 맞추고 저장</span>
           </div>
         )}
       </div>
@@ -860,8 +881,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
     const dayAdding = addDayKey === k
     const color = dirColor(dir)
     const hasCoord = !!coords[r.stop]
-    const absent = ovAbsentSet(dir)
-    const adds = ovAdds(dir, bus, r.stop)
+    const adds = ovAdds(dir, bus, r.stop, r.students)
     const cnt = dayCount(r, dir, bus)
     return (
       <div className="rounded-xl border border-[#E2E8F0] bg-white mb-2 overflow-hidden">
@@ -882,7 +902,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
         <div className="px-2.5 py-2 flex flex-wrap gap-1.5">
           {r.students.map((s, si) => {
             const sd = s.days.length ? s.days : r.days
-            const rides = ridesOn(s, r) && !absent.has(s.id)
+            const rides = ridesHere(s, r, dir, bus)
             return (
               <span key={s.id} className="inline-flex flex-col gap-0.5 bg-[#F1F5F9] rounded-lg px-1.5 py-1" style={{ opacity: rides ? 1 : 0.4 }}>
                 <span className="flex items-center gap-1 text-[13px] text-[#334155]">

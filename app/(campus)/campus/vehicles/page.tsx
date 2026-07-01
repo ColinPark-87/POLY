@@ -200,11 +200,11 @@ export default function VehiclesPage() {
   const todayStr = [today.getFullYear(), String(today.getMonth()+1).padStart(2,'0'), String(today.getDate()).padStart(2,'0')].join('-')
 
   const [tab, setTab] = useState<'master'|'today'|'map'|'busstops'>('map')
-  // 호차별 정류장 탭 → 시스템 지도에서 해당 정류장 위치 보기
-  const [focusStop, setFocusStop] = useState<{ name: string; busName: string; nonce: number } | null>(null)
-  function locateStop(stop: string, busName: string) {
+  // 호차별 정류장 탭 → 시스템 지도에서 해당 정류장 위치 보기 (init=주소검색 좌표로 핀 초기배치)
+  const [focusStop, setFocusStop] = useState<{ name: string; busName: string; nonce: number; lat?: number; lng?: number } | null>(null)
+  function locateStop(stop: string, busName: string, init?: { lat: number; lng: number }) {
     setTab('map')
-    setFocusStop(f => ({ name: stop, busName, nonce: (f?.nonce ?? 0) + 1 }))
+    setFocusStop(f => ({ name: stop, busName, nonce: (f?.nonce ?? 0) + 1, lat: init?.lat, lng: init?.lng }))
   }
   const [fullscreen, setFullscreen] = useState(false)
   // 지도 탭(RouteMapView) 편집 상태 — presence '편집 중' 표시에 합산

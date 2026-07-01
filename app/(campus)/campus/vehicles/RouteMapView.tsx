@@ -113,7 +113,7 @@ function capStatus(n: number, cap: number = BUS_CAP): { label: string; color: st
   return { label: '여유', color: '#16A34A', bg: '#F0FDF4', ring: '#BBF7D0' }
 }
 
-export default function RouteMapView({ campusId, campusName, fullscreen = false, showPresence = true, onEditingChange, focusStop }: { campusId?: string; campusName?: string; fullscreen?: boolean; showPresence?: boolean; onEditingChange?: (editing: boolean) => void; focusStop?: { name: string; busName?: string; nonce: number } | null }) {
+export default function RouteMapView({ campusId, campusName, fullscreen = false, showPresence = true, onEditingChange, focusStop }: { campusId?: string; campusName?: string; fullscreen?: boolean; showPresence?: boolean; onEditingChange?: (editing: boolean) => void; focusStop?: { name: string; busName?: string; nonce: number; lat?: number; lng?: number } | null }) {
   const cqs = campusId ? `&campus_id=${campusId}` : ''
   // campusId가 없으면 중계(hardcoded), 있으면 해당 캠퍼스 이름 사용 (없으면 null)
   const effectiveSchoolName = campusId ? (campusName ?? null) : SCHOOL_STOP.name
@@ -1973,16 +1973,17 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false,
     const id = setInterval(() => {
       tries++
       const kakao = (window as any).kakao
+      if (!(kakao?.maps && mapRef.current)) { if (tries > 25) clearInterval(id); return }
+      clearInterval(id)
+      mapRef.current.setLevel(3)
       const coord = coordsRef.current[focusStop.name] ?? coords[focusStop.name]
-      if (kakao?.maps && mapRef.current && coord) {
-        clearInterval(id)
-        mapRef.current.setLevel(3)
+      const init = (focusStop.lat != null && focusStop.lng != null) ? { lat: focusStop.lat, lng: focusStop.lng } : undefined
+      if (coord) {
         handleStopResultClick({ stopName: focusStop.name, busName: focusStop.busName ?? '' } as StopSearchRow)
-        // 도착 즉시 위치 세부수정 모드(드래그 핀 + 저장) 진입
-        startAdjust(focusStop.name)
-      } else if (tries > 25) {
-        clearInterval(id)
-        if (!coord) alert(`'${focusStop.name}' 정류장은 좌표(핀)가 없습니다. 호차별 정류장 탭에서 좌표를 먼저 설정하세요.`)
+        startAdjust(focusStop.name)  // 기존 좌표 → 드래그 핀 세부수정
+      } else {
+        // 좌표 없음: 주소검색 좌표(init) 또는 학교 중심에 드래그 핀 배치 → 저장
+        startAdjust(focusStop.name, init)
       }
     }, 300)
     return () => clearInterval(id)
@@ -2051,10 +2052,11 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false,
   }
 
   // 정류장 위치 조정 시작 — 재검색 없이 지도에서 핀을 끌거나 클릭해 바로 조정
-  function startAdjust(stopName: string) {
+  function startAdjust(stopName: string, init?: { lat: number; lng: number }) {
     const kakao = (window as any).kakao
-    // coordsRef 우선: focusStop 인터벌이 마운트 시점(coords state 비어있음) 호출해도 정확 위치로 핀 배치
-    const c = coordsRef.current[stopName] ?? coords[stopName]
+    // coordsRef 우선: focusStop 인터벌이 마운트 시점(coords state 비어있음) 호출해도 정확 위치로 핀 배치.
+    // 저장좌표 없으면 init(주소검색 좌표)로 드래그 핀 배치 → 사용자가 끌어 저장.
+    const c = coordsRef.current[stopName] ?? coords[stopName] ?? init ?? null
     const center = c
       ?? coords[effectiveSchoolName ?? SCHOOL_STOP.name]
       ?? (campusId ? null : { lat: SCHOOL_STOP.lat, lng: SCHOOL_STOP.lng })
