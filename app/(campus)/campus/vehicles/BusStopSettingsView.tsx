@@ -329,16 +329,17 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
     const d = await res.json().catch(() => ({}))
     setRiderResults((d.students ?? []).slice(0, 12))
   }
-  async function addRider(dir: Dir, bus: string, r: Row, stu: { id: string; name: string; class_id?: string }) {
-    if (ro) return reqAddRider(dir, bus, r, stu)  // 여사님: 직접추가 대신 변경신청
+  async function addRider(dir: Dir, bus: string, r: Row, stu: { id: string; name: string; class_id?: string }, sess?: string) {
+    if (ro) return reqAddRider(dir, bus, r, stu, sess)  // 여사님: 직접추가 대신 변경신청
     setSavingKey('add-rider|' + dir + stu.id)
     try {
+      // 신규 정류장(학생0)은 r.sess가 비어 세션 유실 → 현재 세션 탭(sess)으로 배정 (엉뚱한 세션 enrollment 갱신 방지)
       const res = await fetch('/api/campus/vehicles', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'add_rider', student_id: stu.id, date: todayStr, direction: dir,
           bus_name: bus, pickup_location: r.stop, pickup_time: r.time || undefined,
-          days: r.days.length ? r.days : [...DAYS], session_name: r.sess[0] ?? undefined,
+          days: r.days.length ? r.days : [...DAYS], session_name: r.sess[0] ?? sess ?? undefined,
         }),
       })
       const d = await res.json().catch(() => ({}))
@@ -348,7 +349,8 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
     } catch (e) { alert(`추가 실패: ${(e as Error).message}`) } finally { setSavingKey(null) }
   }
   // 여사님(restricted) 학생추가 = 변경신청(승인 대기) — submit_change_request
-  async function reqAddRider(dir: Dir, bus: string, r: Row, stu: { id: string; name: string; class_id?: string }) {
+  async function reqAddRider(dir: Dir, bus: string, r: Row, stu: { id: string; name: string; class_id?: string }, _sess?: string) {
+    void _sess
     if (!stu.class_id) { alert('학생 반 정보 없음 — 다시 검색해 주세요.'); return }
     setSavingKey('req|' + stu.id)
     try {
@@ -611,7 +613,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
   }
 
   // 엑셀 배차표 표 행 (정류장 그룹)
-  const StopRow = ({ dir, bus, r, i }: { dir: Dir; bus: string; r: Row; i: number }) => {
+  const StopRow = ({ dir, bus, r, i, flt }: { dir: Dir; bus: string; r: Row; i: number; flt: string }) => {
     const k = dkey(dir, bus, r.stop)
     const busy = savingKey === k
     const editing = cellEdit?.key === k
@@ -740,7 +742,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
             {riderResults.length > 0 && (
               <div className="absolute z-20 left-2 mt-0.5 w-64 bg-white border border-[#E2E8F0] rounded-lg shadow-lg max-h-48 overflow-auto">
                 {riderResults.map(s => (
-                  <button key={s.id} onClick={() => addRider(dir, bus, r, s)} className="w-full text-left px-2 py-1.5 hover:bg-[#EAF2FB] text-[12px]">
+                  <button key={s.id} onClick={() => addRider(dir, bus, r, s, flt)} className="w-full text-left px-2 py-1.5 hover:bg-[#EAF2FB] text-[12px]">
                     {s.name}{s.english_name ? <span className="text-[#94A3B8]"> ({s.english_name})</span> : null}
                   </button>
                 ))}
@@ -824,7 +826,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
             <div className="px-1 py-0.5 text-center border-r border-[#E2E8F0]">작업</div>
             <div className="px-1 py-0.5 text-center">탑승자 명단</div>
           </div>
-          {rows.map((r, i) => <Fragment key={r.stop}>{StopRow({ dir, bus, r, i })}</Fragment>)}
+          {rows.map((r, i) => <Fragment key={r.stop}>{StopRow({ dir, bus, r, i, flt })}</Fragment>)}
           {rows.length === 0 && <div className="text-[10px] text-[#CBD5E1] py-2 px-2">정류장 없음</div>}
           {!q && !ro && (
             <div className="flex items-center gap-1 px-2 py-1 border-t border-[#EEF2F7] bg-[#FAFBFC]">
@@ -882,7 +884,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
   const busObj = buses.find(b => b.name === bus)
 
   // ── 모바일 정류장 카드 (지도·좌표 없음, 터치 큼) ──
-  const MobileStopCard = ({ dir, bus, r }: { dir: Dir; bus: string; r: Row }) => {
+  const MobileStopCard = ({ dir, bus, r, flt }: { dir: Dir; bus: string; r: Row; flt: string }) => {
     const k = dkey(dir, bus, r.stop)
     const busy = savingKey === k
     const editing = cellEdit?.key === k
@@ -953,7 +955,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
             {riderResults.length > 0 && (
               <div className="absolute z-20 left-2.5 right-2.5 mt-0.5 bg-white border border-[#E2E8F0] rounded-lg shadow-lg max-h-52 overflow-auto">
                 {riderResults.map(s => (
-                  <button key={s.id} onClick={() => (dayAdding ? addDayRider : addRider)(dir, bus, r, s)} className="w-full text-left px-3 py-2 hover:bg-[#EAF2FB] text-[14px]">
+                  <button key={s.id} onClick={() => (dayAdding ? addDayRider : addRider)(dir, bus, r, s, flt)} className="w-full text-left px-3 py-2 hover:bg-[#EAF2FB] text-[14px]">
                     {s.name}{s.english_name ? <span className="text-[#94A3B8]"> ({s.english_name})</span> : null}
                   </button>
                 ))}
@@ -1013,7 +1015,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
                     {sl.f} · {dirLabel(sl.dir)}
                     <span className="text-[10px] text-[#94A3B8] font-normal">정류장 {sl.rows.length} · 탑승 {sl.rows.reduce((n, r) => n + dayCount(r, sl.dir, bus), 0)}명</span>
                   </div>
-                  {sl.rows.map(r => <Fragment key={r.stop}>{MobileStopCard({ dir: sl.dir, bus, r })}</Fragment>)}
+                  {sl.rows.map(r => <Fragment key={r.stop}>{MobileStopCard({ dir: sl.dir, bus, r, flt: sl.f })}</Fragment>)}
                 </div>
               ))}
             </div>
