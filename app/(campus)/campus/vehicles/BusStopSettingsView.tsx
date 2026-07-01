@@ -359,6 +359,35 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
     } catch (e) { alert(`삭제 실패: ${(e as Error).message}`) } finally { setSavingKey(null) }
   }
 
+  // 배차표 인쇄 (선택 호차, 세션·방향별 시간|장소|명단) — 새 창 window.print
+  function printBus() {
+    if (!selectedBus) return
+    const esc = (s: string) => String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' } as Record<string, string>)[c])
+    const sections = FILTERS.map(f => (['arr', 'dep'] as Dir[]).map(dir => {
+      const rows = rowsOf(f, dir, selectedBus)
+      if (!rows.length) return ''
+      const body = rows.map(r => {
+        const dayTag = r.days.length && r.days.length < 5 ? ` <span class="d">(${r.days.join('')})</span>` : ''
+        const names = r.students.length ? r.students.map((s, i) => `${i + 1}.${esc(s.name)}`).join(' &nbsp; ') : '<span class="d">탑승 없음</span>'
+        return `<tr><td class="t">${esc(r.time || '-')}</td><td>${esc(r.stop)}${dayTag}</td><td>${names} <b>(${r.students.length})</b></td></tr>`
+      }).join('')
+      const col = dir === 'arr' ? ARR : DEP
+      return `<h3 style="border-color:${col};color:${col}">${esc(selectedBus)} · ${FILTER_LABEL[f]} · ${dirLabel(dir)} <span class="d">정류장 ${rows.length}</span></h3>`
+        + `<table><thead><tr><th style="width:48px">시간</th><th style="width:150px">장소</th><th>탑승자 명단</th></tr></thead><tbody>${body}</tbody></table>`
+    }).join('')).join('')
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(selectedBus)} 배차표</title><style>`
+      + `@page{size:A4;margin:12mm}body{font-family:'Malgun Gothic','맑은 고딕',sans-serif;font-size:11px;color:#111;margin:0}`
+      + `h2{font-size:16px;margin:0 0 10px}h3{font-size:12px;margin:14px 0 4px;border-bottom:2px solid;padding-bottom:2px}`
+      + `table{width:100%;border-collapse:collapse;margin-bottom:4px}th,td{border:1px solid #999;padding:3px 5px;text-align:left;vertical-align:top}`
+      + `th{background:#eee;font-size:10px}td.t{text-align:center;font-weight:bold;white-space:nowrap}.d{color:#888;font-weight:normal}thead{display:table-header-group}`
+      + `</style></head><body><h2>${esc(selectedBus)} 정류장 배차표 <span style="font-size:11px;color:#666">(${todayStr})</span></h2>`
+      + (sections || '<p>데이터 없음</p>') + '</body></html>'
+    const w = window.open('', '_blank')
+    if (!w) { alert('팝업이 차단됨 — 팝업 허용 후 다시'); return }
+    w.document.write(html); w.document.close(); w.focus()
+    setTimeout(() => { try { w.print() } catch { /* noop */ } }, 350)
+  }
+
   if (loading) return <div className="flex justify-center py-12"><div className="w-7 h-7 border-4 border-[#004EA2] border-t-transparent rounded-full animate-spin" /></div>
 
   const inputCls = 'border border-[#E2E8F0] rounded px-1.5 py-1 text-[12px] focus:outline-none focus:ring-1 focus:ring-[#004EA2]'
@@ -565,7 +594,9 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
             </button>
           ))}
         </div>
-        <div className="relative ml-auto w-[220px] max-w-full">
+        <button onClick={printBus} disabled={!selectedBus} title="선택 호차 배차표 인쇄(A4)"
+          className="ml-auto text-sm font-semibold border border-[#004EA2] text-[#004EA2] rounded-lg px-3 py-1.5 hover:bg-[#EAF2FB] disabled:opacity-40">인쇄</button>
+        <div className="relative w-[220px] max-w-full">
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="정류장명 검색"
             className="w-full border border-[#E2E8F0] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]" />
           {search && <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-[#94A3B8] hover:text-[#1E293B] text-sm">✕</button>}
