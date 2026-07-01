@@ -210,6 +210,7 @@ export default function VehiclesPage() {
   // 지도 탭(RouteMapView) 편집 상태 — presence '편집 중' 표시에 합산
   const [mapEditing, setMapEditing] = useState(false)
   const [vehiclesRestricted, setVehiclesRestricted] = useState(false)
+  const [myBuses, setMyBuses] = useState<string[]>([])  // 여사님 본인 호차(제한 표시용)
   const [campusName, setCampusName] = useState<string | undefined>(undefined)
   const [campusId, setCampusId] = useState<string | undefined>(undefined)
 
@@ -579,7 +580,8 @@ export default function VehiclesPage() {
       .then(d => {
         if (d.permissions?.vehiclesRestricted) {
           setVehiclesRestricted(true)
-          setTab('busstops')  // 여사님 기본 = 호차별 정류장(모바일 슬라이드 뷰)
+          setTab('busstops')  // 여사님 기본 = 호차별 정류장
+          if (Array.isArray(d.myBuses)) setMyBuses(d.myBuses)
         }
         if (d.campusName) setCampusName(d.campusName)
         if (d.campusId) setCampusId(d.campusId)
@@ -1432,7 +1434,7 @@ export default function VehiclesPage() {
       {tab === 'map' && <RouteMapView campusId={campusId} campusName={campusName} fullscreen={fullscreen} showPresence={false} onEditingChange={setMapEditing} focusStop={focusStop} onCoordSaved={() => setTab('busstops')} />}
 
       {/* ═══ 호차별 정류장 세팅 탭 (중계 전용) ════════════════════ */}
-      {tab === 'busstops' && <BusStopSettingsView campusName={campusName} onLocateStop={locateStop} restricted={vehiclesRestricted} />}
+      {tab === 'busstops' && <BusStopSettingsView campusName={campusName} onLocateStop={locateStop} restricted={vehiclesRestricted} onlyBuses={myBuses} />}
 
       </div>{/* /탭 콘텐츠 */}
 

@@ -81,7 +81,7 @@ interface Row { stop: string; time: string; sess: string[]; days: string[]; stud
 interface OvRow { student_id: string; bus_name: string | null; location: string | null; pickup_time: string | null; is_absent: boolean; direction: string; name: string }
 const GRID = 'grid grid-cols-[46px_1fr_44px_116px_minmax(0,2.2fr)]'  // 시간 | 장소 | 탑승인원 | 작업(2x2) | 탑승자명단
 
-export default function BusStopSettingsView({ campusName, onLocateStop, restricted = false }: { campusName?: string; onLocateStop?: (stop: string, bus: string, init?: { lat: number; lng: number }) => void; restricted?: boolean }) {
+export default function BusStopSettingsView({ campusName, onLocateStop, restricted = false, onlyBuses = [] }: { campusName?: string; onLocateStop?: (stop: string, bus: string, init?: { lat: number; lng: number }) => void; restricted?: boolean; onlyBuses?: string[] }) {
   void campusName
   const ro = restricted  // 차량선생님(여사님): 직접수정 금지 → 보기 + 학생추가는 변경신청
   const today = new Date()
@@ -114,9 +114,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
   // 당일만 탑승(override) — 선택 날짜 기준, 날짜 바뀌면 재조회되어 사라짐
   const [overrides, setOverrides] = useState<{ arr: OvRow[]; dep: OvRow[] }>({ arr: [], dep: [] })
   const [addDayKey, setAddDayKey] = useState<string | null>(null)
-  const [isMobile, setIsMobile] = useState(false)  // 모바일=슬라이드 뷰(세션×방향 1장씩), 지도/좌표 숨김
-  const [slideIdx, setSlideIdx] = useState(0)
-  const slideRef = useRef<HTMLDivElement>(null)
+  const [isMobile, setIsMobile] = useState(false)  // 모바일=세션탭 카드 뷰(지도/좌표 숨김)
   const [busEditOpen, setBusEditOpen] = useState(false)  // 히어로 호차설정 편집
   const [busEdit, setBusEdit] = useState({ driver: '', driver_phone: '', safety: '', safety_phone: '', capacity: '' })
   const [backupOpen, setBackupOpen] = useState(false)
@@ -155,7 +153,10 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
     return () => mq.removeEventListener('change', on)
   }, [])
 
-  const buses: Bus[] = useMemo(() => (raw ? (raw.arr.buses?.length ? raw.arr.buses : raw.dep.buses) ?? [] : []), [raw])
+  const buses: Bus[] = useMemo(() => {
+    const all = raw ? (raw.arr.buses?.length ? raw.arr.buses : raw.dep.buses) ?? [] : []
+    return onlyBuses.length ? all.filter(b => onlyBuses.includes(b.name)) : all  // 여사님: 본인 호차만
+  }, [raw, onlyBuses])
   useEffect(() => { if (buses.length && !buses.some(b => b.name === selectedBus)) setSelectedBus(buses[0].name) }, [buses, selectedBus])
 
   const buildDir = useCallback((flt: string, dir: Dir): Record<string, Row[]> => {
@@ -967,59 +968,60 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
     )
   }
 
-  // ── 모바일: 세션×방향 슬라이드(한 장씩 스와이프) ──
+  // ── 모바일: 세션 탭 + 선택 세션 등원/하원 카드(세로) ──
   if (isMobile) {
-    const slides: { f: string; dir: Dir; rows: Row[] }[] = []
-    for (const f of sessions) for (const dd of (['arr', 'dep'] as Dir[])) { const rows = rowsOf(f, dd, bus); if (rows.length) slides.push({ f, dir: dd, rows }) }
-    const idx = Math.min(slideIdx, Math.max(0, slides.length - 1))
-    const cur = slides[idx]
+    const avail = sessions.filter(f => rowsOf(f, 'arr', bus).length || rowsOf(f, 'dep', bus).length)
+    const active = avail.includes(selSession) ? selSession : (avail[0] ?? '')
     return (
       <div className="pb-16">
         {msg && <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[200] px-4 py-2.5 rounded-full bg-[#16A34A] text-white text-[13px] font-extrabold shadow-xl pointer-events-none">{msg}</div>}
-        {/* 호차 탭 */}
-        <div className="flex gap-1.5 overflow-x-auto pb-1 mb-2">
-          {buses.map(b => (
-            <button key={b.id} onClick={() => { setSelectedBus(b.name); setSlideIdx(0); slideRef.current?.scrollTo({ left: 0 }) }}
-              className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-sm font-bold ${bus === b.name ? 'bg-[#004EA2] text-white' : 'bg-white border border-[#E2E8F0] text-[#64748B]'}`}>{b.name}</button>
-          ))}
-        </div>
+        {/* 호차 탭 (여사님=본인 호차만) */}
+        {buses.length > 1 && (
+          <div className="flex gap-1.5 overflow-x-auto pb-1 mb-2">
+            {buses.map(b => (
+              <button key={b.id} onClick={() => setSelectedBus(b.name)}
+                className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-sm font-bold ${bus === b.name ? 'bg-[#004EA2] text-white' : 'bg-white border border-[#E2E8F0] text-[#64748B]'}`}>{b.name}</button>
+            ))}
+          </div>
+        )}
         {/* 기준일 + 인쇄 */}
         <div className="flex items-center gap-2 mb-2">
           <input type="date" value={selDate} onChange={e => setSelDate(e.target.value)} className="border border-[#E2E8F0] rounded-lg px-2 py-1.5 text-sm" />
           <span className="text-[12px] font-bold text-[#004EA2] w-6">{selDay || '주말'}</span>
           <button onClick={() => printBuses([bus])} disabled={!bus} className="ml-auto text-sm font-semibold border border-[#004EA2] text-[#004EA2] rounded-lg px-3 py-1.5 disabled:opacity-40">인쇄</button>
         </div>
-        {/* 모바일 히어로: 당일 총 탑승인원만 */}
+        {/* 히어로: 당일 총 탑승 */}
         {bus && (
           <div className="rounded-lg bg-[#EAF2FB] px-3 py-1.5 mb-2 flex items-center justify-between">
             <span className="text-[13px] font-bold text-[#004EA2]">{bus} 당일 탑승</span>
             <span className="text-[14px] font-extrabold"><span style={{ color: ARR }}>등 {busTotalFor(bus, 'arr')}</span> · <span style={{ color: DEP }}>하 {busTotalFor(bus, 'dep')}</span></span>
           </div>
         )}
-        {slides.length === 0 ? (
+        {avail.length === 0 ? (
           <div className="text-center text-[#CBD5E1] py-16 text-sm">{bus ? `${bus} 정류장 데이터 없음` : '호차 없음'}</div>
         ) : (
           <>
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-[15px] font-extrabold" style={{ color: dirColor(cur.dir) }}>{bus} · {cur.f} · {dirLabel(cur.dir)}</span>
-              <span className="text-[11px] text-[#94A3B8]">{idx + 1}/{slides.length}</span>
-            </div>
-            <div className="flex justify-center gap-1 mb-2">
-              {slides.map((_, i) => <span key={i} className="w-1.5 h-1.5 rounded-full" style={{ background: i === idx ? '#004EA2' : '#CBD5E1' }} />)}
-            </div>
-            <div ref={slideRef} onScroll={e => { const el = e.currentTarget; setSlideIdx(Math.round(el.scrollLeft / el.clientWidth)) }}
-              className="flex overflow-x-auto -mx-1" style={{ scrollSnapType: 'x mandatory' }}>
-              {slides.map((sl, i) => (
-                <div key={i} className="min-w-full px-1" style={{ scrollSnapAlign: 'center' }}>
-                  <div className="mb-1.5 pb-0.5 text-[13px] font-bold flex items-center gap-2" style={{ borderBottom: `2px solid ${dirColor(sl.dir)}`, color: dirColor(sl.dir) }}>
-                    {sl.f} · {dirLabel(sl.dir)}
-                    <span className="text-[10px] text-[#94A3B8] font-normal">정류장 {sl.rows.length} · 탑승 {sl.rows.reduce((n, r) => n + dayCount(r, sl.dir, bus), 0)}명</span>
-                  </div>
-                  {sl.rows.map(r => <Fragment key={r.stop}>{MobileStopCard({ dir: sl.dir, bus, r, flt: sl.f })}</Fragment>)}
-                </div>
+            {/* 세션 탭 */}
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {avail.map(f => (
+                <button key={f} onClick={() => setSelSession(f)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-bold ${active === f ? 'bg-[#004EA2] text-white' : 'bg-white border border-[#E2E8F0] text-[#64748B]'}`}>{f}</button>
               ))}
             </div>
-            <p className="text-center text-[11px] text-[#CBD5E1] mt-2">← 좌우로 밀어 세션·방향 이동 →</p>
+            {/* 선택 세션 등원·하원 카드 */}
+            {(['arr', 'dep'] as Dir[]).map(dd => {
+              const rows = rowsOf(active, dd, bus)
+              if (!rows.length) return null
+              return (
+                <div key={dd} className="mb-3">
+                  <div className="mb-1.5 pb-0.5 text-[13px] font-bold flex items-center gap-2" style={{ borderBottom: `2px solid ${dirColor(dd)}`, color: dirColor(dd) }}>
+                    {dirLabel(dd)}
+                    <span className="text-[10px] text-[#94A3B8] font-normal">정류장 {rows.length} · 탑승 {rows.reduce((n, r) => n + dayCount(r, dd, bus), 0)}명</span>
+                  </div>
+                  {rows.map(r => <Fragment key={r.stop}>{MobileStopCard({ dir: dd, bus, r, flt: active })}</Fragment>)}
+                </div>
+              )
+            })}
           </>
         )}
       </div>

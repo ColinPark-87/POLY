@@ -12,7 +12,7 @@ export async function GET() {
   const service = createServiceClient()
   const { data: profile } = await service
     .from('users')
-    .select('role, position, campus_id, perm_class_roster, perm_vehicles, perm_vehicles_restricted')
+    .select('name, role, position, campus_id, perm_class_roster, perm_vehicles, perm_vehicles_restricted')
     .eq('id', user.id)
     .single()
 
@@ -30,5 +30,13 @@ export async function GET() {
     campusName = campus?.name ?? null
   }
 
-  return NextResponse.json({ permissions, campusName, campusId: profile?.campus_id ?? null })
+  // 차량선생님(restricted): 본인 호차만 보이도록 — 이름이 호차 기사/안전선생님과 일치하는 호차 목록
+  let myBuses: string[] = []
+  if (permissions.vehiclesRestricted && profile?.campus_id && profile?.name) {
+    const nm = profile.name.trim()
+    const { data: bs } = await service.from('campus_buses').select('name, driver, safety').eq('campus_id', profile.campus_id)
+    myBuses = (bs ?? []).filter(b => (b.driver ?? '').trim() === nm || (b.safety ?? '').trim() === nm).map(b => b.name)
+  }
+
+  return NextResponse.json({ permissions, campusName, campusId: profile?.campus_id ?? null, myBuses })
 }
