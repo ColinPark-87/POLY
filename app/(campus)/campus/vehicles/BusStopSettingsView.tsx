@@ -745,7 +745,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
       <span className="flex items-baseline gap-1 whitespace-nowrap">
         <span className="text-[10px] text-[#94A3B8]">{label}</span>
         <span className="text-[12px] font-bold text-[#1E293B]">{val || '–'}</span>
-        {sub ? <span className="text-[10px] text-[#94A3B8]">{sub}</span> : null}
+        {sub ? <span className="text-[12px] font-extrabold text-[#0369A1] bg-[#E0F2FE] rounded px-1 tabular-nums">{sub}</span> : null}
       </span>
     )
     return (
