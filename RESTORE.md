@@ -8,7 +8,7 @@
 | 백업 브랜치 | `backup/pre-busstop-2col-20260701` (=커밋 `bc0d888`, 2col 카드 이전 라이브) |
 | 변경 커밋 | `cb1a3cc` (반편성식 밴드·학생 2열·이모지제거 + RouteMapView handleStopResultClick coordsRef 폴백) |
 | Vercel 롤백 대상 (직전 라이브) | `poly-73fjp4t8v-colinpark-87s-projects.vercel.app` (2열 병합 카드) |
-| 현재 라이브 | `poly-oxudee07r-colinpark-87s-projects.vercel.app` / https://poly-system.vercel.app (2026-07-01, 호차별정류장 전캠퍼스 일반화+게이트해제 [탭통합 1단계]) |
+| 현재 라이브 | `poly-k2t613r7e-colinpark-87s-projects.vercel.app` / https://poly-system.vercel.app (2026-07-01, 좌표유실버그수정+여사님 restricted 지원 [탭통합 2·3단계]) |
 | 탭통합 백업 | 브랜치·태그 `pre-vehicle-consolidation-20260701`(2d5a99c, 라이브 poly-qkdgjn4ov) — 3탭 통합 착수 전 |
 | 롤백 방법 | `vercel promote poly-73fjp4t8v-colinpark-87s-projects.vercel.app` 또는 `git checkout backup/pre-busstop-2col-20260701` 후 재배포 |
 | DB 의존 | 없음(스키마 변경 없음). 기존 `campus_registered_stops`/`class_enrollments` 사용. 시간 저장 시 `bulk_update_location_time`이 학생 스케줄 시간 실제 변경. 탭 노출은 중계만(`JUNGKYE_CAMPUS_ID` 게이트) |
