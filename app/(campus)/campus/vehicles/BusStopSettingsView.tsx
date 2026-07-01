@@ -6,7 +6,7 @@
 //   시간·장소 = 셀 클릭 인라인 개별 수정(일괄 폼 없음). 좌표 = [좌표] 팝오버(주소검색/핀) 또는 [지도] 드래그.
 //   학생 추가 검색 = 개설반 현황(enrolled) 소스. 학생명 = 분리 칩.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 interface Bus { id: string; name: string; sort_order: number }
 interface Student {
@@ -475,7 +475,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
             <div className="px-1 py-1 border-r border-[#E2E8F0]">작업</div>
             <div className="px-1.5 py-1">탑승자 명단</div>
           </div>
-          {rows.map((r, i) => <StopRow key={r.stop} dir={dir} bus={bus} r={r} i={i} />)}
+          {rows.map((r, i) => <Fragment key={r.stop}>{StopRow({ dir, bus, r, i })}</Fragment>)}
           {rows.length === 0 && <div className="text-[10px] text-[#CBD5E1] py-2 px-2">정류장 없음</div>}
           {!q && (
             <div className="flex items-center gap-1 px-2 py-1 border-t border-[#EEF2F7] bg-[#FAFBFC]">
@@ -535,8 +535,8 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
               </button>
               {open && (
                 <div className="px-2 pb-2">
-                  <DirTable dir="arr" bus={bus} flt={f} />
-                  <DirTable dir="dep" bus={bus} flt={f} />
+                  {DirTable({ dir: 'arr', bus, flt: f })}
+                  {DirTable({ dir: 'dep', bus, flt: f })}
                 </div>
               )}
             </div>
