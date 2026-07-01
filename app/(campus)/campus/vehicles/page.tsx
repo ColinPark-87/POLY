@@ -1233,8 +1233,9 @@ export default function VehiclesPage() {
       <div className="flex items-center gap-1 mb-2 flex-shrink-0 border-b border-[#E2E8F0]">
         <h1 className="text-sm font-bold text-[#1E293B] whitespace-nowrap pr-2 hidden md:block">차량 관리</h1>
         <div className="flex gap-0 overflow-x-auto">
-          {([['map','시스템'],['today','모바일'],['master','학생 설정'],['busstops','호차별 정류장']] as const)
-            .filter(([k]) => !vehiclesRestricted || k === 'today' || k === 'map' || k === 'busstops')
+          {/* 탭통합: 모바일(today)·학생설정(master) 삭제 → 호차별 정류장이 대체. 시스템(노선)+호차별 2탭 */}
+          {([['map','시스템'],['busstops','호차별 정류장']] as const)
+            .filter(([k]) => !vehiclesRestricted || k === 'map' || k === 'busstops')
             .map(([k, label]) => (
             <button key={k} onClick={() => setTab(k)}
               className={`relative flex-shrink-0 px-3.5 py-2 text-sm font-medium border-b-2 transition-colors ${
