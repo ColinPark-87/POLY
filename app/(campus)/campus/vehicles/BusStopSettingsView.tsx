@@ -882,8 +882,29 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
         </div>
       </div>
 
-      {/* 선택 호차: 세션 탭 → 그 세션 등원·하원만 (스크롤 대신 탭 전환) */}
-      {(() => {
+      {/* 검색 중 = 전 호차 × 전 세션 매칭 정류장 (호차별 그룹) */}
+      {q ? (
+        <div className="space-y-4">
+          {buses.map(b => {
+            const hit = FILTERS.some(f => (['arr', 'dep'] as Dir[]).some(dir => rowsOf(f, dir, b.name).some(r => r.stop.toLowerCase().includes(q))))
+            if (!hit) return null
+            return (
+              <div key={b.id}>
+                <div className="text-[13px] font-extrabold text-[#004EA2] mb-1 pb-0.5 border-b-2 border-[#004EA2]">{b.name}</div>
+                {FILTERS.map(f => (
+                  <Fragment key={f}>
+                    {DirTable({ dir: 'arr', bus: b.name, flt: f })}
+                    {DirTable({ dir: 'dep', bus: b.name, flt: f })}
+                  </Fragment>
+                ))}
+              </div>
+            )
+          })}
+          {buses.every(b => !FILTERS.some(f => (['arr', 'dep'] as Dir[]).some(dir => rowsOf(f, dir, b.name).some(r => r.stop.toLowerCase().includes(q))))) && (
+            <div className="text-center text-[#CBD5E1] text-sm py-10">&lsquo;{search}&rsquo; 정류장 없음 (전 호차 검색)</div>
+          )}
+        </div>
+      ) : (() => {
         const avail = FILTERS.filter(f => rowsOf(f, 'arr', bus).length || rowsOf(f, 'dep', bus).length)
         if (!avail.length) return <div className="text-center text-[#CBD5E1] text-sm py-10">{bus ? `${bus} 정류장 데이터 없음` : '호차 없음'}</div>
         const active = avail.includes(selSession) ? selSession : avail[0]
