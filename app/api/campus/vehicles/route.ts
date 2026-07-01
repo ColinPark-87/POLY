@@ -694,6 +694,26 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, enrollment_updated: true })
   }
 
+  if (action === 'list_overrides') {
+    // 특정 날짜 override(당일만 탑승/결석) 목록 — 호차별 정류장 날짜별 인원 병합용
+    const { date, direction: dir } = body
+    if (!date) return NextResponse.json({ overrides: [] })
+    let qb = service.from('pickup_overrides')
+      .select('student_id, bus_name, location, pickup_time, is_absent, direction, campus_students(name)')
+      .eq('campus_id', campusId).eq('date', date)
+    if (dir === 'arr' || dir === 'dep') qb = qb.eq('direction', dir)
+    const { data } = await qb
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const overrides = (data ?? []).map((o: any) => {
+      const cs = Array.isArray(o.campus_students) ? o.campus_students[0] : o.campus_students
+      return {
+        student_id: o.student_id, bus_name: o.bus_name, location: o.location, pickup_time: o.pickup_time,
+        is_absent: o.is_absent, direction: o.direction, name: cs?.name ?? '',
+      }
+    })
+    return NextResponse.json({ overrides })
+  }
+
   if (action === 'remove_rider_day') {
     // 특정 학생의 특정 요일(그 호차) 탑승 제거 — 학생별 요일 체크 해제용
     const { student_id, direction: dir, day, bus_name } = body
