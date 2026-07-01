@@ -3207,6 +3207,26 @@ function StudentDetailModal({ enrollment, student, classes, sessions, buses, enr
       : Object.values(busSessionDepStops[busName] ?? {}).flat().filter((s, i, a) => a.findIndex(x => x.loc === s.loc) === i)
     return withRegistered(busName, 'dep', base)
   }
+  // 세션별 그룹(전 세션 선택 가능) — 유치부 아이가 초등부 매일반 하원(방과후) 배차 가능하도록 세션 잠금 해제
+  function getStopGroups(busName: string, dir: 'arr' | 'dep'): { session: string; sid: string; stops: { loc: string; time?: string }[] }[] {
+    if (!busName) return []
+    const bySess = (dir === 'arr' ? busSessionArrStops : busSessionDepStops)[busName] ?? {}
+    const out: { session: string; sid: string; stops: { loc: string; time?: string }[] }[] = []
+    const seen = new Set<string>()
+    const order = [curSessId, ...Object.keys(bySess).filter(s => s !== curSessId)]
+    for (const sid of order) {
+      const stops = bySess[sid]
+      if (!stops || !stops.length) continue
+      const name = sessions.find(s => s.id === sid)?.name ?? '기타'
+      const filtered = stops.filter(s => { if (seen.has(s.loc)) return false; seen.add(s.loc); return true })
+      if (filtered.length) out.push({ session: name + (sid === curSessId ? ' (현재 세션)' : ''), sid, stops: filtered })
+    }
+    const reg = registeredStops.filter(rs => rs.bus_name === busName && rs.direction === dir)
+      .map(rs => ({ loc: rs.stop_name.trim(), time: rs.default_time ?? undefined }))
+      .filter(s => { if (seen.has(s.loc)) return false; seen.add(s.loc); return true })
+    if (reg.length) out.push({ session: '추가 정류장(지도)', sid: 'reg', stops: reg })
+    return out
+  }
 
   function handleSessionChange(sessId: string) {
     setSelectedSessionId(sessId)
@@ -3268,14 +3288,19 @@ function StudentDetailModal({ enrollment, student, classes, sessions, buses, enr
                 </td>
                 <td className="py-1 pr-1">
                   {(() => {
-                    const opts = getArrStops(arr[day] ?? '')
+                    const groups = getStopGroups(arr[day] ?? '', 'arr')
                     const cur = arrLoc[day] ?? ''
-                    const allOpts = cur && !opts.find(x => x.loc === cur) ? [{ loc: cur, time: undefined }, ...opts] : opts
+                    const inGroups = groups.some(g => g.stops.some(x => x.loc === cur))
                     return (
                       <select value={cur} onChange={e => setArrLoc(p => ({ ...p, [day]: e.target.value }))}
                         className="w-full text-xs border border-[#E2E8F0] rounded px-1 py-1 bg-white focus:outline-none">
                         <option value="">-</option>
-                        {allOpts.map(s => <option key={s.loc} value={s.loc}>{s.loc}{s.time ? ` · ${s.time}` : ''}</option>)}
+                        {cur && !inGroups && <option value={cur}>{cur} (현재)</option>}
+                        {groups.map(g => (
+                          <optgroup key={g.sid} label={g.session}>
+                            {g.stops.map(s => <option key={s.loc} value={s.loc}>{s.loc}{s.time ? ` · ${s.time}` : ''}</option>)}
+                          </optgroup>
+                        ))}
                       </select>
                     )
                   })()}
@@ -3289,14 +3314,19 @@ function StudentDetailModal({ enrollment, student, classes, sessions, buses, enr
                 </td>
                 <td className="py-1">
                   {(() => {
-                    const opts = getDepStops(dep[day] ?? '')
+                    const groups = getStopGroups(dep[day] ?? '', 'dep')
                     const cur = depLoc[day] ?? ''
-                    const allOpts = cur && !opts.find(x => x.loc === cur) ? [{ loc: cur, time: undefined }, ...opts] : opts
+                    const inGroups = groups.some(g => g.stops.some(x => x.loc === cur))
                     return (
                       <select value={cur} onChange={e => setDepLoc(p => ({ ...p, [day]: e.target.value }))}
                         className="w-full text-xs border border-[#E2E8F0] rounded px-1 py-1 bg-white focus:outline-none">
                         <option value="">-</option>
-                        {allOpts.map(s => <option key={s.loc} value={s.loc}>{s.loc}{s.time ? ` · ${s.time}` : ''}</option>)}
+                        {cur && !inGroups && <option value={cur}>{cur} (현재)</option>}
+                        {groups.map(g => (
+                          <optgroup key={g.sid} label={g.session}>
+                            {g.stops.map(s => <option key={s.loc} value={s.loc}>{s.loc}{s.time ? ` · ${s.time}` : ''}</option>)}
+                          </optgroup>
+                        ))}
                       </select>
                     )
                   })()}
