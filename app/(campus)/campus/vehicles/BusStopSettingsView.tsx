@@ -507,15 +507,30 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
       flash(`${bus} '${stop}' 추가됨`); load()
     } catch (e) { alert(`추가 실패: ${(e as Error).message}`) } finally { setSavingKey(null) }
   }
-  async function deleteStop(dir: Dir, bus: string, stop: string) {
-    if (!confirm(`${bus} '${stop}' (${dirLabel(dir)}) 정류장을 삭제할까요?`)) return
-    setSavingKey('del|' + dkey(dir, bus, stop))
+  async function deleteStop(dir: Dir, bus: string, r: Row) {
+    const n = r.students.length
+    const msg = n > 0
+      ? `${bus} '${r.stop}' (${dirLabel(dir)}) 정류장을 삭제할까요?\n\n⚠️ 탑승 ${n}명의 이 정류장(${dirLabel(dir)}) 배정이 함께 해제됩니다.\n(학생·개설반에서 이 호차 ${dirLabel(dir)} 배차가 사라짐)`
+      : `${bus} '${r.stop}' (${dirLabel(dir)}) 정류장을 삭제할까요?`
+    if (!confirm(msg)) return
+    setSavingKey('del|' + dkey(dir, bus, r.stop))
     try {
+      // 학생 있으면 먼저 배정 해제(그 방향)
+      for (const s of r.students) {
+        if (!s.class_id) continue
+        const res = await fetch('/api/campus/vehicles', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'remove_rider', student_id: s.id, class_id: s.class_id, direction: dir }),
+        })
+        const d = await res.json().catch(() => ({}))
+        if (!res.ok || d.error) throw new Error(`${s.name}: ${d.error ?? res.status}`)
+      }
+      // 등록 정류장(빈 정류장 마스터) 삭제
       await fetch('/api/campus/registered-stops', {
         method: 'DELETE', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bus_name: bus, stop_name: stop, direction: dir }),
+        body: JSON.stringify({ bus_name: bus, stop_name: r.stop, direction: dir }),
       })
-      flash(`'${stop}' 삭제됨`); load()
+      flash(`'${r.stop}' 삭제됨${n > 0 ? ` (${n}명 배정 해제)` : ''}`); load()
     } catch (e) { alert(`삭제 실패: ${(e as Error).message}`) } finally { setSavingKey(null) }
   }
 
@@ -670,7 +685,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
             {!ro && <button onClick={() => { if (coording) setCoordKey(null); else { setCoordKey(k); setGeoResults([]); const c = coords[r.stop]; setCoordDraft({ lat: c ? String(c.lat) : '', lng: c ? String(c.lng) : '', addr: '' }) } }}
               title={hasCoord ? '좌표 설정됨 — 수정' : '좌표 없음 — 입력 필요'}
               className={`font-bold border rounded px-1 py-px ${coording ? 'bg-[#EA580C] text-white border-[#EA580C]' : hasCoord ? 'bg-[#004EA2] text-white border-[#004EA2]' : 'text-[#B45309] border-[#F59E0B] bg-[#FEF3C7] animate-pulse'}`}>{hasCoord ? '좌표' : '좌표!'}</button>}
-            {!ro && !r.hasStudents && adds.length === 0 && <button onClick={() => deleteStop(dir, bus, r.stop)} title="정류장 삭제" className="col-span-2 text-[#CBD5E1] hover:text-[#EF4444] font-bold">정류장 삭제</button>}
+            {!ro && <button onClick={() => deleteStop(dir, bus, r)} title="정류장 삭제(학생 있으면 배정 해제 후 삭제)" className="col-span-2 text-[#EF4444] border border-[#FCA5A5] rounded px-1 py-px font-bold hover:bg-[#FEF2F2]">정류장 삭제</button>}
           </div>
           {/* 탑승자 명단 (칩) — 요일 미탑승/결석은 흐림, 당일추가는 주황 */}
           <div className="px-1.5 py-0.5 flex flex-wrap gap-1 items-center min-w-0">
@@ -944,6 +959,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
             className={`text-[13px] font-bold border rounded-lg px-3 py-1.5 ${adding ? 'bg-[#16A34A] text-white border-[#16A34A]' : 'text-[#16A34A] border-[#16A34A]'}`}>{ro ? '학생추가 신청' : '학생+'}</button>
           {!ro && <button onClick={() => { setAddDayKey(a => a === k ? null : k); setAddRiderKey(null); setRiderQ(''); setRiderResults([]) }}
             className={`text-[13px] font-bold border rounded-lg px-3 py-1.5 ${dayAdding ? 'bg-[#EA580C] text-white border-[#EA580C]' : 'text-[#EA580C] border-[#EA580C]'}`}>당일+</button>}
+          {!ro && <button onClick={() => deleteStop(dir, bus, r)} className="ml-auto text-[13px] font-bold border border-[#FCA5A5] text-[#EF4444] rounded-lg px-3 py-1.5 hover:bg-[#FEF2F2]">정류장 삭제</button>}
         </div>
         {(adding || dayAdding) && (
           <div className="relative px-2.5 py-2 border-t border-[#EEF2F7]" style={{ background: dayAdding ? '#FFF7ED' : '#F0FDF4' }}>
