@@ -3,7 +3,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { resolvePermissions } from '@/lib/permissions'
 import { conflictBody } from '@/lib/vehicles/conflict'
 import { logUsage } from '@/lib/usage-log'
-import { renameStopInSchedule } from '@/lib/utils/stop-name'
+import { renameStopInSchedule, sameStop } from '@/lib/utils/stop-name'
 
 // 차량 관리 권한 보유자(vehicles)만 접근 — 일반 직원의 좌표 열람/변조 차단.
 // 제한권한(vehiclesRestricted, 안전선생님)도 현행대로 접근 가능하도록 vehicles 만 요구.
@@ -135,17 +135,21 @@ export async function PATCH(request: NextRequest) {
   const errs: string[] = []
   const result: Record<string, unknown> = { oldName, newName, campusId, by: profile?.name ?? null }
 
-  // 1) campus_stop_coords: 기존 좌표 보존하며 이름 변경
-  //    ⚠️버그수정: 이름만 변경(lat/lng 미제공) 시 기존 좌표가 유실되던 문제 → 기존 좌표 읽어 새 이름으로 이관
+  // 1) campus_stop_coords: 기존 좌표 보존하며 이름 변경 (정규화 매칭 = 공백/표기차 대응)
+  //    ⚠️버그수정: ①이름만 변경 시 좌표 유실 ②정확일치 실패로 아무것도 안바뀌던 문제 → 정규화 매칭 + 좌표 이관
   {
-    const { data: oldCoord } = await service.from('campus_stop_coords')
-      .select('lat, lng').eq('campus_id', campusId).eq('stop_name', oldName).maybeSingle()
-    const effLat = lat !== undefined && lat !== null ? lat : oldCoord?.lat
-    const effLng = lng !== undefined && lng !== null ? lng : oldCoord?.lng
-    const { error: delErr, count: delCnt } = await service.from('campus_stop_coords')
-      .delete({ count: 'exact' }).eq('campus_id', campusId).eq('stop_name', oldName)
-    if (delErr) errs.push(`coords-del:${delErr.message}`)
-    result.coordsDeleted = delCnt ?? 0
+    const { data: allCoords } = await service.from('campus_stop_coords')
+      .select('stop_name, lat, lng').eq('campus_id', campusId)
+    const matches = (allCoords ?? []).filter(c => sameStop(c.stop_name, oldName))
+    const src = matches[0]
+    const effLat = lat !== undefined && lat !== null ? lat : src?.lat
+    const effLng = lng !== undefined && lng !== null ? lng : src?.lng
+    for (const m of matches) {
+      const { error: delErr } = await service.from('campus_stop_coords')
+        .delete().eq('campus_id', campusId).eq('stop_name', m.stop_name)
+      if (delErr) errs.push(`coords-del:${delErr.message}`)
+    }
+    result.coordsDeleted = matches.length
     if (Number.isFinite(effLat) && Number.isFinite(effLng)) {
       const { error: upErr } = await service.from('campus_stop_coords').upsert(
         { campus_id: campusId, stop_name: newName, lat: effLat, lng: effLng, updated_at: new Date().toISOString(), updated_by: profile?.name ?? null },
@@ -181,28 +185,30 @@ export async function PATCH(request: NextRequest) {
   }
   result.enrChanged = enrChanged
 
-  // 3) campus_registered_stops: 빈 정류장 마스터(학생 0명)도 이름 변경.
+  // 3) campus_registered_stops: 빈 정류장 마스터(학생 0명)도 이름 변경 (정규화 매칭).
   // 충돌 회피: 같은 (호차·방향)에 이미 newName이 있으면 제거 후 in-place UPDATE.
-  const { data: regRows, error: regSelErr } = await service.from('campus_registered_stops')
-    .select('bus_name, direction').eq('campus_id', campusId).eq('stop_name', oldName)
+  const { data: allReg, error: regSelErr } = await service.from('campus_registered_stops')
+    .select('id, stop_name, bus_name, direction').eq('campus_id', campusId)
   if (regSelErr) errs.push(`reg-sel:${regSelErr.message}`)
-  result.regMatched = (regRows ?? []).length
-  if (regRows && regRows.length) {
-    for (const r of regRows) {
-      await service.from('campus_registered_stops').delete()
-        .eq('campus_id', campusId).eq('stop_name', newName).eq('bus_name', r.bus_name).eq('direction', r.direction)
-    }
-    const { error: regUpdErr, count: regCnt } = await service.from('campus_registered_stops')
-      .update({ stop_name: newName, updated_by: profile?.name ?? null }, { count: 'exact' })
-      .eq('campus_id', campusId).eq('stop_name', oldName)
-    if (regUpdErr) errs.push(`reg-upd:${regUpdErr.message}`)
-    result.regUpdated = regCnt ?? 0
+  const regMatches = (allReg ?? []).filter(r => sameStop(r.stop_name, oldName))
+  result.regMatched = regMatches.length
+  let regUpd = 0
+  for (const rm of regMatches) {
+    await service.from('campus_registered_stops').delete()
+      .eq('campus_id', campusId).eq('stop_name', newName).eq('bus_name', rm.bus_name).eq('direction', rm.direction)
+    const { error: regUpdErr } = await service.from('campus_registered_stops')
+      .update({ stop_name: newName, updated_by: profile?.name ?? null }).eq('id', rm.id)
+    if (regUpdErr) errs.push(`reg-upd:${regUpdErr.message}`); else regUpd++
   }
+  result.regUpdated = regUpd
 
-  // 4) pickup_overrides: 오늘만 적용된 임시 위치(override location)도 oldName이면 newName으로.
-  const { error: ovErr } = await service.from('pickup_overrides')
-    .update({ location: newName }).eq('campus_id', campusId).eq('location', oldName)
-  if (ovErr) errs.push(`ov:${ovErr.message}`)
+  // 4) pickup_overrides: 임시 위치(override location)도 정규화 매칭으로 newName 이관.
+  const { data: allOv } = await service.from('pickup_overrides')
+    .select('id, location').eq('campus_id', campusId).not('location', 'is', null)
+  for (const ov of (allOv ?? []).filter(o => sameStop(o.location, oldName))) {
+    const { error: ovErr } = await service.from('pickup_overrides').update({ location: newName }).eq('id', ov.id)
+    if (ovErr) errs.push(`ov:${ovErr.message}`)
+  }
 
   console.log('[RENAME]', JSON.stringify({ ...result, errs }))
   if (errs.length) return NextResponse.json({ ok: false, error: errs.join(' | '), result }, { status: 500 })
