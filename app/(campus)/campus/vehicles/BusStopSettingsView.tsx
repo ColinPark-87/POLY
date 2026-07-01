@@ -81,8 +81,9 @@ interface Row { stop: string; time: string; sess: string[]; days: string[]; stud
 interface OvRow { student_id: string; bus_name: string | null; location: string | null; pickup_time: string | null; is_absent: boolean; direction: string; name: string }
 const GRID = 'grid grid-cols-[46px_1fr_44px_116px_minmax(0,2.2fr)]'  // 시간 | 장소 | 탑승인원 | 작업(2x2) | 탑승자명단
 
-export default function BusStopSettingsView({ campusName, onLocateStop }: { campusName?: string; onLocateStop?: (stop: string, bus: string) => void }) {
+export default function BusStopSettingsView({ campusName, onLocateStop, restricted = false }: { campusName?: string; onLocateStop?: (stop: string, bus: string) => void; restricted?: boolean }) {
   void campusName
+  const ro = restricted  // 차량선생님(여사님): 직접수정 금지 → 보기 + 학생추가는 변경신청
   const today = new Date()
   const todayStr = [today.getFullYear(), String(today.getMonth() + 1).padStart(2, '0'), String(today.getDate()).padStart(2, '0')].join('-')
 
@@ -105,7 +106,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
   // 학생 추가
   const [addRiderKey, setAddRiderKey] = useState<string | null>(null)
   const [riderQ, setRiderQ] = useState('')
-  const [riderResults, setRiderResults] = useState<{ id: string; name: string; english_name: string | null }[]>([])
+  const [riderResults, setRiderResults] = useState<{ id: string; name: string; english_name: string | null; class_id?: string }[]>([])
   // 새 정류장
   const [addStop, setAddStop] = useState<Record<string, { stop: string; time: string }>>({})
   const composing = useRef(false)  // 한글 IME 조합 중 검색 트리거 억제(자모 분해 방지)
@@ -332,7 +333,8 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
     const d = await res.json().catch(() => ({}))
     setRiderResults((d.students ?? []).slice(0, 12))
   }
-  async function addRider(dir: Dir, bus: string, r: Row, stu: { id: string; name: string }) {
+  async function addRider(dir: Dir, bus: string, r: Row, stu: { id: string; name: string; class_id?: string }) {
+    if (ro) return reqAddRider(dir, bus, r, stu)  // 여사님: 직접추가 대신 변경신청
     setSavingKey('add-rider|' + dir + stu.id)
     try {
       const res = await fetch('/api/campus/vehicles', {
@@ -348,6 +350,25 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
       setRiderQ(''); setRiderResults([])
       flash(`'${stu.name}' 추가됨`); load()
     } catch (e) { alert(`추가 실패: ${(e as Error).message}`) } finally { setSavingKey(null) }
+  }
+  // 여사님(restricted) 학생추가 = 변경신청(승인 대기) — submit_change_request
+  async function reqAddRider(dir: Dir, bus: string, r: Row, stu: { id: string; name: string; class_id?: string }) {
+    if (!stu.class_id) { alert('학생 반 정보 없음 — 다시 검색해 주세요.'); return }
+    setSavingKey('req|' + stu.id)
+    try {
+      const res = await fetch('/api/campus/vehicles', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'submit_change_request', student_id: stu.id, student_name: stu.name, class_id: stu.class_id,
+          direction: dir, from_bus: null, to_bus: bus, days: r.days.length ? r.days : [...DAYS],
+          location: r.stop, pickup_time: r.time || undefined,
+        }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok || d.error) throw new Error(d.error ?? `${res.status}`)
+      setRiderQ(''); setRiderResults([]); setAddRiderKey(null)
+      flash(`'${stu.name}' 추가 신청 접수 — 데스크 승인 후 반영`)
+    } catch (e) { alert(`신청 실패: ${(e as Error).message}`) } finally { setSavingKey(null) }
   }
 
   // ── 백업/복원 (학생설정 탭에서 이관) — 서버 /api/campus/backup ──
@@ -585,21 +606,21 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
         <div className={`${GRID} items-center text-[11px] ${i % 2 === 0 ? 'bg-white' : 'bg-[#F1F5F9]'} hover:bg-[#EAF2FB]`}>
           {/* 시간 (클릭 → 아래 편집행) */}
           <div className="px-1 py-0.5 border-r border-[#F1F5F9] text-center">
-            <button onClick={() => startCell(k, 'time', r.time)} title="클릭해 시간 변경"
-              className={`font-bold tabular-nums hover:underline ${editing && cellEdit!.field === 'time' ? 'ring-1 ring-[#004EA2] rounded px-1' : ''}`} style={{ color }}>{r.time || '–'}</button>
+            <button onClick={() => { if (ro) return; startCell(k, 'time', r.time) }} title={ro ? '' : '클릭해 시간 변경'}
+              className={`font-bold tabular-nums ${ro ? '' : 'hover:underline'} ${editing && cellEdit!.field === 'time' ? 'ring-1 ring-[#004EA2] rounded px-1' : ''}`} style={{ color }}>{r.time || '–'}</button>
           </div>
           {/* 장소 (클릭 → 아래 편집행) + 요일 */}
           <div className="px-1.5 py-0.5 border-r border-[#F1F5F9] min-w-0">
-            <button onClick={() => startCell(k, 'name', r.stop)} title="클릭해 정류장명 변경"
-              className={`font-semibold text-[#1E293B] truncate hover:underline block w-full text-left ${editing && cellEdit!.field === 'name' ? 'ring-1 ring-[#004EA2] rounded px-1' : ''}`}>
+            <button onClick={() => { if (ro) return; startCell(k, 'name', r.stop) }} title={ro ? '' : '클릭해 정류장명 변경'}
+              className={`font-semibold text-[#1E293B] truncate block w-full text-left ${ro ? '' : 'hover:underline'} ${editing && cellEdit!.field === 'name' ? 'ring-1 ring-[#004EA2] rounded px-1' : ''}`}>
               {r.stop}{!hasCoord && <span className="text-[#F59E0B] font-normal"> *</span>}</button>
             {r.hasStudents && (
               <div className="flex gap-0.5 mt-0.5" title="정류장 운행요일 — 켜진 요일 누르면 해당 요일 전체 탑승 제거">
                 {DAYS.map(day => {
                   const on = r.days.includes(day)
                   return (
-                    <button key={day} onClick={() => on && removeDay(dir, bus, r, day)} disabled={!on || busy}
-                      title={on ? `${day}요일 운행 — 누르면 정류장 전체 제거` : `${day}요일 미운행`}
+                    <button key={day} onClick={() => on && !ro && removeDay(dir, bus, r, day)} disabled={!on || busy || ro}
+                      title={on ? (ro ? `${day}요일 운행` : `${day}요일 운행 — 누르면 정류장 전체 제거`) : `${day}요일 미운행`}
                       className="text-[8px] font-bold rounded-full w-3 h-3 flex items-center justify-center disabled:cursor-default"
                       style={on ? { background: color, color: '#fff' } : { background: '#F1F5F9', color: '#CBD5E1' }}>{day}</button>
                   )
@@ -612,20 +633,20 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
             <span className="text-[15px] font-extrabold leading-none tabular-nums" style={{ color }}>{cnt}</span>
             {selDay && cnt !== r.students.length && <span className="text-[8px] text-[#94A3B8] mt-0.5">주간 {r.students.length}</span>}
           </div>
-          {/* 작업 2x2: 학생+ · 당일+ / 지도 · 좌표 */}
+          {/* 작업 — 여사님(ro)은 학생추가(신청)만 */}
           <div className="px-1 py-1 grid grid-cols-2 gap-0.5 content-start text-[9px] border-r border-[#F1F5F9]">
             <button onClick={() => { setAddRiderKey(a => a === k ? null : k); setAddDayKey(null); setRiderQ(''); setRiderResults([]) }}
-              title="상시 탑승 추가(개설반, 요일 반복)" className={`font-bold border rounded px-1 py-px ${adding ? 'bg-[#16A34A] text-white border-[#16A34A]' : 'text-[#16A34A] border-[#16A34A]'}`}>학생+</button>
-            <button onClick={() => { setAddDayKey(a => a === k ? null : k); setAddRiderKey(null); setRiderQ(''); setRiderResults([]) }}
-              title={`${selDate} 당일만 탑승(1회, 개설반)`} className={`font-bold border rounded px-1 py-px ${dayAdding ? 'bg-[#EA580C] text-white border-[#EA580C]' : 'text-[#EA580C] border-[#EA580C]'}`}>당일+</button>
-            {onLocateStop
+              title={ro ? '학생 추가 신청(데스크 승인)' : '상시 탑승 추가(개설반, 요일 반복)'} className={`font-bold border rounded px-1 py-px ${ro ? 'col-span-2' : ''} ${adding ? 'bg-[#16A34A] text-white border-[#16A34A]' : 'text-[#16A34A] border-[#16A34A]'}`}>{ro ? '학생추가 신청' : '학생+'}</button>
+            {!ro && <button onClick={() => { setAddDayKey(a => a === k ? null : k); setAddRiderKey(null); setRiderQ(''); setRiderResults([]) }}
+              title={`${selDate} 당일만 탑승(1회, 개설반)`} className={`font-bold border rounded px-1 py-px ${dayAdding ? 'bg-[#EA580C] text-white border-[#EA580C]' : 'text-[#EA580C] border-[#EA580C]'}`}>당일+</button>}
+            {!ro && onLocateStop
               ? <button onClick={() => onLocateStop(r.stop, bus)} title={hasCoord ? '시스템 지도로 이동 → 핀 드래그' : '좌표 없음 — 먼저 [좌표] 입력'}
                   className={`font-bold border rounded px-1 py-px ${hasCoord ? 'bg-[#004EA2] text-white border-[#004EA2]' : 'text-[#CBD5E1] border-[#E2E8F0] bg-[#F8FAFC]'}`}>지도</button>
-              : <span />}
-            <button onClick={() => { if (coording) setCoordKey(null); else { setCoordKey(k); const c = coords[r.stop]; setCoordDraft({ lat: c ? String(c.lat) : '', lng: c ? String(c.lng) : '', addr: '' }) } }}
+              : null}
+            {!ro && <button onClick={() => { if (coording) setCoordKey(null); else { setCoordKey(k); const c = coords[r.stop]; setCoordDraft({ lat: c ? String(c.lat) : '', lng: c ? String(c.lng) : '', addr: '' }) } }}
               title={hasCoord ? '좌표 설정됨 — 수정' : '좌표 없음 — 입력 필요'}
-              className={`font-bold border rounded px-1 py-px ${coording ? 'bg-[#EA580C] text-white border-[#EA580C]' : hasCoord ? 'bg-[#004EA2] text-white border-[#004EA2]' : 'text-[#B45309] border-[#F59E0B] bg-[#FEF3C7] animate-pulse'}`}>{hasCoord ? '좌표' : '좌표!'}</button>
-            {!r.hasStudents && adds.length === 0 && <button onClick={() => deleteStop(dir, bus, r.stop)} title="정류장 삭제" className="col-span-2 text-[#CBD5E1] hover:text-[#EF4444] font-bold">정류장 삭제</button>}
+              className={`font-bold border rounded px-1 py-px ${coording ? 'bg-[#EA580C] text-white border-[#EA580C]' : hasCoord ? 'bg-[#004EA2] text-white border-[#004EA2]' : 'text-[#B45309] border-[#F59E0B] bg-[#FEF3C7] animate-pulse'}`}>{hasCoord ? '좌표' : '좌표!'}</button>}
+            {!ro && !r.hasStudents && adds.length === 0 && <button onClick={() => deleteStop(dir, bus, r.stop)} title="정류장 삭제" className="col-span-2 text-[#CBD5E1] hover:text-[#EF4444] font-bold">정류장 삭제</button>}
           </div>
           {/* 탑승자 명단 (칩) — 요일 미탑승/결석은 흐림, 당일추가는 주황 */}
           <div className="px-1.5 py-0.5 flex flex-wrap gap-1 items-center min-w-0">
@@ -636,9 +657,9 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
                 <span key={s.id} className="inline-flex flex-col gap-0.5 bg-[#F1F5F9] rounded px-1 py-0.5 whitespace-nowrap" style={{ opacity: rides ? 1 : 0.4 }}>
                   <span className="flex items-center gap-0.5 text-[11px] text-[#334155]">
                     <span className="text-[8px] text-[#94A3B8]">{si + 1}</span><span className={`font-bold ${rides ? '' : 'line-through'}`}>{s.name}</span>
-                    <button onClick={() => removeRider(dir, bus, r.stop, s)} title="빼기(상시)" className="text-[#B6C0CC] hover:text-[#EF4444] leading-none ml-0.5">×</button>
+                    {!ro && <button onClick={() => removeRider(dir, bus, r.stop, s)} title="빼기(상시)" className="text-[#B6C0CC] hover:text-[#EF4444] leading-none ml-0.5">×</button>}
                   </span>
-                  <span className="flex gap-0.5" title="학생 운행요일 — 눌러 켜고/끄기">
+                  {!ro && <span className="flex gap-0.5" title="학생 운행요일 — 눌러 켜고/끄기">
                     {DAYS.map(day => {
                       const on = sd.includes(day)
                       return (
@@ -648,14 +669,14 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
                           style={on ? { background: color, color: '#fff' } : { background: '#E2E8F0', color: '#94A3B8' }}>{day}</button>
                       )
                     })}
-                  </span>
+                  </span>}
                 </span>
               )
             })}
             {adds.map(o => (
               <span key={'ov' + o.student_id} className="inline-flex items-center gap-0.5 bg-[#FFEDD5] border border-[#FED7AA] rounded px-1 py-0.5 text-[11px] text-[#9A3412] whitespace-nowrap" title={`${selDate} 당일만 탑승`}>
                 <span className="text-[7px] font-bold bg-[#EA580C] text-white rounded px-0.5">당일</span>{o.name}
-                <button onClick={() => removeDayRider(dir, o.student_id, o.name)} title="당일 탑승 취소" className="text-[#EA580C] hover:text-[#EF4444] leading-none">×</button>
+                {!ro && <button onClick={() => removeDayRider(dir, o.student_id, o.name)} title="당일 탑승 취소" className="text-[#EA580C] hover:text-[#EF4444] leading-none">×</button>}
               </span>
             ))}
             {r.students.length === 0 && adds.length === 0 && <span className="text-[10px] text-[#CBD5E1]">탑승 없음</span>}
@@ -770,7 +791,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
           </div>
           {rows.map((r, i) => <Fragment key={r.stop}>{StopRow({ dir, bus, r, i })}</Fragment>)}
           {rows.length === 0 && <div className="text-[10px] text-[#CBD5E1] py-2 px-2">정류장 없음</div>}
-          {!q && (
+          {!q && !ro && (
             <div className="flex items-center gap-1 px-2 py-1 border-t border-[#EEF2F7] bg-[#FAFBFC]">
               <span className="text-[10px] font-bold text-[#94A3B8]">+ 새 정류장</span>
               <input type="time" value={add.time} onChange={e => setAddStop(prev => ({ ...prev, [bk]: { ...add, time: e.target.value } }))} className={`w-24 ${inputCls}`} />
@@ -802,16 +823,16 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
           <span className="text-[15px] font-extrabold text-[#004EA2]">{b.name}</span>
           <M label="기사" val={b.driver} sub={b.driver_phone} />
           <M label="정원" val={cap ? `${cap}석` : null} />
-          <M label="안전샘" val={b.safety} sub={b.safety_phone} />
-          <button onClick={() => { if (busEditOpen) { setBusEditOpen(false); return } setBusEdit({ driver: b.driver ?? '', driver_phone: b.driver_phone ?? '', safety: b.safety ?? '', safety_phone: b.safety_phone ?? '', capacity: b.capacity ? String(b.capacity) : '' }); setBusEditOpen(true) }}
-            className={`ml-auto text-[11px] font-bold border rounded px-2 py-0.5 ${busEditOpen ? 'bg-[#004EA2] text-white border-[#004EA2]' : 'text-[#004EA2] border-[#004EA2]'}`}>{busEditOpen ? '닫기' : '수정'}</button>
+          <M label="안전선생님" val={b.safety} sub={b.safety_phone} />
+          {!ro && <button onClick={() => { if (busEditOpen) { setBusEditOpen(false); return } setBusEdit({ driver: b.driver ?? '', driver_phone: b.driver_phone ?? '', safety: b.safety ?? '', safety_phone: b.safety_phone ?? '', capacity: b.capacity ? String(b.capacity) : '' }); setBusEditOpen(true) }}
+            className={`ml-auto text-[11px] font-bold border rounded px-2 py-0.5 ${busEditOpen ? 'bg-[#004EA2] text-white border-[#004EA2]' : 'text-[#004EA2] border-[#004EA2]'}`}>{busEditOpen ? '닫기' : '수정'}</button>}
         </div>
         {busEditOpen && (
           <div className="mt-1 pt-1 border-t border-[#E2E8F0] flex flex-wrap items-center gap-1.5">
             <label className="flex items-center gap-1 text-[10px] text-[#94A3B8]">기사
               <input value={busEdit.driver} onChange={e => setBusEdit(v => ({ ...v, driver: e.target.value }))} placeholder="이름" className={`w-20 ${inputCls}`} />
               <input value={busEdit.driver_phone} onChange={e => setBusEdit(v => ({ ...v, driver_phone: e.target.value }))} placeholder="전화" className={`w-28 ${inputCls}`} /></label>
-            <label className="flex items-center gap-1 text-[10px] text-[#94A3B8]">안전샘
+            <label className="flex items-center gap-1 text-[10px] text-[#94A3B8]">안전선생님
               <input value={busEdit.safety} onChange={e => setBusEdit(v => ({ ...v, safety: e.target.value }))} placeholder="이름" className={`w-20 ${inputCls}`} />
               <input value={busEdit.safety_phone} onChange={e => setBusEdit(v => ({ ...v, safety_phone: e.target.value }))} placeholder="전화" className={`w-28 ${inputCls}`} /></label>
             <label className="flex items-center gap-1 text-[10px] text-[#94A3B8]">정원
@@ -840,8 +861,8 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
     return (
       <div className="rounded-xl border border-[#E2E8F0] bg-white mb-2 overflow-hidden">
         <div className="flex items-center gap-2 px-2.5 py-2" style={{ borderLeft: `5px solid ${color}` }}>
-          <button onClick={() => startCell(k, 'time', r.time)} className="text-[16px] font-bold tabular-nums" style={{ color }}>{r.time || '–'}</button>
-          <button onClick={() => startCell(k, 'name', r.stop)} className="flex-1 text-left text-[15px] font-bold text-[#1E293B] truncate">{r.stop}{!hasCoord && <span className="text-[#F59E0B]"> *</span>}</button>
+          <button onClick={() => { if (ro) return; startCell(k, 'time', r.time) }} className="text-[16px] font-bold tabular-nums" style={{ color }}>{r.time || '–'}</button>
+          <button onClick={() => { if (ro) return; startCell(k, 'name', r.stop) }} className="flex-1 text-left text-[15px] font-bold text-[#1E293B] truncate">{r.stop}{!hasCoord && <span className="text-[#F59E0B]"> *</span>}</button>
           <span className="text-[18px] font-extrabold tabular-nums" style={{ color }}>{cnt}<span className="text-[11px] text-[#94A3B8] font-normal">명</span></span>
         </div>
         {editing && (
@@ -861,31 +882,31 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
               <span key={s.id} className="inline-flex flex-col gap-0.5 bg-[#F1F5F9] rounded-lg px-1.5 py-1" style={{ opacity: rides ? 1 : 0.4 }}>
                 <span className="flex items-center gap-1 text-[13px] text-[#334155]">
                   <span className="text-[9px] text-[#94A3B8]">{si + 1}</span><span className={`font-bold ${rides ? '' : 'line-through'}`}>{s.name}</span>
-                  <button onClick={() => removeRider(dir, bus, r.stop, s)} className="text-[#B6C0CC] hover:text-[#EF4444] text-[13px] leading-none">×</button>
+                  {!ro && <button onClick={() => removeRider(dir, bus, r.stop, s)} className="text-[#B6C0CC] hover:text-[#EF4444] text-[13px] leading-none">×</button>}
                 </span>
-                <span className="flex gap-0.5">
+                {!ro && <span className="flex gap-0.5">
                   {DAYS.map(day => { const on = sd.includes(day); return (
                     <button key={day} onClick={() => toggleRiderDay(dir, bus, r, s, day, on)} disabled={savingKey === 'sday|' + s.id + day}
                       className="text-[8px] font-bold rounded-full w-3.5 h-3.5 flex items-center justify-center"
                       style={on ? { background: color, color: '#fff' } : { background: '#E2E8F0', color: '#94A3B8' }}>{day}</button>
                   ) })}
-                </span>
+                </span>}
               </span>
             )
           })}
           {adds.map(o => (
             <span key={'ov' + o.student_id} className="inline-flex items-center gap-1 bg-[#FFEDD5] border border-[#FED7AA] rounded-lg px-1.5 py-1 text-[13px] text-[#9A3412]">
               <span className="text-[8px] font-bold bg-[#EA580C] text-white rounded px-0.5">당일</span>{o.name}
-              <button onClick={() => removeDayRider(dir, o.student_id, o.name)} className="text-[#EA580C] text-[13px] leading-none">×</button>
+              {!ro && <button onClick={() => removeDayRider(dir, o.student_id, o.name)} className="text-[#EA580C] text-[13px] leading-none">×</button>}
             </span>
           ))}
           {r.students.length === 0 && adds.length === 0 && <span className="text-[12px] text-[#CBD5E1]">탑승 없음</span>}
         </div>
         <div className="px-2.5 py-2 border-t border-[#EEF2F7] flex gap-1.5 bg-[#FCFCFD]">
           <button onClick={() => { setAddRiderKey(a => a === k ? null : k); setAddDayKey(null); setRiderQ(''); setRiderResults([]) }}
-            className={`text-[13px] font-bold border rounded-lg px-3 py-1.5 ${adding ? 'bg-[#16A34A] text-white border-[#16A34A]' : 'text-[#16A34A] border-[#16A34A]'}`}>학생+</button>
-          <button onClick={() => { setAddDayKey(a => a === k ? null : k); setAddRiderKey(null); setRiderQ(''); setRiderResults([]) }}
-            className={`text-[13px] font-bold border rounded-lg px-3 py-1.5 ${dayAdding ? 'bg-[#EA580C] text-white border-[#EA580C]' : 'text-[#EA580C] border-[#EA580C]'}`}>당일+</button>
+            className={`text-[13px] font-bold border rounded-lg px-3 py-1.5 ${adding ? 'bg-[#16A34A] text-white border-[#16A34A]' : 'text-[#16A34A] border-[#16A34A]'}`}>{ro ? '학생추가 신청' : '학생+'}</button>
+          {!ro && <button onClick={() => { setAddDayKey(a => a === k ? null : k); setAddRiderKey(null); setRiderQ(''); setRiderResults([]) }}
+            className={`text-[13px] font-bold border rounded-lg px-3 py-1.5 ${dayAdding ? 'bg-[#EA580C] text-white border-[#EA580C]' : 'text-[#EA580C] border-[#EA580C]'}`}>당일+</button>}
         </div>
         {(adding || dayAdding) && (
           <div className="relative px-2.5 py-2 border-t border-[#EEF2F7]" style={{ background: dayAdding ? '#FFF7ED' : '#F0FDF4' }}>
@@ -996,8 +1017,8 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
           className="text-sm font-semibold border border-[#004EA2] text-[#004EA2] rounded-lg px-3 py-1.5 hover:bg-[#EAF2FB] disabled:opacity-40">인쇄</button>
         <button onClick={() => printBuses(buses.map(b => b.name))} disabled={!buses.length} title="전체 호차 배차표 인쇄(호차당 1페이지)"
           className="text-sm font-semibold bg-[#004EA2] text-white rounded-lg px-3 py-1.5 hover:bg-[#003E82] disabled:opacity-40">전체 인쇄</button>
-        <button onClick={() => { setBackupOpen(true); loadBackups() }} title="차량 스케줄 백업/복원"
-          className="text-sm font-semibold border border-[#E2E8F0] text-[#64748B] rounded-lg px-3 py-1.5 hover:bg-[#F7F8FA]">백업</button>
+        {!ro && <button onClick={() => { setBackupOpen(true); loadBackups() }} title="차량 스케줄 백업/복원"
+          className="text-sm font-semibold border border-[#E2E8F0] text-[#64748B] rounded-lg px-3 py-1.5 hover:bg-[#F7F8FA]">백업</button>}
         <div className="relative w-[220px] max-w-full">
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="정류장명 검색"
             className="w-full border border-[#E2E8F0] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]" />

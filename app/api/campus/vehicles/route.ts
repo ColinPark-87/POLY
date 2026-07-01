@@ -598,12 +598,13 @@ export async function POST(request: NextRequest) {
   if (action === 'search_students') {
     const { query, source } = body
     const q = (query ?? '').trim()
-    // source==='roster': 개설반 현황(class_enrollments, 대기 제외) 재학생으로만 한정
-    let enrolledIds: Set<string> | null = null
+    // source==='roster': 개설반 현황(class_enrollments, 대기 제외) 재학생으로만 한정 + class_id 부착(여사님 변경신청용)
+    let enrolledMap: Map<string, string> | null = null
     if (source === 'roster') {
       const { data: enrs } = await service.from('class_enrollments')
-        .select('student_id').eq('campus_id', campusId).eq('is_waitlist', false)
-      enrolledIds = new Set((enrs ?? []).map((e: { student_id: string }) => e.student_id))
+        .select('student_id, class_id').eq('campus_id', campusId).eq('is_waitlist', false)
+      enrolledMap = new Map()
+      for (const e of (enrs ?? []) as { student_id: string; class_id: string }[]) if (!enrolledMap.has(e.student_id)) enrolledMap.set(e.student_id, e.class_id)
     }
     let qb = service.from('campus_students')
       .select('id, name, english_name')
@@ -611,10 +612,10 @@ export async function POST(request: NextRequest) {
       .eq('is_active', true)
       .order('name')
     if (q) qb = qb.ilike('name', `%${q}%`)
-    // enrolledIds 대량일 수 있어 .in() URL한도 회피: 넉넉히 받아 메모리 필터
-    const { data } = await qb.limit(enrolledIds ? (q ? 80 : 800) : (q ? 20 : 300))
-    let students = data ?? []
-    if (enrolledIds) students = students.filter((s: { id: string }) => enrolledIds!.has(s.id)).slice(0, q ? 20 : 300)
+    // enrolledMap 대량일 수 있어 .in() URL한도 회피: 넉넉히 받아 메모리 필터
+    const { data } = await qb.limit(enrolledMap ? (q ? 80 : 800) : (q ? 20 : 300))
+    let students = (data ?? []) as { id: string; name: string; english_name: string | null; class_id?: string }[]
+    if (enrolledMap) students = students.filter(s => enrolledMap!.has(s.id)).map(s => ({ ...s, class_id: enrolledMap!.get(s.id) })).slice(0, q ? 20 : 300)
     return NextResponse.json({ students })
   }
 

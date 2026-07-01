@@ -135,15 +135,20 @@ export async function PATCH(request: NextRequest) {
   const errs: string[] = []
   const result: Record<string, unknown> = { oldName, newName, campusId, by: profile?.name ?? null }
 
-  // 1) campus_stop_coords: 기존 행 삭제 후 새 이름으로 삽입
+  // 1) campus_stop_coords: 기존 좌표 보존하며 이름 변경
+  //    ⚠️버그수정: 이름만 변경(lat/lng 미제공) 시 기존 좌표가 유실되던 문제 → 기존 좌표 읽어 새 이름으로 이관
   {
+    const { data: oldCoord } = await service.from('campus_stop_coords')
+      .select('lat, lng').eq('campus_id', campusId).eq('stop_name', oldName).maybeSingle()
+    const effLat = lat !== undefined && lat !== null ? lat : oldCoord?.lat
+    const effLng = lng !== undefined && lng !== null ? lng : oldCoord?.lng
     const { error: delErr, count: delCnt } = await service.from('campus_stop_coords')
       .delete({ count: 'exact' }).eq('campus_id', campusId).eq('stop_name', oldName)
     if (delErr) errs.push(`coords-del:${delErr.message}`)
     result.coordsDeleted = delCnt ?? 0
-    if (lat !== undefined && lng !== undefined) {
+    if (Number.isFinite(effLat) && Number.isFinite(effLng)) {
       const { error: upErr } = await service.from('campus_stop_coords').upsert(
-        { campus_id: campusId, stop_name: newName, lat, lng, updated_at: new Date().toISOString(), updated_by: profile?.name ?? null },
+        { campus_id: campusId, stop_name: newName, lat: effLat, lng: effLng, updated_at: new Date().toISOString(), updated_by: profile?.name ?? null },
         { onConflict: 'campus_id,stop_name' }
       )
       if (upErr) errs.push(`coords-up:${upErr.message}`)

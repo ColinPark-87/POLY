@@ -579,7 +579,7 @@ export default function VehiclesPage() {
       .then(d => {
         if (d.permissions?.vehiclesRestricted) {
           setVehiclesRestricted(true)
-          setTab('today')
+          setTab('busstops')  // 여사님 기본 = 호차별 정류장(모바일 슬라이드 뷰)
         }
         if (d.campusName) setCampusName(d.campusName)
         if (d.campusId) setCampusId(d.campusId)
@@ -1234,7 +1234,7 @@ export default function VehiclesPage() {
         <h1 className="text-sm font-bold text-[#1E293B] whitespace-nowrap pr-2 hidden md:block">차량 관리</h1>
         <div className="flex gap-0 overflow-x-auto">
           {([['map','시스템'],['today','모바일'],['master','학생 설정'],['busstops','호차별 정류장']] as const)
-            .filter(([k]) => !vehiclesRestricted || k === 'today' || k === 'map')
+            .filter(([k]) => !vehiclesRestricted || k === 'today' || k === 'map' || k === 'busstops')
             .map(([k, label]) => (
             <button key={k} onClick={() => setTab(k)}
               className={`relative flex-shrink-0 px-3.5 py-2 text-sm font-medium border-b-2 transition-colors ${
@@ -1431,7 +1431,7 @@ export default function VehiclesPage() {
       {tab === 'map' && <RouteMapView campusId={campusId} campusName={campusName} fullscreen={fullscreen} showPresence={false} onEditingChange={setMapEditing} focusStop={focusStop} />}
 
       {/* ═══ 호차별 정류장 세팅 탭 (중계 전용) ════════════════════ */}
-      {tab === 'busstops' && <BusStopSettingsView campusName={campusName} onLocateStop={locateStop} />}
+      {tab === 'busstops' && <BusStopSettingsView campusName={campusName} onLocateStop={locateStop} restricted={vehiclesRestricted} />}
 
       </div>{/* /탭 콘텐츠 */}
 
