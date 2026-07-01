@@ -103,6 +103,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
   const [coordKey, setCoordKey] = useState<string | null>(null)
   const [coordDraft, setCoordDraft] = useState<{ lat: string; lng: string; addr: string }>({ lat: '', lng: '', addr: '' })
   const [geoBusy, setGeoBusy] = useState(false)
+  const [geoResults, setGeoResults] = useState<{ name: string; address?: string; lat: number; lng: number }[]>([])
   // 학생 추가
   const [addRiderKey, setAddRiderKey] = useState<string | null>(null)
   const [riderQ, setRiderQ] = useState('')
@@ -289,10 +290,9 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
     try {
       const res = await fetch(`/api/geocode?q=${encodeURIComponent(coordDraft.addr.trim())}`)
       const j = await res.json().catch(() => ({}))
-      const first = (j.results ?? [])[0]
-      if (!first) { flash('검색 결과 없음'); return }
-      setCoordDraft(d => ({ ...d, lat: String(first.lat), lng: String(first.lng) }))
-      flash(`${first.name} 좌표 적용 (저장 눌러 반영)`)
+      const list = (j.results ?? []) as { name: string; address?: string; lat: number; lng: number }[]
+      setGeoResults(list)
+      if (!list.length) flash('검색 결과 없음')
     } finally { setGeoBusy(false) }
   }
 
@@ -664,7 +664,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
               ? <button onClick={() => onLocateStop(r.stop, bus)} title={hasCoord ? '시스템 지도로 이동 → 핀 드래그' : '지도에서 핀 찍어 좌표 설정'}
                   className="font-bold border rounded px-1 py-px bg-[#004EA2] text-white border-[#004EA2]">지도</button>
               : null}
-            {!ro && <button onClick={() => { if (coording) setCoordKey(null); else { setCoordKey(k); const c = coords[r.stop]; setCoordDraft({ lat: c ? String(c.lat) : '', lng: c ? String(c.lng) : '', addr: '' }) } }}
+            {!ro && <button onClick={() => { if (coording) setCoordKey(null); else { setCoordKey(k); setGeoResults([]); const c = coords[r.stop]; setCoordDraft({ lat: c ? String(c.lat) : '', lng: c ? String(c.lng) : '', addr: '' }) } }}
               title={hasCoord ? '좌표 설정됨 — 수정' : '좌표 없음 — 입력 필요'}
               className={`font-bold border rounded px-1 py-px ${coording ? 'bg-[#EA580C] text-white border-[#EA580C]' : hasCoord ? 'bg-[#004EA2] text-white border-[#004EA2]' : 'text-[#B45309] border-[#F59E0B] bg-[#FEF3C7] animate-pulse'}`}>{hasCoord ? '좌표' : '좌표!'}</button>}
             {!ro && !r.hasStudents && adds.length === 0 && <button onClick={() => deleteStop(dir, bus, r.stop)} title="정류장 삭제" className="col-span-2 text-[#CBD5E1] hover:text-[#EF4444] font-bold">정류장 삭제</button>}
@@ -770,21 +770,30 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
           </div>
         )}
 
-        {/* 좌표 팝오버: 주소검색 → 지도에서 핀 드래그 → 저장 */}
+        {/* 좌표 팝오버: 주소검색 → 결과 클릭 → 지도에 핀 → 드래그로 정확히 → 저장 */}
         {coording && (
-          <div className="px-2 py-1.5 bg-[#F8FAFC] border-t border-[#EEF2F7] flex flex-wrap items-center gap-1.5">
-            <span className="text-[10px] font-bold text-[#64748B]">① 주소검색</span>
-            <input value={coordDraft.addr} onChange={e => setCoordDraft(d => ({ ...d, addr: e.target.value }))}
-              onKeyDown={e => { if (e.key === 'Enter') geocode() }} placeholder="주소·건물명" className={`w-48 ${inputCls}`} />
-            <button onClick={geocode} disabled={geoBusy || !coordDraft.addr.trim()} className="text-[11px] font-bold text-white bg-[#004EA2] rounded px-2 py-1 disabled:opacity-40">{geoBusy ? '…' : '검색'}</button>
-            {coordDraft.lat && coordDraft.lng && <span className="text-[10px] text-[#16A34A] font-bold">✓ 위치 찾음</span>}
-            <span className="text-[10px] font-bold text-[#64748B]">② 지도서 핀</span>
-            {onLocateStop && <button onClick={() => {
-              const la = parseFloat(coordDraft.lat), ln = parseFloat(coordDraft.lng)
-              onLocateStop(r.stop, bus, Number.isFinite(la) && Number.isFinite(ln) ? { lat: la, lng: ln } : undefined)
-              setCoordKey(null)
-            }} className="text-[11px] font-bold text-white bg-[#16A34A] rounded px-2 py-1">지도에서 핀 지정·저장</button>}
-            <span className="text-[10px] text-[#94A3B8]">주소검색 후 지도에서 핀 끌어 정확히 맞추고 저장</span>
+          <div className="px-2 py-1.5 bg-[#F8FAFC] border-t border-[#EEF2F7] space-y-1.5">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-bold text-[#64748B]">① 주소검색</span>
+              <input autoFocus value={coordDraft.addr} onChange={e => setCoordDraft(d => ({ ...d, addr: e.target.value }))}
+                onKeyDown={e => { if (e.key === 'Enter') geocode() }} placeholder="주소·건물명·아파트" className={`w-56 ${inputCls}`} />
+              <button onClick={geocode} disabled={geoBusy || !coordDraft.addr.trim()} className="text-[11px] font-bold text-white bg-[#004EA2] rounded px-2 py-1 disabled:opacity-40">{geoBusy ? '…' : '검색'}</button>
+              {onLocateStop && <button onClick={() => { onLocateStop(r.stop, bus); setCoordKey(null); setGeoResults([]) }}
+                className="text-[10px] font-bold text-[#004EA2] border border-[#004EA2] rounded px-2 py-1">주소없이 지도에서 직접</button>}
+            </div>
+            {geoResults.length > 0 && (
+              <div className="border border-[#E2E8F0] rounded-lg bg-white max-h-44 overflow-auto divide-y divide-[#F1F5F9]">
+                <div className="px-2 py-1 text-[10px] font-bold text-[#64748B] bg-[#F8FAFC]">② 정확한 위치 클릭 → 지도에 핀이 찍힘 (끌어 조정 후 저장)</div>
+                {geoResults.map((g, gi) => (
+                  <button key={gi} onClick={() => { onLocateStop?.(r.stop, bus, { lat: g.lat, lng: g.lng }); setCoordKey(null); setGeoResults([]) }}
+                    className="w-full text-left px-2 py-1.5 hover:bg-[#EAF2FB]">
+                    <div className="text-[12px] font-bold text-[#1E293B]">{g.name}</div>
+                    {g.address && <div className="text-[10px] text-[#94A3B8]">{g.address}</div>}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="text-[10px] text-[#94A3B8]">주소검색 → 결과 클릭하면 지도에 핀이 찍힘 → 핀을 끌어 정확히 맞추고 저장</div>
           </div>
         )}
       </div>
