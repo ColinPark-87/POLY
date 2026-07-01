@@ -2153,6 +2153,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false,
     if (addr !== undefined) {
       try { localStorage.setItem(addressKey, JSON.stringify(stopAddress)) } catch {}
     }
+    setAdjustToast(`📍 '${stopName}' 좌표 저장이 완료되었습니다`); setTimeout(() => setAdjustToast(''), 2500)
   }
 
   // 새 정류장 좌표 지정 시작 — 기존 클릭/드래그(candidate) 인프라 재사용.
