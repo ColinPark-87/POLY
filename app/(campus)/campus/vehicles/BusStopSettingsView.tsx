@@ -847,7 +847,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
           {!q && !ro && (
             <div className="flex items-center gap-1 px-2 py-1 border-t border-[#EEF2F7] bg-[#FAFBFC]">
               <span className="text-[10px] font-bold text-[#94A3B8]">+ 새 정류장</span>
-              <input type="time" value={add.time} onChange={e => setAddStop(prev => ({ ...prev, [bk]: { ...add, time: e.target.value } }))} className={`w-24 ${inputCls}`} />
+              <input type="time" value={add.time} onChange={e => setAddStop(prev => ({ ...prev, [bk]: { ...add, time: e.target.value } }))} className={`w-32 ${inputCls}`} />
               <input value={add.stop} onChange={e => setAddStop(prev => ({ ...prev, [bk]: { ...add, stop: e.target.value } }))} placeholder="정류장명(장소)" className={`w-52 ${inputCls}`} />
               <button onClick={() => addNewStop(dir, bus, flt)} disabled={savingKey === 'addstop|' + bk || !add.stop.trim()}
                 className="text-[10px] font-bold border px-2 py-1 rounded disabled:opacity-40" style={{ color, borderColor: color }}>추가</button>
