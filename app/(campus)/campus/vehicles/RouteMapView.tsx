@@ -113,7 +113,7 @@ function capStatus(n: number, cap: number = BUS_CAP): { label: string; color: st
   return { label: '여유', color: '#16A34A', bg: '#F0FDF4', ring: '#BBF7D0' }
 }
 
-export default function RouteMapView({ campusId, campusName, fullscreen = false, showPresence = true, onEditingChange, focusStop }: { campusId?: string; campusName?: string; fullscreen?: boolean; showPresence?: boolean; onEditingChange?: (editing: boolean) => void; focusStop?: { name: string; busName?: string; nonce: number; lat?: number; lng?: number } | null }) {
+export default function RouteMapView({ campusId, campusName, fullscreen = false, showPresence = true, onEditingChange, focusStop, onCoordSaved }: { campusId?: string; campusName?: string; fullscreen?: boolean; showPresence?: boolean; onEditingChange?: (editing: boolean) => void; focusStop?: { name: string; busName?: string; nonce: number; lat?: number; lng?: number } | null; onCoordSaved?: (stop: string) => void }) {
   const cqs = campusId ? `&campus_id=${campusId}` : ''
   // campusId가 없으면 중계(hardcoded), 있으면 해당 캠퍼스 이름 사용 (없으면 null)
   const effectiveSchoolName = campusId ? (campusName ?? null) : SCHOOL_STOP.name
@@ -2153,7 +2153,9 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false,
     if (addr !== undefined) {
       try { localStorage.setItem(addressKey, JSON.stringify(stopAddress)) } catch {}
     }
-    setAdjustToast(`📍 '${stopName}' 좌표 저장이 완료되었습니다`); setTimeout(() => setAdjustToast(''), 2500)
+    setAdjustToast(`📍 '${stopName}' 좌표 저장이 완료되었습니다 · 호차별 정류장으로 돌아갑니다`); setTimeout(() => setAdjustToast(''), 2500)
+    // 저장 후 호차별 정류장 탭으로 자동 복귀(서버 upsert 반영 여유 1.2s) → 신규 정류장 좌표 반영 확인
+    if (onCoordSaved) setTimeout(() => onCoordSaved(stopName), 1200)
   }
 
   // 새 정류장 좌표 지정 시작 — 기존 클릭/드래그(candidate) 인프라 재사용.

@@ -1429,7 +1429,7 @@ export default function VehiclesPage() {
 
       {/* ═══ 변경/기록 탭 (좌: 승인 대기 | 우: 변경 기록) ════════ */}
       {/* ═══ 노선 지도 탭 ════════════════════════════════════════ */}
-      {tab === 'map' && <RouteMapView campusId={campusId} campusName={campusName} fullscreen={fullscreen} showPresence={false} onEditingChange={setMapEditing} focusStop={focusStop} />}
+      {tab === 'map' && <RouteMapView campusId={campusId} campusName={campusName} fullscreen={fullscreen} showPresence={false} onEditingChange={setMapEditing} focusStop={focusStop} onCoordSaved={() => setTab('busstops')} />}
 
       {/* ═══ 호차별 정류장 세팅 탭 (중계 전용) ════════════════════ */}
       {tab === 'busstops' && <BusStopSettingsView campusName={campusName} onLocateStop={locateStop} restricted={vehiclesRestricted} />}
