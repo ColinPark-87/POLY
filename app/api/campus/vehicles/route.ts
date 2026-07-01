@@ -660,8 +660,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '수강 데이터를 찾을 수 없습니다. 해당 학생의 수강 등록을 확인해주세요.' }, { status: 404 })
     }
 
-    const enr = enrList[0]
     const schedKey = dir === 'arr' ? 'arr_schedule' : 'dep_schedule'
+    // 요일 재추가/추가가 '화면에 보이는 그 호차' enrollment로 가도록: 이미 이 호차를 쓰는 enrollment 우선 선택
+    // (복수 enrollment 학생이 enrList[0]로 잘못 라우팅돼 재추가가 반영 안 되던 문제 방지)
+    const DAY5 = ['월', '화', '수', '목', '금']
+    const enrTyped = enrList as { class_id: string; arr_schedule: Record<string, string>; dep_schedule: Record<string, string> }[]
+    const enr = enrTyped.find(e => DAY5.some(d => (e[schedKey] ?? {})[d] === bus_name)) ?? enrTyped[0]
     const currentSched = { ...(enr[schedKey] ?? {}) } as Record<string, string>
     const dayList: string[] = Array.isArray(days) ? days : []
     for (const d of dayList) {
