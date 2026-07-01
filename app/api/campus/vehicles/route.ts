@@ -648,13 +648,12 @@ export async function POST(request: NextRequest) {
       : { data: null }
     const targetClassIds = (targetClasses ?? []).map((c: { id: string }) => c.id)
 
-    const { data: enrList } = targetClassIds.length
-      ? await service.from('class_enrollments')
-          .select('class_id, arr_schedule, dep_schedule')
-          .eq('student_id', student_id)
-          .in('class_id', targetClassIds)
-          .eq('is_waitlist', false)
-      : { data: null }
+    // ⚠️.in(대량 classIds) URL한도 회피: 학생 enrollment를 campus+student로 직접 조회 후 세션(targetClassIds) 메모리 필터
+    const { data: allEnrs } = await service.from('class_enrollments')
+      .select('class_id, arr_schedule, dep_schedule')
+      .eq('campus_id', campusId).eq('student_id', student_id).eq('is_waitlist', false)
+    const targetSet = new Set(targetClassIds)
+    const enrList = (allEnrs ?? []).filter((e: { class_id: string }) => targetSet.has(e.class_id))
 
     if (!enrList?.length) {
       return NextResponse.json({ error: '수강 데이터를 찾을 수 없습니다. 해당 학생의 수강 등록을 확인해주세요.' }, { status: 404 })
@@ -733,11 +732,11 @@ export async function POST(request: NextRequest) {
     const sessIds = (campusSessions ?? []).map((s: { id: string }) => s.id)
     const { data: targetClasses } = sessIds.length
       ? await service.from('classes').select('id').in('session_id', sessIds) : { data: null }
-    const classIds = (targetClasses ?? []).map((c: { id: string }) => c.id)
-    const { data: enrList } = classIds.length
-      ? await service.from('class_enrollments').select('class_id, arr_schedule, dep_schedule')
-          .eq('student_id', student_id).in('class_id', classIds).eq('is_waitlist', false)
-      : { data: null }
+    const classIds = new Set((targetClasses ?? []).map((c: { id: string }) => c.id))
+    // ⚠️.in(대량 classIds) URL한도 회피: 학생 enrollment 직접 조회 후 메모리 필터
+    const { data: allEnrs } = await service.from('class_enrollments').select('class_id, arr_schedule, dep_schedule')
+      .eq('campus_id', campusId).eq('student_id', student_id).eq('is_waitlist', false)
+    const enrList = (allEnrs ?? []).filter((e: { class_id: string }) => classIds.has(e.class_id))
     const schedKey = dir === 'arr' ? 'arr_schedule' : 'dep_schedule'
     let changed = 0
     for (const enr of (enrList ?? []) as { class_id: string; arr_schedule: Record<string, string>; dep_schedule: Record<string, string> }[]) {
