@@ -24,27 +24,33 @@ interface TimeGroup { session_name: string; busMap: Record<string, Student[]> }
 interface RegStop { stop_name: string; bus_name: string; direction: string; default_time: string | null }
 interface MasterResp { buses: Bus[]; timeGroups: TimeGroup[]; registeredStops: RegStop[] }
 
-type Filter = '유치부' | '매일반' | '3일반' | '화목반'
-const FILTERS: Filter[] = ['유치부', '매일반', '3일반', '화목반']
-const FILTER_LABEL: Record<Filter, string> = {
-  '유치부': '유치부', '매일반': '매일반(5일)', '3일반': '3일반(월수금)', '화목반': '화목반(화목)',
-}
 type Dir = 'arr' | 'dep'
 const ARR = '#3B82F6', DEP = '#DC2626'
 const dirColor = (d: Dir) => (d === 'arr' ? ARR : DEP)
 const dirLabel = (d: Dir) => (d === 'arr' ? '등원' : '하원')
 
-function sessMatch(name: string, filter: Filter, dir: Dir): boolean {
-  if (name.includes('방과후')) {
-    if (name.includes('유치부')) return filter === '유치부'
-    if (dir === 'dep') return filter === '매일반'
-    return filter === '유치부'
+// 세션 라벨 도출(전 캠퍼스 일반화) — page.tsx getRunLabel과 동일 규칙(미지정 캠퍼스는 session_name 그대로)
+function runLabel(sessName: string, dir: Dir): string {
+  const d = dir === 'arr' ? '등원' : '하원'
+  if (sessName.includes('방과후')) {
+    if (sessName.includes('유치부')) return `유치부 ${d}`
+    return dir === 'dep' ? `매일반 ${d}` : `방과후 ${d}`
   }
-  if (filter === '유치부') return name.includes('유치부')
-  if (filter === '매일반') return name.includes('매일반') || name.includes('5일')
-  if (filter === '3일반') return name.includes('월수금') || name.includes('3일')
-  if (filter === '화목반') return name.includes('화목') || name.includes('2일')
-  return false
+  if (sessName.includes('매일반') || sessName.includes('5일')) return `매일반 ${d}`
+  if (sessName.includes('월수금') || sessName.includes('3일')) return `3일반 ${d}`
+  if (sessName.includes('화목') || sessName.includes('2일')) return `2일반 ${d}`
+  if (sessName.includes('유치부')) return `유치부 ${d}`
+  return `${sessName} ${d}`
+}
+// 방향 제거한 세션 베이스 라벨(= 세션 탭 키)
+const sessBase = (sessName: string, dir: Dir) => runLabel(sessName, dir).replace(/ ?(등원|하원)$/, '')
+function sessPriority(base: string): number {
+  if (base.includes('방과후')) return 1.5
+  if (base.includes('유치부')) return 1
+  if (base.includes('매일반') || base.includes('5일')) return 2
+  if (base.includes('월수금') || base.includes('3일')) return 3
+  if (base.includes('화목') || base.includes('2일')) return 4
+  return 9
 }
 
 function normalizeTime(t: string | null | undefined): string {
@@ -88,7 +94,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
   const [savingKey, setSavingKey] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [selDate, setSelDate] = useState(todayStr)  // 탑승인원 계산 기준 날짜(달력)
-  const [selSession, setSelSession] = useState<Filter>('유치부')  // 데스크톱 세션 탭
+  const [selSession, setSelSession] = useState<string>('')  // 데스크톱 세션 탭(동적 라벨)
   // 인라인 셀 편집
   const [cellEdit, setCellEdit] = useState<{ key: string; field: 'time' | 'name' } | null>(null)
   const [cellVal, setCellVal] = useState('')
@@ -147,7 +153,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
   const buses: Bus[] = useMemo(() => (raw ? (raw.arr.buses?.length ? raw.arr.buses : raw.dep.buses) ?? [] : []), [raw])
   useEffect(() => { if (buses.length && !buses.some(b => b.name === selectedBus)) setSelectedBus(buses[0].name) }, [buses, selectedBus])
 
-  const buildDir = useCallback((flt: Filter, dir: Dir): Record<string, Row[]> => {
+  const buildDir = useCallback((flt: string, dir: Dir): Record<string, Row[]> => {
     if (!raw) return {}
     const resp = raw[dir]
     const cellByBus: Record<string, Record<string, { times: string[]; sess: Set<string>; days: Set<string>; stu: Map<string, { id: string; name: string; class_id: string; days: Set<string> }>; hasStudents: boolean }>> = {}
@@ -157,7 +163,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
       return cellByBus[bus][stop]
     }
     for (const tg of resp.timeGroups ?? []) {
-      if (!sessMatch(tg.session_name, flt, dir)) continue
+      if (sessBase(tg.session_name, dir) !== flt) continue
       for (const [bus, students] of Object.entries(tg.busMap ?? {})) {
         for (const s of students) {
           for (const [stop, t, day] of stopDayTriples(s)) {
@@ -197,12 +203,19 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
     return out
   }, [raw, buses])
 
+  // 세션 탭(동적) = 데이터의 세션 베이스 라벨들
+  const sessions = useMemo(() => {
+    if (!raw) return [] as string[]
+    const set = new Set<string>()
+    for (const dir of ['arr', 'dep'] as Dir[]) for (const tg of raw[dir].timeGroups ?? []) if (tg.session_name) set.add(sessBase(tg.session_name, dir))
+    return [...set].sort((a, b) => sessPriority(a) - sessPriority(b) || a.localeCompare(b, 'ko'))
+  }, [raw])
   const built = useMemo(() => {
-    const res = {} as Record<Filter, { arr: Record<string, Row[]>; dep: Record<string, Row[]> }>
-    for (const f of FILTERS) res[f] = { arr: buildDir(f, 'arr'), dep: buildDir(f, 'dep') }
+    const res = {} as Record<string, { arr: Record<string, Row[]>; dep: Record<string, Row[]> }>
+    for (const f of sessions) res[f] = { arr: buildDir(f, 'arr'), dep: buildDir(f, 'dep') }
     return res
-  }, [buildDir])
-  const rowsOf = (flt: Filter, dir: Dir, bus: string) => built[flt]?.[dir]?.[bus] ?? []
+  }, [buildDir, sessions])
+  const rowsOf = (flt: string, dir: Dir, bus: string) => built[flt]?.[dir]?.[bus] ?? []
 
   const dkey = (dir: Dir, bus: string, stop: string) => `${dir}|${bus}|${stop}`
 
@@ -411,7 +424,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
     } catch (e) { alert(`요일 변경 실패: ${(e as Error).message}`) } finally { setSavingKey(null) }
   }
 
-  async function addNewStop(dir: Dir, bus: string, flt: Filter) {
+  async function addNewStop(dir: Dir, bus: string, flt: string) {
     const bk = `${dir}|${bus}|${flt}`; const a = addStop[bk]; const stop = (a?.stop ?? '').trim()
     if (!stop) return
     setSavingKey('addstop|' + bk)
@@ -439,7 +452,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
     if (!list.length) return
     const esc = (s: string) => String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' } as Record<string, string>)[c])
     const pageHtml = (busName: string) => {
-      const sections = FILTERS.map(f => (['arr', 'dep'] as Dir[]).map(dir => {
+      const sections = sessions.map(f => (['arr', 'dep'] as Dir[]).map(dir => {
         const rows = rowsOf(f, dir, busName)
         if (!rows.length) return ''
         const ab = ovAbsentSet(dir)
@@ -454,7 +467,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
           return `<tr><td class="t">${esc(r.time || '-')}</td><td class="p">${esc(r.stop)}${dayTag}</td><td class="c">${cnt}</td><td class="s">${names}</td></tr>`
         }).join('')
         const col = dir === 'arr' ? ARR : DEP
-        return `<div class="blk"><div class="h3" style="border-color:${col};color:${col}">${FILTER_LABEL[f]} · ${dirLabel(dir)} <span class="d">정류장 ${rows.length}</span></div>`
+        return `<div class="blk"><div class="h3" style="border-color:${col};color:${col}">${f} · ${dirLabel(dir)} <span class="d">정류장 ${rows.length}</span></div>`
           + `<table><colgroup><col style="width:42px"><col style="width:140px"><col style="width:30px"><col></colgroup>`
           + `<thead><tr><th>시간</th><th>장소</th><th>인원</th><th>탑승자 명단</th></tr></thead><tbody>${body}</tbody></table></div>`
       }).join('')).join('')
@@ -508,7 +521,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
     return weekly + ovAdds(dir, bus, r.stop).length
   }
   // 호차 해당일 총 탑승(방향별) = 전 세션 합
-  const busTotalFor = (busName: string, dir: Dir) => FILTERS.reduce((n, f) => n + rowsOf(f, dir, busName).reduce((m, r) => m + dayCount(r, dir, busName), 0), 0)
+  const busTotalFor = (busName: string, dir: Dir) => sessions.reduce((n, f) => n + rowsOf(f, dir, busName).reduce((m, r) => m + dayCount(r, dir, busName), 0), 0)
 
   const startCell = (k: string, field: 'time' | 'name', cur: string) => { setCellEdit({ key: k, field }); setCellVal(cur) }
   const commitCell = (dir: Dir, bus: string, r: Row) => {
@@ -697,7 +710,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
   }
 
   // 세션 섹션 안의 방향 표 (등원/하원)
-  const DirTable = ({ dir, bus, flt }: { dir: Dir; bus: string; flt: Filter }) => {
+  const DirTable = ({ dir, bus, flt }: { dir: Dir; bus: string; flt: string }) => {
     const all = rowsOf(flt, dir, bus)
     const rows = q ? all.filter(r => r.stop.toLowerCase().includes(q)) : all
     if (q && rows.length === 0) return null
@@ -864,8 +877,8 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
 
   // ── 모바일: 세션×방향 슬라이드(한 장씩 스와이프) ──
   if (isMobile) {
-    const slides: { f: Filter; dir: Dir; rows: Row[] }[] = []
-    for (const f of FILTERS) for (const dd of (['arr', 'dep'] as Dir[])) { const rows = rowsOf(f, dd, bus); if (rows.length) slides.push({ f, dir: dd, rows }) }
+    const slides: { f: string; dir: Dir; rows: Row[] }[] = []
+    for (const f of sessions) for (const dd of (['arr', 'dep'] as Dir[])) { const rows = rowsOf(f, dd, bus); if (rows.length) slides.push({ f, dir: dd, rows }) }
     const idx = Math.min(slideIdx, Math.max(0, slides.length - 1))
     const cur = slides[idx]
     return (
@@ -896,7 +909,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
         ) : (
           <>
             <div className="flex items-center justify-between mb-1">
-              <span className="text-[15px] font-extrabold" style={{ color: dirColor(cur.dir) }}>{bus} · {FILTER_LABEL[cur.f]} · {dirLabel(cur.dir)}</span>
+              <span className="text-[15px] font-extrabold" style={{ color: dirColor(cur.dir) }}>{bus} · {cur.f} · {dirLabel(cur.dir)}</span>
               <span className="text-[11px] text-[#94A3B8]">{idx + 1}/{slides.length}</span>
             </div>
             <div className="flex justify-center gap-1 mb-2">
@@ -907,7 +920,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
               {slides.map((sl, i) => (
                 <div key={i} className="min-w-full px-1" style={{ scrollSnapAlign: 'center' }}>
                   <div className="mb-1.5 pb-0.5 text-[13px] font-bold flex items-center gap-2" style={{ borderBottom: `2px solid ${dirColor(sl.dir)}`, color: dirColor(sl.dir) }}>
-                    {FILTER_LABEL[sl.f]} · {dirLabel(sl.dir)}
+                    {sl.f} · {dirLabel(sl.dir)}
                     <span className="text-[10px] text-[#94A3B8] font-normal">정류장 {sl.rows.length} · 탑승 {sl.rows.reduce((n, r) => n + dayCount(r, sl.dir, bus), 0)}명</span>
                   </div>
                   {sl.rows.map(r => <Fragment key={r.stop}>{MobileStopCard({ dir: sl.dir, bus, r })}</Fragment>)}
@@ -962,12 +975,12 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
       {q ? (
         <div className="space-y-4">
           {buses.map(b => {
-            const hit = FILTERS.some(f => (['arr', 'dep'] as Dir[]).some(dir => rowsOf(f, dir, b.name).some(r => r.stop.toLowerCase().includes(q))))
+            const hit = sessions.some(f => (['arr', 'dep'] as Dir[]).some(dir => rowsOf(f, dir, b.name).some(r => r.stop.toLowerCase().includes(q))))
             if (!hit) return null
             return (
               <div key={b.id}>
                 <div className="text-[13px] font-extrabold text-[#004EA2] mb-1 pb-0.5 border-b-2 border-[#004EA2]">{b.name}</div>
-                {FILTERS.map(f => (
+                {sessions.map(f => (
                   <Fragment key={f}>
                     {DirTable({ dir: 'arr', bus: b.name, flt: f })}
                     {DirTable({ dir: 'dep', bus: b.name, flt: f })}
@@ -976,12 +989,12 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
               </div>
             )
           })}
-          {buses.every(b => !FILTERS.some(f => (['arr', 'dep'] as Dir[]).some(dir => rowsOf(f, dir, b.name).some(r => r.stop.toLowerCase().includes(q))))) && (
+          {buses.every(b => !sessions.some(f => (['arr', 'dep'] as Dir[]).some(dir => rowsOf(f, dir, b.name).some(r => r.stop.toLowerCase().includes(q))))) && (
             <div className="text-center text-[#CBD5E1] text-sm py-10">&lsquo;{search}&rsquo; 정류장 없음 (전 호차 검색)</div>
           )}
         </div>
       ) : (() => {
-        const avail = FILTERS.filter(f => rowsOf(f, 'arr', bus).length || rowsOf(f, 'dep', bus).length)
+        const avail = sessions.filter(f => rowsOf(f, 'arr', bus).length || rowsOf(f, 'dep', bus).length)
         if (!avail.length) return <div className="text-center text-[#CBD5E1] text-sm py-10">{bus ? `${bus} 정류장 데이터 없음` : '호차 없음'}</div>
         const active = avail.includes(selSession) ? selSession : avail[0]
         return (
@@ -990,7 +1003,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
               {avail.map(f => (
                 <button key={f} onClick={() => setSelSession(f)}
                   className={`px-3.5 py-1.5 rounded-lg text-sm font-bold transition-colors ${active === f ? 'bg-[#004EA2] text-white' : 'bg-white border border-[#E2E8F0] text-[#64748B] hover:border-[#94A3B8]'}`}>
-                  {FILTER_LABEL[f]}
+                  {f}
                 </button>
               ))}
             </div>

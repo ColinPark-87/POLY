@@ -1233,7 +1233,7 @@ export default function VehiclesPage() {
       <div className="flex items-center gap-1 mb-2 flex-shrink-0 border-b border-[#E2E8F0]">
         <h1 className="text-sm font-bold text-[#1E293B] whitespace-nowrap pr-2 hidden md:block">차량 관리</h1>
         <div className="flex gap-0 overflow-x-auto">
-          {([['map','시스템'],['today','모바일'],['master','학생 설정'],...(campusId === JUNGKYE_CAMPUS_ID ? [['busstops','호차별 정류장']] as const : [])] as const)
+          {([['map','시스템'],['today','모바일'],['master','학생 설정'],['busstops','호차별 정류장']] as const)
             .filter(([k]) => !vehiclesRestricted || k === 'today' || k === 'map')
             .map(([k, label]) => (
             <button key={k} onClick={() => setTab(k)}
@@ -1431,7 +1431,7 @@ export default function VehiclesPage() {
       {tab === 'map' && <RouteMapView campusId={campusId} campusName={campusName} fullscreen={fullscreen} showPresence={false} onEditingChange={setMapEditing} focusStop={focusStop} />}
 
       {/* ═══ 호차별 정류장 세팅 탭 (중계 전용) ════════════════════ */}
-      {tab === 'busstops' && campusId === JUNGKYE_CAMPUS_ID && <BusStopSettingsView campusName={campusName} onLocateStop={locateStop} />}
+      {tab === 'busstops' && <BusStopSettingsView campusName={campusName} onLocateStop={locateStop} />}
 
       </div>{/* /탭 콘텐츠 */}
 
