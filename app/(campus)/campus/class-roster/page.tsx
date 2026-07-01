@@ -3132,6 +3132,8 @@ function extractLocOnly(sched: Record<string, string>) {
   return out
 }
 
+// 승하차 장소 드롭다운 세션 그룹별 배경색(구분용)
+const SESS_BG = ['#EFF6FF', '#F0FDF4', '#FEF3C7', '#FCE7F3', '#F5F3FF', '#ECFEFF', '#FEF2F2']
 function StudentDetailModal({ enrollment, student, classes, sessions, buses, enrollments, registeredStops, onSave, onDelete, onClose, saving }: {
   enrollment: Enrollment; student: Student; classes: ClassItem[]; sessions: Session[]; buses: Bus[]
   enrollments: Enrollment[]; registeredStops: RegisteredStop[]
@@ -3296,9 +3298,9 @@ function StudentDetailModal({ enrollment, student, classes, sessions, buses, enr
                         className="w-full text-xs border border-[#E2E8F0] rounded px-1 py-1 bg-white focus:outline-none">
                         <option value="">-</option>
                         {cur && !inGroups && <option value={cur}>{cur} (현재)</option>}
-                        {groups.map(g => (
-                          <optgroup key={g.sid} label={g.session}>
-                            {g.stops.map(s => <option key={s.loc} value={s.loc}>{s.loc}{s.time ? ` · ${s.time}` : ''}</option>)}
+                        {groups.map((g, gi) => (
+                          <optgroup key={g.sid} label={g.session} style={{ background: SESS_BG[gi % SESS_BG.length] }}>
+                            {g.stops.map(s => <option key={s.loc} value={s.loc} style={{ background: SESS_BG[gi % SESS_BG.length] }}>{s.loc}{s.time ? ` · ${s.time}` : ''}</option>)}
                           </optgroup>
                         ))}
                       </select>
@@ -3322,9 +3324,9 @@ function StudentDetailModal({ enrollment, student, classes, sessions, buses, enr
                         className="w-full text-xs border border-[#E2E8F0] rounded px-1 py-1 bg-white focus:outline-none">
                         <option value="">-</option>
                         {cur && !inGroups && <option value={cur}>{cur} (현재)</option>}
-                        {groups.map(g => (
-                          <optgroup key={g.sid} label={g.session}>
-                            {g.stops.map(s => <option key={s.loc} value={s.loc}>{s.loc}{s.time ? ` · ${s.time}` : ''}</option>)}
+                        {groups.map((g, gi) => (
+                          <optgroup key={g.sid} label={g.session} style={{ background: SESS_BG[gi % SESS_BG.length] }}>
+                            {g.stops.map(s => <option key={s.loc} value={s.loc} style={{ background: SESS_BG[gi % SESS_BG.length] }}>{s.loc}{s.time ? ` · ${s.time}` : ''}</option>)}
                           </optgroup>
                         ))}
                       </select>
