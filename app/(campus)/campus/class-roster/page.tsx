@@ -3134,6 +3134,13 @@ function extractLocOnly(sched: Record<string, string>) {
 
 // 승하차 장소 드롭다운 세션 그룹별 배경색(구분용)
 const SESS_BG = ['#EFF6FF', '#F0FDF4', '#FEF3C7', '#FCE7F3', '#F5F3FF', '#ECFEFF', '#FEF2F2']
+// 시간 문자열 → 분(정렬용, 8시 미만은 오후로 보정)
+function parseTimeMin(t: string): number {
+  const m = t.match(/(\d{1,2}):(\d{2})/)
+  if (!m) return 9999
+  let h = parseInt(m[1]); if (h < 8) h += 12
+  return h * 60 + parseInt(m[2])
+}
 function StudentDetailModal({ enrollment, student, classes, sessions, buses, enrollments, registeredStops, onSave, onDelete, onClose, saving }: {
   enrollment: Enrollment; student: Student; classes: ClassItem[]; sessions: Session[]; buses: Bus[]
   enrollments: Enrollment[]; registeredStops: RegisteredStop[]
