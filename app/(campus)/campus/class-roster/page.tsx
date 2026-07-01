@@ -3221,11 +3221,13 @@ function StudentDetailModal({ enrollment, student, classes, sessions, buses, enr
       if (!stops || !stops.length) continue
       const name = sessions.find(s => s.id === sid)?.name ?? '기타'
       const filtered = stops.filter(s => { if (seen.has(s.loc)) return false; seen.add(s.loc); return true })
+        .sort((a, b) => (a.time ? parseTimeMin(a.time) : 9999) - (b.time ? parseTimeMin(b.time) : 9999) || a.loc.localeCompare(b.loc, 'ko'))
       if (filtered.length) out.push({ session: name + (sid === curSessId ? ' (현재 세션)' : ''), sid, stops: filtered })
     }
     const reg = registeredStops.filter(rs => rs.bus_name === busName && rs.direction === dir)
       .map(rs => ({ loc: rs.stop_name.trim(), time: rs.default_time ?? undefined }))
       .filter(s => { if (seen.has(s.loc)) return false; seen.add(s.loc); return true })
+      .sort((a, b) => (a.time ? parseTimeMin(a.time) : 9999) - (b.time ? parseTimeMin(b.time) : 9999) || a.loc.localeCompare(b.loc, 'ko'))
     if (reg.length) out.push({ session: '추가 정류장(지도)', sid: 'reg', stops: reg })
     return out
   }
