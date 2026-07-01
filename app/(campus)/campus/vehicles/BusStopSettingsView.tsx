@@ -289,7 +289,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
     if (!qstr.trim()) { setRiderResults([]); return }
     const res = await fetch('/api/campus/vehicles', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'search_students', query: qstr.trim() }),
+      body: JSON.stringify({ action: 'search_students', query: qstr.trim(), source: 'roster' }),
     })
     const d = await res.json().catch(() => ({}))
     setRiderResults((d.students ?? []).slice(0, 12))
@@ -340,8 +340,9 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
   const q = search.trim().toLowerCase()
   const matchRows = (dir: Dir, bus: string) => q ? rowsOf(dir, bus).filter(r => r.stop.toLowerCase().includes(q)) : rowsOf(dir, bus)
 
-  // 정류장 카드 (반 카드 대응): 색 헤더 + 학생명단 2열. 고정 좁은 폭(퍼짐 방지)
-  const StopCard = ({ dir, bus, r, i }: { dir: Dir; bus: string; r: Row; i: number }) => {
+  // 엑셀 배차표식 표 행: 시간 | 장소 | 탑승자(명단) | 작업. 정류장별 그룹 1행.
+  const GRID = 'grid grid-cols-[52px_180px_1fr_112px]'
+  const StopRow = ({ dir, bus, r, i }: { dir: Dir; bus: string; r: Row; i: number }) => {
     const k = dkey(dir, bus, r.stop)
     const d = dForKey(k, r)
     const busy = savingKey === k
@@ -350,87 +351,86 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
     const hasCoord = !!coords[r.stop]
     const color = dirColor(dir)
     return (
-      <div className="flex-shrink-0 w-[164px] rounded-md border border-[#e0e0e0] bg-white shadow-sm overflow-hidden flex flex-col self-start">
-        {/* 헤더: 정류장명 · 시간 · 인원 */}
-        <div className="px-1 py-0.5 text-white select-none" style={{ background: color }}>
-          <div className="flex items-center gap-0.5">
-            {editing
-              ? <input value={d.name} onChange={e => setDraftK(k, r, { name: e.target.value })} className="flex-1 min-w-0 text-[11px] text-[#1a1a1a] rounded px-1 py-px" />
-              : <span className="font-extrabold text-[10.5px] leading-tight truncate flex-1" title={hasCoord ? r.stop : r.stop + ' (좌표없음)'}>{r.stop}{hasCoord ? '' : <span className="opacity-60 font-normal">*</span>}</span>}
-            <span className="text-[9px] font-bold bg-white/25 px-1 rounded flex-shrink-0 tabular-nums">{r.time || '–'}</span>
-            <span className="text-[9px] font-bold bg-white/25 px-1 rounded flex-shrink-0">{r.students.length}</span>
+      <div className="border-b border-[#EEF2F7] last:border-0" style={{ borderLeft: `3px solid ${color}` }}>
+        <div className={`${GRID} items-center text-[11px] ${i % 2 === 0 ? 'bg-white' : 'bg-[#FAFBFC]'} hover:bg-[#F5F8FC]`}>
+          {/* 시간 */}
+          <div className="px-1 py-1 font-bold tabular-nums text-center border-r border-[#F1F5F9]" style={{ color }}>{r.time || '–'}</div>
+          {/* 장소 */}
+          <div className="px-1.5 py-1 border-r border-[#F1F5F9] min-w-0">
+            <div className="font-semibold text-[#1E293B] truncate" title={r.stop}>{r.stop}{!hasCoord && <span className="text-[#F59E0B] font-normal"> *</span>}</div>
+            {r.days.length > 0 && r.days.length < 5 && <div className="text-[9px] text-[#94A3B8]">{r.days.join('·')}</div>}
           </div>
-        </div>
-
-        {/* 학생명단 2열 */}
-        <div className="overflow-y-auto max-h-[180px]">
-          <div className="grid grid-cols-2">
+          {/* 탑승자 명단 */}
+          <div className="px-1.5 py-1 flex flex-wrap gap-x-1.5 gap-y-0.5 items-center min-w-0">
             {r.students.map((s, si) => (
-              <div key={s.id}
-                className="flex items-center px-0.5 border-b border-r border-[#f0f0f0]"
-                style={{ minHeight: '15px', background: si % 2 === 0 ? '#fafafa' : '#fff' }}>
-                <span className="text-[7px] text-[#ccc] w-2 text-right flex-shrink-0">{si + 1}</span>
-                <span className="text-[9.5px] font-semibold text-[#1a1a1a] truncate flex-1 leading-none px-0.5">{s.name}</span>
-                <button onClick={() => removeRider(dir, bus, r.stop, s)} title="빼기" className="text-[#ccc] hover:text-[#EF4444] text-[10px] leading-none flex-shrink-0">×</button>
-              </div>
+              <span key={s.id} className="inline-flex items-center text-[11px] text-[#334155] whitespace-nowrap">
+                <span className="text-[8px] text-[#CBD5E1] mr-0.5">{si + 1}</span>{s.name}
+                <button onClick={() => removeRider(dir, bus, r.stop, s)} title="빼기" className="text-[#D1D5DB] hover:text-[#EF4444] ml-0.5 leading-none">×</button>
+              </span>
             ))}
-            {r.students.length === 0 && <div className="col-span-2 h-[15px] flex items-center justify-center text-[#CBD5E1] text-[8px]">없음</div>}
+            {r.students.length === 0 && <span className="text-[10px] text-[#CBD5E1]">탑승 없음</span>}
+            <span className="text-[9px] font-bold text-[#94A3B8] ml-0.5">({r.students.length})</span>
           </div>
-          {adding && (
-            <div className="relative p-0.5 border-b border-[#f0f0f0]">
-              <input autoFocus value={riderQ} onChange={e => searchRiders(e.target.value)} placeholder="학생 검색" className={`w-full ${inputCls}`} />
-              {riderResults.length > 0 && (
-                <div className="absolute z-10 left-1 right-1 mt-0.5 bg-white border border-[#E2E8F0] rounded-lg shadow-lg max-h-40 overflow-auto">
-                  {riderResults.map(s => (
-                    <button key={s.id} onClick={() => addRider(dir, bus, r, s)} className="w-full text-left px-2 py-1.5 hover:bg-[#EAF2FB] text-[12px]">
-                      {s.name}{s.english_name ? <span className="text-[#94A3B8]"> ({s.english_name})</span> : null}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+          {/* 작업 */}
+          <div className="px-1 py-0.5 flex items-center gap-0.5 justify-end text-[9px]">
+            <button onClick={() => { setAddRiderKey(a => a === k ? null : k); setRiderQ(''); setRiderResults([]) }}
+              className={`font-bold border rounded px-1 py-px ${adding ? 'bg-[#16A34A] text-white border-[#16A34A]' : 'text-[#16A34A] border-[#16A34A]'}`}>학생+</button>
+            <button onClick={() => { if (editing) setEditKey(null); else { setEditKey(k); setCoordOpen(false); setDraftK(k, r, {}) } }}
+              className={`font-bold border rounded px-1 py-px ${editing ? 'bg-[#004EA2] text-white border-[#004EA2]' : 'text-[#004EA2] border-[#004EA2]'}`}>수정</button>
+            {onLocateStop && <button onClick={() => onLocateStop(r.stop, bus)} title="시스템 지도에서 위치수정" className="font-bold text-[#004EA2] border border-[#004EA2] rounded px-1 py-px">지도</button>}
+            {!r.hasStudents && <button onClick={() => deleteStop(dir, bus, r.stop)} title="정류장 삭제" className="text-[#CBD5E1] hover:text-[#EF4444] font-bold px-0.5">×</button>}
+          </div>
         </div>
 
-        {/* 편집 펼침: 시간·운행요일·좌표 */}
-        {editing && (
-          <div className="px-1.5 pb-1.5 space-y-1.5 border-t border-[#EEF2F7] pt-1.5 bg-[#FCFCFD]">
-            <div className="flex items-center gap-1">
-              <span className="text-[10px] text-[#94A3B8] w-7">시간</span>
-              <input type="time" value={d.time} onChange={e => setDraftK(k, r, { time: e.target.value })} className={`flex-1 ${inputCls}`} />
-            </div>
-            <div className="flex items-center gap-1">
-              <span className="text-[10px] text-[#94A3B8] w-7">요일</span>
-              <div className="flex gap-0.5">
-                {DAYS.map(day => {
-                  const on = r.days.includes(day)
-                  return (
-                    <button key={day} type="button" disabled={!on || busy} onClick={() => removeDay(dir, bus, r, day)}
-                      title={on ? `${day}요일 운행 — 누르면 제거` : `${day}요일 미운행`}
-                      className="w-4 h-4 rounded-full text-[8px] font-bold flex items-center justify-center disabled:cursor-default"
-                      style={on ? { background: color, color: '#fff' } : { background: '#F1F5F9', color: '#CBD5E1' }}>{day}</button>
-                  )
-                })}
+        {/* 학생 검색(추가) */}
+        {adding && (
+          <div className="relative px-2 py-1 bg-[#F0FDF4] border-t border-[#DCFCE7]">
+            <input autoFocus value={riderQ} onChange={e => searchRiders(e.target.value)} placeholder="개설반 학생 검색" className={`w-64 max-w-full ${inputCls}`} />
+            {riderResults.length > 0 && (
+              <div className="absolute z-20 left-2 mt-0.5 w-64 bg-white border border-[#E2E8F0] rounded-lg shadow-lg max-h-48 overflow-auto">
+                {riderResults.map(s => (
+                  <button key={s.id} onClick={() => addRider(dir, bus, r, s)} className="w-full text-left px-2 py-1.5 hover:bg-[#EAF2FB] text-[12px]">
+                    {s.name}{s.english_name ? <span className="text-[#94A3B8]"> ({s.english_name})</span> : null}
+                  </button>
+                ))}
               </div>
+            )}
+          </div>
+        )}
+
+        {/* 편집 펼침: 시간·이름·운행요일·좌표 */}
+        {editing && (
+          <div className="px-2 py-1.5 border-t border-[#EEF2F7] bg-[#FCFCFD] flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-1 text-[10px] text-[#94A3B8]">이름
+              <input value={d.name} onChange={e => setDraftK(k, r, { name: e.target.value })} className={`w-40 ${inputCls}`} /></label>
+            <label className="flex items-center gap-1 text-[10px] text-[#94A3B8]">시간
+              <input type="time" value={d.time} onChange={e => setDraftK(k, r, { time: e.target.value })} className={`w-28 ${inputCls}`} /></label>
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] text-[#94A3B8]">요일(끄기)</span>
+              {DAYS.map(day => {
+                const on = r.days.includes(day)
+                return (
+                  <button key={day} type="button" disabled={!on || busy} onClick={() => removeDay(dir, bus, r, day)}
+                    title={on ? `${day}요일 운행 — 누르면 제거` : `${day}요일 미운행`}
+                    className="w-4 h-4 rounded-full text-[8px] font-bold flex items-center justify-center disabled:cursor-default"
+                    style={on ? { background: color, color: '#fff' } : { background: '#F1F5F9', color: '#CBD5E1' }}>{day}</button>
+                )
+              })}
             </div>
             <button type="button" onClick={() => setCoordOpen(o => !o)} className="text-[11px] font-semibold text-[#004EA2]">
               {coordOpen ? '▾' : '▸'} 좌표·주소 {hasCoord ? '(설정됨)' : '(없음)'}
             </button>
             {coordOpen && (
-              <>
-                <div className="flex gap-1">
-                  <input value={d.addr} onChange={e => setDraftK(k, r, { addr: e.target.value })}
-                    onKeyDown={e => { if (e.key === 'Enter') geocodeRow(k, r) }} placeholder="주소검색" className={`flex-1 min-w-0 ${inputCls}`} />
-                  <button onClick={() => geocodeRow(k, r)} disabled={geoKey === k || !d.addr.trim()}
-                    className="text-[11px] font-bold text-white bg-[#004EA2] rounded px-2 disabled:opacity-40">{geoKey === k ? '…' : '검색'}</button>
-                </div>
-                <div className="flex gap-1">
-                  <input value={d.lat} onChange={e => setDraftK(k, r, { lat: e.target.value })} placeholder="위도" className={`flex-1 min-w-0 ${inputCls}`} />
-                  <input value={d.lng} onChange={e => setDraftK(k, r, { lng: e.target.value })} placeholder="경도" className={`flex-1 min-w-0 ${inputCls}`} />
-                </div>
-              </>
+              <div className="flex items-center gap-1 basis-full">
+                <input value={d.addr} onChange={e => setDraftK(k, r, { addr: e.target.value })}
+                  onKeyDown={e => { if (e.key === 'Enter') geocodeRow(k, r) }} placeholder="주소검색" className={`w-56 ${inputCls}`} />
+                <button onClick={() => geocodeRow(k, r)} disabled={geoKey === k || !d.addr.trim()}
+                  className="text-[11px] font-bold text-white bg-[#004EA2] rounded px-2 py-1 disabled:opacity-40">{geoKey === k ? '…' : '검색'}</button>
+                <input value={d.lat} onChange={e => setDraftK(k, r, { lat: e.target.value })} placeholder="위도" className={`w-28 ${inputCls}`} />
+                <input value={d.lng} onChange={e => setDraftK(k, r, { lng: e.target.value })} placeholder="경도" className={`w-28 ${inputCls}`} />
+              </div>
             )}
-            <div className="flex gap-1 justify-end">
+            <div className="flex gap-1 ml-auto">
               <button onClick={() => { setDrafts(prev => { const n = { ...prev }; delete n[k]; return n }); setEditKey(null) }}
                 className="text-[11px] border border-[#E2E8F0] text-[#64748B] font-semibold px-2 py-1 rounded">취소</button>
               <button onClick={() => saveRow(dir, bus, r)} disabled={busy || !isDirtyK(k, r)}
@@ -438,16 +438,6 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
             </div>
           </div>
         )}
-
-        {/* 푸터: 학생+ · 수정 · 지도 · 삭제 */}
-        <div className="border-t border-[#EEF2F7] px-0.5 py-0.5 flex items-center gap-0.5 text-[9px] bg-[#FCFCFD]">
-          <button onClick={() => { setAddRiderKey(a => a === k ? null : k); setRiderQ(''); setRiderResults([]) }}
-            className={`font-bold border rounded px-1 leading-tight py-px ${adding ? 'bg-[#16A34A] text-white border-[#16A34A]' : 'text-[#16A34A] border-[#16A34A]'}`}>학생+</button>
-          <button onClick={() => { if (editing) setEditKey(null); else { setEditKey(k); setCoordOpen(false); setDraftK(k, r, {}) } }}
-            className={`font-bold border rounded px-1 leading-tight py-px ${editing ? 'bg-[#004EA2] text-white border-[#004EA2]' : 'text-[#004EA2] border-[#004EA2]'}`}>수정</button>
-          {onLocateStop && <button onClick={() => onLocateStop(r.stop, bus)} title="시스템 지도에서 위치수정" className="font-bold text-[#004EA2] border border-[#004EA2] rounded px-1 leading-tight py-px">지도</button>}
-          {!r.hasStudents && <button onClick={() => deleteStop(dir, bus, r.stop)} title="정류장 삭제" className="ml-auto text-[#CBD5E1] hover:text-[#EF4444] font-bold px-0.5">삭제</button>}
-        </div>
       </div>
     )
   }
@@ -476,20 +466,26 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
         </div>
 
         {!isCollapsed && (
-          <div className="flex flex-wrap items-start gap-1 pb-1">
-            {rows.map((r, i) => <StopCard key={r.stop} dir={dir} bus={bus} r={r} i={i} />)}
+          <div className="border border-[#E2E8F0] rounded-md overflow-hidden">
+            {/* 칼럼 헤더 (엑셀 배차표: 시간·장소·명단) */}
+            <div className={`${GRID} text-[10px] font-bold text-[#64748B] bg-[#F1F5F9] border-b border-[#E2E8F0]`}>
+              <div className="px-1 py-1 text-center border-r border-[#E2E8F0]">시간</div>
+              <div className="px-1.5 py-1 border-r border-[#E2E8F0]">장소</div>
+              <div className="px-1.5 py-1">탑승자 명단</div>
+              <div className="px-1 py-1 text-right">작업</div>
+            </div>
+            {rows.map((r, i) => <StopRow key={r.stop} dir={dir} bus={bus} r={r} i={i} />)}
+            {rows.length === 0 && <div className="text-[10px] text-[#CBD5E1] py-2 px-2">정류장 없음</div>}
             {/* 새 정류장 추가 */}
             {!q && (
-              <div className="flex-shrink-0 w-[164px] rounded-md border border-dashed border-[#CBD5E1] bg-[#FAFBFC] p-1 flex flex-col gap-0.5 self-start">
-                <input value={add.stop} onChange={e => setAddStop(prev => ({ ...prev, [bk]: { ...add, stop: e.target.value } }))} placeholder="새 정류장명" className={`w-full ${inputCls}`} />
-                <div className="flex gap-0.5">
-                  <input type="time" value={add.time} onChange={e => setAddStop(prev => ({ ...prev, [bk]: { ...add, time: e.target.value } }))} className={`flex-1 min-w-0 ${inputCls}`} />
-                  <button onClick={() => addNewStop(dir, bus)} disabled={savingKey === 'addstop|' + bk || !add.stop.trim()}
-                    className="text-[10px] font-bold border px-1.5 rounded disabled:opacity-40" style={{ color, borderColor: color }}>추가</button>
-                </div>
+              <div className="flex items-center gap-1 px-2 py-1 border-t border-[#EEF2F7] bg-[#FAFBFC]">
+                <span className="text-[10px] font-bold text-[#94A3B8]">+ 새 정류장</span>
+                <input type="time" value={add.time} onChange={e => setAddStop(prev => ({ ...prev, [bk]: { ...add, time: e.target.value } }))} className={`w-24 ${inputCls}`} />
+                <input value={add.stop} onChange={e => setAddStop(prev => ({ ...prev, [bk]: { ...add, stop: e.target.value } }))} placeholder="정류장명(장소)" className={`w-52 ${inputCls}`} />
+                <button onClick={() => addNewStop(dir, bus)} disabled={savingKey === 'addstop|' + bk || !add.stop.trim()}
+                  className="text-[10px] font-bold border px-2 py-1 rounded disabled:opacity-40" style={{ color, borderColor: color }}>추가</button>
               </div>
             )}
-            {rows.length === 0 && <div className="text-[10px] text-[#CBD5E1] py-2">정류장 없음</div>}
           </div>
         )}
       </div>
