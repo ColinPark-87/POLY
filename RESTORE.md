@@ -8,7 +8,7 @@
 | 백업 브랜치 | `backup/pre-busstop-2col-20260701` (=커밋 `bc0d888`, 2col 카드 이전 라이브) |
 | 변경 커밋 | `cb1a3cc` (반편성식 밴드·학생 2열·이모지제거 + RouteMapView handleStopResultClick coordsRef 폴백) |
 | Vercel 롤백 대상 (직전 라이브) | `poly-73fjp4t8v-colinpark-87s-projects.vercel.app` (2열 병합 카드) |
-| 현재 라이브 | `poly-qqcvyshw9-colinpark-87s-projects.vercel.app` / https://poly-system.vercel.app (2026-07-01, 승하차장소 세션 그룹배경색+시간순 정렬) |
+| 현재 라이브 | `poly-7xzp1fqqt-colinpark-87s-projects.vercel.app` / https://poly-system.vercel.app (2026-07-01, 지도취소복귀·삭제빈정류장만·좌표지도 버튼단일화) |
 | (탭통합 4단계 완료 dpl) | `poly-jm36z6gah` (시스템 리모컨 노선만·2탭) |
 | 탭통합 백업 | 브랜치·태그 `pre-vehicle-consolidation-20260701`(2d5a99c, 라이브 poly-qkdgjn4ov) — 3탭 통합 착수 전 |
 | 롤백 방법 | `vercel promote poly-73fjp4t8v-colinpark-87s-projects.vercel.app` 또는 `git checkout backup/pre-busstop-2col-20260701` 후 재배포 |
