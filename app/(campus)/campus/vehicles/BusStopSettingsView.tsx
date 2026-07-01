@@ -88,7 +88,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
   const [savingKey, setSavingKey] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [selDate, setSelDate] = useState(todayStr)  // 탑승인원 계산 기준 날짜(달력)
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())  // `${bus}|${filter}`
+  const [selSession, setSelSession] = useState<Filter>('유치부')  // 데스크톱 세션 탭
   // 인라인 셀 편집
   const [cellEdit, setCellEdit] = useState<{ key: string; field: 'time' | 'name' } | null>(null)
   const [cellVal, setCellVal] = useState('')
@@ -106,6 +106,9 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
   // 당일만 탑승(override) — 선택 날짜 기준, 날짜 바뀌면 재조회되어 사라짐
   const [overrides, setOverrides] = useState<{ arr: OvRow[]; dep: OvRow[] }>({ arr: [], dep: [] })
   const [addDayKey, setAddDayKey] = useState<string | null>(null)
+  const [isMobile, setIsMobile] = useState(false)  // 모바일=슬라이드 뷰(세션×방향 1장씩), 지도/좌표 숨김
+  const [slideIdx, setSlideIdx] = useState(0)
+  const slideRef = useRef<HTMLDivElement>(null)
 
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(''), 3200) }
 
@@ -132,6 +135,12 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
     setOverrides({ arr: all.filter(o => o.direction === 'arr'), dep: all.filter(o => o.direction === 'dep') })
   }, [])
   useEffect(() => { loadOverrides(selDate) }, [selDate, loadOverrides])
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 640px)')
+    const on = () => setIsMobile(mq.matches)
+    on(); mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
 
   const buses: Bus[] = useMemo(() => (raw ? (raw.arr.buses?.length ? raw.arr.buses : raw.dep.buses) ?? [] : []), [raw])
   useEffect(() => { if (buses.length && !buses.some(b => b.name === selectedBus)) setSelectedBus(buses[0].name) }, [buses, selectedBus])
@@ -702,6 +711,143 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
 
   const bus = selectedBus
 
+  // ── 모바일 정류장 카드 (지도·좌표 없음, 터치 큼) ──
+  const MobileStopCard = ({ dir, bus, r }: { dir: Dir; bus: string; r: Row }) => {
+    const k = dkey(dir, bus, r.stop)
+    const busy = savingKey === k
+    const editing = cellEdit?.key === k
+    const adding = addRiderKey === k
+    const dayAdding = addDayKey === k
+    const color = dirColor(dir)
+    const hasCoord = !!coords[r.stop]
+    const absent = ovAbsentSet(dir)
+    const adds = ovAdds(dir, bus, r.stop)
+    const cnt = dayCount(r, dir, bus)
+    return (
+      <div className="rounded-xl border border-[#E2E8F0] bg-white mb-2 overflow-hidden">
+        <div className="flex items-center gap-2 px-2.5 py-2" style={{ borderLeft: `5px solid ${color}` }}>
+          <button onClick={() => startCell(k, 'time', r.time)} className="text-[16px] font-bold tabular-nums" style={{ color }}>{r.time || '–'}</button>
+          <button onClick={() => startCell(k, 'name', r.stop)} className="flex-1 text-left text-[15px] font-bold text-[#1E293B] truncate">{r.stop}{!hasCoord && <span className="text-[#F59E0B]"> *</span>}</button>
+          <span className="text-[18px] font-extrabold tabular-nums" style={{ color }}>{cnt}<span className="text-[11px] text-[#94A3B8] font-normal">명</span></span>
+        </div>
+        {editing && (
+          <div className="px-2.5 py-2 bg-[#FFFBEB] border-t border-[#FDE68A] flex items-center gap-2">
+            <input type={cellEdit!.field === 'time' ? 'time' : 'text'} autoFocus value={cellVal} onChange={e => setCellVal(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') commitCell(dir, bus, r); else if (e.key === 'Escape') setCellEdit(null) }}
+              className="flex-1 border border-[#E2E8F0] rounded px-2 py-1.5 text-[15px]" />
+            <button onClick={() => commitCell(dir, bus, r)} disabled={busy} className="text-[13px] bg-[#004EA2] text-white font-bold px-3 py-1.5 rounded">저장</button>
+            <button onClick={() => setCellEdit(null)} className="text-[13px] border border-[#E2E8F0] text-[#64748B] px-3 py-1.5 rounded">취소</button>
+          </div>
+        )}
+        <div className="px-2.5 py-2 flex flex-wrap gap-1.5">
+          {r.students.map((s, si) => {
+            const sd = s.days.length ? s.days : r.days
+            const rides = ridesOn(s, r) && !absent.has(s.id)
+            return (
+              <span key={s.id} className="inline-flex flex-col gap-0.5 bg-[#F1F5F9] rounded-lg px-1.5 py-1" style={{ opacity: rides ? 1 : 0.4 }}>
+                <span className="flex items-center gap-1 text-[13px] text-[#334155]">
+                  <span className="text-[9px] text-[#94A3B8]">{si + 1}</span><span className={rides ? '' : 'line-through'}>{s.name}</span>
+                  <button onClick={() => removeRider(dir, bus, r.stop, s)} className="text-[#B6C0CC] hover:text-[#EF4444] text-[13px] leading-none">×</button>
+                </span>
+                <span className="flex gap-0.5">
+                  {DAYS.map(day => { const on = sd.includes(day); return (
+                    <button key={day} onClick={() => toggleRiderDay(dir, bus, r, s, day, on)} disabled={savingKey === 'sday|' + s.id + day}
+                      className="text-[8px] font-bold rounded-full w-3.5 h-3.5 flex items-center justify-center"
+                      style={on ? { background: color, color: '#fff' } : { background: '#E2E8F0', color: '#94A3B8' }}>{day}</button>
+                  ) })}
+                </span>
+              </span>
+            )
+          })}
+          {adds.map(o => (
+            <span key={'ov' + o.student_id} className="inline-flex items-center gap-1 bg-[#FFEDD5] border border-[#FED7AA] rounded-lg px-1.5 py-1 text-[13px] text-[#9A3412]">
+              <span className="text-[8px] font-bold bg-[#EA580C] text-white rounded px-0.5">당일</span>{o.name}
+              <button onClick={() => removeDayRider(dir, o.student_id, o.name)} className="text-[#EA580C] text-[13px] leading-none">×</button>
+            </span>
+          ))}
+          {r.students.length === 0 && adds.length === 0 && <span className="text-[12px] text-[#CBD5E1]">탑승 없음</span>}
+        </div>
+        <div className="px-2.5 py-2 border-t border-[#EEF2F7] flex gap-1.5 bg-[#FCFCFD]">
+          <button onClick={() => { setAddRiderKey(a => a === k ? null : k); setAddDayKey(null); setRiderQ(''); setRiderResults([]) }}
+            className={`text-[13px] font-bold border rounded-lg px-3 py-1.5 ${adding ? 'bg-[#16A34A] text-white border-[#16A34A]' : 'text-[#16A34A] border-[#16A34A]'}`}>학생+</button>
+          <button onClick={() => { setAddDayKey(a => a === k ? null : k); setAddRiderKey(null); setRiderQ(''); setRiderResults([]) }}
+            className={`text-[13px] font-bold border rounded-lg px-3 py-1.5 ${dayAdding ? 'bg-[#EA580C] text-white border-[#EA580C]' : 'text-[#EA580C] border-[#EA580C]'}`}>당일+</button>
+        </div>
+        {(adding || dayAdding) && (
+          <div className="relative px-2.5 py-2 border-t border-[#EEF2F7]" style={{ background: dayAdding ? '#FFF7ED' : '#F0FDF4' }}>
+            {dayAdding && <span className="text-[11px] font-bold text-[#9A3412]">{selDate} 당일 추가:</span>}
+            <input autoFocus value={riderQ}
+              onChange={e => { const v = e.target.value; setRiderQ(v); if (!composing.current) searchRiders(v) }}
+              onCompositionStart={() => { composing.current = true }}
+              onCompositionEnd={e => { composing.current = false; searchRiders(e.currentTarget.value) }}
+              placeholder="개설반 학생 이름 검색" className="w-full border border-[#E2E8F0] rounded px-2 py-1.5 text-[14px] mt-0.5" />
+            {riderResults.length > 0 && (
+              <div className="absolute z-20 left-2.5 right-2.5 mt-0.5 bg-white border border-[#E2E8F0] rounded-lg shadow-lg max-h-52 overflow-auto">
+                {riderResults.map(s => (
+                  <button key={s.id} onClick={() => (dayAdding ? addDayRider : addRider)(dir, bus, r, s)} className="w-full text-left px-3 py-2 hover:bg-[#EAF2FB] text-[14px]">
+                    {s.name}{s.english_name ? <span className="text-[#94A3B8]"> ({s.english_name})</span> : null}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // ── 모바일: 세션×방향 슬라이드(한 장씩 스와이프) ──
+  if (isMobile) {
+    const slides: { f: Filter; dir: Dir; rows: Row[] }[] = []
+    for (const f of FILTERS) for (const dd of (['arr', 'dep'] as Dir[])) { const rows = rowsOf(f, dd, bus); if (rows.length) slides.push({ f, dir: dd, rows }) }
+    const idx = Math.min(slideIdx, Math.max(0, slides.length - 1))
+    const cur = slides[idx]
+    return (
+      <div className="pb-16">
+        {msg && <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[200] px-4 py-2.5 rounded-full bg-[#16A34A] text-white text-[13px] font-extrabold shadow-xl pointer-events-none">{msg}</div>}
+        {/* 호차 탭 */}
+        <div className="flex gap-1.5 overflow-x-auto pb-1 mb-2">
+          {buses.map(b => (
+            <button key={b.id} onClick={() => { setSelectedBus(b.name); setSlideIdx(0); slideRef.current?.scrollTo({ left: 0 }) }}
+              className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-sm font-bold ${bus === b.name ? 'bg-[#004EA2] text-white' : 'bg-white border border-[#E2E8F0] text-[#64748B]'}`}>{b.name}</button>
+          ))}
+        </div>
+        {/* 기준일 + 인쇄 */}
+        <div className="flex items-center gap-2 mb-2">
+          <input type="date" value={selDate} onChange={e => setSelDate(e.target.value)} className="border border-[#E2E8F0] rounded-lg px-2 py-1.5 text-sm" />
+          <span className="text-[12px] font-bold text-[#004EA2] w-6">{selDay || '주말'}</span>
+          <button onClick={() => printBuses([bus])} disabled={!bus} className="ml-auto text-sm font-semibold border border-[#004EA2] text-[#004EA2] rounded-lg px-3 py-1.5 disabled:opacity-40">인쇄</button>
+        </div>
+        {slides.length === 0 ? (
+          <div className="text-center text-[#CBD5E1] py-16 text-sm">{bus ? `${bus} 정류장 데이터 없음` : '호차 없음'}</div>
+        ) : (
+          <>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[15px] font-extrabold" style={{ color: dirColor(cur.dir) }}>{bus} · {FILTER_LABEL[cur.f]} · {dirLabel(cur.dir)}</span>
+              <span className="text-[11px] text-[#94A3B8]">{idx + 1}/{slides.length}</span>
+            </div>
+            <div className="flex justify-center gap-1 mb-2">
+              {slides.map((_, i) => <span key={i} className="w-1.5 h-1.5 rounded-full" style={{ background: i === idx ? '#004EA2' : '#CBD5E1' }} />)}
+            </div>
+            <div ref={slideRef} onScroll={e => { const el = e.currentTarget; setSlideIdx(Math.round(el.scrollLeft / el.clientWidth)) }}
+              className="flex overflow-x-auto -mx-1" style={{ scrollSnapType: 'x mandatory' }}>
+              {slides.map((sl, i) => (
+                <div key={i} className="min-w-full px-1" style={{ scrollSnapAlign: 'center' }}>
+                  <div className="mb-1.5 pb-0.5 text-[13px] font-bold flex items-center gap-2" style={{ borderBottom: `2px solid ${dirColor(sl.dir)}`, color: dirColor(sl.dir) }}>
+                    {FILTER_LABEL[sl.f]} · {dirLabel(sl.dir)}
+                    <span className="text-[10px] text-[#94A3B8] font-normal">정류장 {sl.rows.length} · 탑승 {sl.rows.reduce((n, r) => n + dayCount(r, sl.dir, bus), 0)}명</span>
+                  </div>
+                  {sl.rows.map(r => <Fragment key={r.stop}>{MobileStopCard({ dir: sl.dir, bus, r })}</Fragment>)}
+                </div>
+              ))}
+            </div>
+            <p className="text-center text-[11px] text-[#CBD5E1] mt-2">← 좌우로 밀어 세션·방향 이동 →</p>
+          </>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="pb-12">
       {msg && (
@@ -736,35 +882,31 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
         </div>
       </div>
 
-      {/* 선택 호차의 세션별 섹션 */}
-      <div className="space-y-3">
-        {FILTERS.map(f => {
-          const arrN = rowsOf(f, 'arr', bus).length, depN = rowsOf(f, 'dep', bus).length
-          if (arrN === 0 && depN === 0) return null
-          const ck = `${bus}|${f}`
-          const open = q ? true : !collapsed.has(ck)
-          return (
-            <div key={f} className="border border-[#E2E8F0] rounded-lg overflow-hidden bg-white">
-              <button onClick={() => setCollapsed(prev => { const n = new Set(prev); n.has(ck) ? n.delete(ck) : n.add(ck); return n })}
-                className="w-full flex items-center justify-between px-3 py-1.5 bg-[#F1F5F9] border-b border-[#E2E8F0] text-left hover:bg-[#E9EEF5]">
-                <span className="font-bold text-[13px] text-[#1E293B]">{FILTER_LABEL[f]}
-                  <span className="text-[#94A3B8] font-normal text-[11px]"> (등 {arrN} · 하 {depN})</span>
-                </span>
-                <span className="text-[#94A3B8] text-xs">{open ? '▾ 접기' : '▸ 펴기'}</span>
-              </button>
-              {open && (
-                <div className="px-2 pb-2">
-                  {DirTable({ dir: 'arr', bus, flt: f })}
-                  {DirTable({ dir: 'dep', bus, flt: f })}
-                </div>
-              )}
+      {/* 선택 호차: 세션 탭 → 그 세션 등원·하원만 (스크롤 대신 탭 전환) */}
+      {(() => {
+        const avail = FILTERS.filter(f => rowsOf(f, 'arr', bus).length || rowsOf(f, 'dep', bus).length)
+        if (!avail.length) return <div className="text-center text-[#CBD5E1] text-sm py-10">{bus ? `${bus} 정류장 데이터 없음` : '호차 없음'}</div>
+        const active = avail.includes(selSession) ? selSession : avail[0]
+        return (
+          <div>
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              {avail.map(f => {
+                const arrN = rowsOf(f, 'arr', bus).length, depN = rowsOf(f, 'dep', bus).length
+                return (
+                  <button key={f} onClick={() => setSelSession(f)}
+                    className={`px-3.5 py-1.5 rounded-lg text-sm font-bold transition-colors ${active === f ? 'bg-[#004EA2] text-white' : 'bg-white border border-[#E2E8F0] text-[#64748B] hover:border-[#94A3B8]'}`}>
+                    {FILTER_LABEL[f]}<span className={`ml-1 text-[11px] font-normal ${active === f ? 'text-white/70' : 'text-[#94A3B8]'}`}>등{arrN}·하{depN}</span>
+                  </button>
+                )
+              })}
             </div>
-          )
-        })}
-        {FILTERS.every(f => rowsOf(f, 'arr', bus).length === 0 && rowsOf(f, 'dep', bus).length === 0) && (
-          <div className="text-center text-[#CBD5E1] text-sm py-10">{bus ? `${bus} 정류장 데이터 없음` : '호차 없음'}</div>
-        )}
-      </div>
+            <div>
+              {DirTable({ dir: 'arr', bus, flt: active })}
+              {DirTable({ dir: 'dep', bus, flt: active })}
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
