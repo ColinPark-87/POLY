@@ -684,7 +684,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
                   className="col-span-2 font-bold border rounded px-1 py-px bg-[#004EA2] text-white border-[#004EA2]">지도 세부조정</button>)
               : <button onClick={() => { if (coording) setCoordKey(null); else { setCoordKey(k); setGeoResults([]); setCoordDraft({ lat: '', lng: '', addr: '' }) } }}
                   title="좌표 없음 — 주소검색으로 위치 설정"
-                  className={`col-span-2 font-bold border rounded px-1 py-px ${coording ? 'bg-[#EA580C] text-white border-[#EA580C]' : 'text-[#B45309] border-[#F59E0B] bg-[#FEF3C7] animate-pulse'}`}>좌표 설정</button>)}
+                  className={`col-span-2 font-bold border rounded px-1 py-px ${coording ? 'bg-[#EA580C] text-white border-[#EA580C]' : 'text-[#B45309] border-[#F59E0B] bg-[#FEF3C7] animate-pulse'}`}>정류장 설정</button>)}
             {!ro && !r.hasStudents && adds.length === 0 && <button onClick={() => deleteStop(dir, bus, r)} title="빈 정류장 삭제" className="col-span-2 text-[#EF4444] border border-[#FCA5A5] rounded px-1 py-px font-bold hover:bg-[#FEF2F2]">정류장 삭제</button>}
           </div>
           {/* 탑승자 명단 (칩) — 요일 미탑승/결석은 흐림, 당일추가는 주황 */}
