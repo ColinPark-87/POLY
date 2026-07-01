@@ -533,8 +533,8 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
     const adds = ovAdds(dir, bus, r.stop)
     const cnt = dayCount(r, dir, bus)
     return (
-      <div className="border-b border-[#EEF2F7] last:border-0" style={{ borderLeft: `3px solid ${color}` }}>
-        <div className={`${GRID} items-center text-[11px] ${i % 2 === 0 ? 'bg-white' : 'bg-[#FAFBFC]'} hover:bg-[#F5F8FC]`}>
+      <div className="border-b-2 border-[#CBD5E1] last:border-0" style={{ borderLeft: `3px solid ${color}` }}>
+        <div className={`${GRID} items-center text-[11px] ${i % 2 === 0 ? 'bg-white' : 'bg-[#F1F5F9]'} hover:bg-[#EAF2FB]`}>
           {/* 시간 (클릭 → 아래 편집행) */}
           <div className="px-1 py-0.5 border-r border-[#F1F5F9] text-center">
             <button onClick={() => startCell(k, 'time', r.time)} title="클릭해 시간 변경"
@@ -708,8 +708,11 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
     return (
       <div>
         <div className="flex items-center gap-2 mb-0.5 pb-0.5" style={{ borderBottom: `2px solid ${color}` }}>
-          <span className="text-[12px] font-extrabold" style={{ color }}>{dirLabel(dir)}</span>
-          <span className="text-[10px] text-[#94A3B8]">정류장 {rows.length} · 탑승 {studentN}명</span>
+          <span className="text-[13px] font-extrabold" style={{ color }}>{dirLabel(dir)}</span>
+          <span className="flex items-center gap-1 ml-auto">
+            <span className="text-[11px] font-bold text-white rounded px-1.5 py-0.5" style={{ background: color }}>정류장 {rows.length}</span>
+            <span className="text-[11px] font-bold rounded px-1.5 py-0.5" style={{ background: color + '22', color }}>탑승 {studentN}명</span>
+          </span>
         </div>
         <div className="border border-[#E2E8F0] rounded-md overflow-hidden">
           <div className={`${GRID} text-[10px] font-bold text-[#64748B] bg-[#F1F5F9] border-b border-[#E2E8F0]`}>
@@ -739,9 +742,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
 
   // ── 호차 히어로(얇은 1줄): 기사·정원·안전선생님·해당일 총탑승 + 설정편집 ──
   const BusHero = ({ b }: { b: Bus }) => {
-    const arrT = busTotalFor(b.name, 'arr'), depT = busTotalFor(b.name, 'dep')
     const cap = b.capacity ?? 0
-    const over = cap > 0 && Math.max(arrT, depT) > cap
     const M = ({ label, val, sub }: { label: string; val?: string | null; sub?: string | null }) => (
       <span className="flex items-baseline gap-1 whitespace-nowrap">
         <span className="text-[10px] text-[#94A3B8]">{label}</span>
@@ -756,23 +757,21 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
           <M label="기사" val={b.driver} sub={b.driver_phone} />
           <M label="정원" val={cap ? `${cap}석` : null} />
           <M label="안전샘" val={b.safety} sub={b.safety_phone} />
-          <span className="flex items-baseline gap-1.5 whitespace-nowrap">
-            <span className="text-[10px] text-[#94A3B8]">{selDate.slice(5)}{selDay ? `(${selDay})` : ''} 탑승</span>
-            <span className="text-[13px] font-extrabold" style={{ color: ARR }}>등 {arrT}</span>
-            <span className="text-[13px] font-extrabold" style={{ color: DEP }}>하 {depT}</span>
-            {over && <span className="text-[10px] font-bold text-white bg-[#EF4444] rounded px-1">정원초과</span>}
-          </span>
           <button onClick={() => { if (busEditOpen) { setBusEditOpen(false); return } setBusEdit({ driver: b.driver ?? '', driver_phone: b.driver_phone ?? '', safety: b.safety ?? '', safety_phone: b.safety_phone ?? '', capacity: b.capacity ? String(b.capacity) : '' }); setBusEditOpen(true) }}
-            className="ml-auto text-[11px] font-bold text-[#004EA2] border border-[#004EA2] rounded px-2 py-0.5">{busEditOpen ? '닫기' : '설정'}</button>
+            className={`ml-auto text-[11px] font-bold border rounded px-2 py-0.5 ${busEditOpen ? 'bg-[#004EA2] text-white border-[#004EA2]' : 'text-[#004EA2] border-[#004EA2]'}`}>{busEditOpen ? '닫기' : '수정'}</button>
         </div>
         {busEditOpen && (
           <div className="mt-1 pt-1 border-t border-[#E2E8F0] flex flex-wrap items-center gap-1.5">
-            <input value={busEdit.driver} onChange={e => setBusEdit(v => ({ ...v, driver: e.target.value }))} placeholder="기사명" className={`w-24 ${inputCls}`} />
-            <input value={busEdit.driver_phone} onChange={e => setBusEdit(v => ({ ...v, driver_phone: e.target.value }))} placeholder="기사 전화" className={`w-32 ${inputCls}`} />
-            <input value={busEdit.safety} onChange={e => setBusEdit(v => ({ ...v, safety: e.target.value }))} placeholder="안전선생님" className={`w-24 ${inputCls}`} />
-            <input value={busEdit.safety_phone} onChange={e => setBusEdit(v => ({ ...v, safety_phone: e.target.value }))} placeholder="안전 전화" className={`w-32 ${inputCls}`} />
-            <input value={busEdit.capacity} onChange={e => setBusEdit(v => ({ ...v, capacity: e.target.value.replace(/[^0-9]/g, '') }))} placeholder="정원" className={`w-16 ${inputCls}`} />
-            <button onClick={() => saveBus(b)} disabled={savingKey === 'bus|' + b.id} className="text-[11px] bg-[#004EA2] text-white font-bold px-3 py-1 rounded">저장</button>
+            <label className="flex items-center gap-1 text-[10px] text-[#94A3B8]">기사
+              <input value={busEdit.driver} onChange={e => setBusEdit(v => ({ ...v, driver: e.target.value }))} placeholder="이름" className={`w-20 ${inputCls}`} />
+              <input value={busEdit.driver_phone} onChange={e => setBusEdit(v => ({ ...v, driver_phone: e.target.value }))} placeholder="전화" className={`w-28 ${inputCls}`} /></label>
+            <label className="flex items-center gap-1 text-[10px] text-[#94A3B8]">안전샘
+              <input value={busEdit.safety} onChange={e => setBusEdit(v => ({ ...v, safety: e.target.value }))} placeholder="이름" className={`w-20 ${inputCls}`} />
+              <input value={busEdit.safety_phone} onChange={e => setBusEdit(v => ({ ...v, safety_phone: e.target.value }))} placeholder="전화" className={`w-28 ${inputCls}`} /></label>
+            <label className="flex items-center gap-1 text-[10px] text-[#94A3B8]">정원
+              <input value={busEdit.capacity} onChange={e => setBusEdit(v => ({ ...v, capacity: e.target.value.replace(/[^0-9]/g, '') }))} placeholder="석" className={`w-14 ${inputCls}`} /></label>
+            <button onClick={() => saveBus(b)} disabled={savingKey === 'bus|' + b.id} className="text-[12px] bg-[#004EA2] text-white font-bold px-3 py-1 rounded disabled:opacity-40">{savingKey === 'bus|' + b.id ? '저장…' : '저장'}</button>
+            <button onClick={() => setBusEditOpen(false)} className="text-[12px] border border-[#E2E8F0] text-[#64748B] font-semibold px-3 py-1 rounded">취소</button>
           </div>
         )}
       </div>
