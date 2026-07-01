@@ -117,6 +117,9 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
   const slideRef = useRef<HTMLDivElement>(null)
   const [busEditOpen, setBusEditOpen] = useState(false)  // 히어로 호차설정 편집
   const [busEdit, setBusEdit] = useState({ driver: '', driver_phone: '', safety: '', safety_phone: '', capacity: '' })
+  const [backupOpen, setBackupOpen] = useState(false)
+  const [backups, setBackups] = useState<{ id: string; label: string; created_at?: string }[]>([])
+  const [backupBusy, setBackupBusy] = useState<string | null>(null)
 
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(''), 3200) }
 
@@ -345,6 +348,38 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
       setRiderQ(''); setRiderResults([])
       flash(`'${stu.name}' 추가됨`); load()
     } catch (e) { alert(`추가 실패: ${(e as Error).message}`) } finally { setSavingKey(null) }
+  }
+
+  // ── 백업/복원 (학생설정 탭에서 이관) — 서버 /api/campus/backup ──
+  async function loadBackups() {
+    const d = await fetch('/api/campus/backup').then(r => r.json()).catch(() => ({}))
+    setBackups(d.backups ?? [])
+  }
+  async function createBackup() {
+    setBackupBusy('save')
+    try {
+      const label = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })
+      const d = await fetch('/api/campus/backup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'create', label }) }).then(r => r.json())
+      if (d.ok && d.backup) setBackups(prev => [d.backup, ...prev]); else if (d.error) throw new Error(d.error)
+      flash('백업 저장됨')
+    } catch (e) { alert(`백업 실패: ${(e as Error).message}`) } finally { setBackupBusy(null) }
+  }
+  async function restoreBackup(id: string, label: string) {
+    if (!confirm(`"${label}" 시점으로 복원할까요?\n현재 차량 스케줄이 덮어써집니다.`)) return
+    setBackupBusy('restore|' + id)
+    try {
+      const d = await fetch('/api/campus/backup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'restore', backup_id: id }) }).then(r => r.json())
+      if (!d.ok) throw new Error(d.error ?? '복원 실패')
+      setBackupOpen(false); flash('복원 완료'); load(); loadOverrides(selDate)
+    } catch (e) { alert(`복원 실패: ${(e as Error).message}`) } finally { setBackupBusy(null) }
+  }
+  async function deleteBackup(id: string) {
+    if (!confirm('이 백업을 삭제할까요?')) return
+    setBackupBusy('del|' + id)
+    try {
+      await fetch('/api/campus/backup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete', backup_id: id }) })
+      setBackups(prev => prev.filter(b => b.id !== id))
+    } catch (e) { alert(`삭제 실패: ${(e as Error).message}`) } finally { setBackupBusy(null) }
   }
 
   // 호차 설정 저장(기사·차량정원·안전선생님) — update_bus (kt는 기존값 보존)
@@ -961,6 +996,8 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
           className="text-sm font-semibold border border-[#004EA2] text-[#004EA2] rounded-lg px-3 py-1.5 hover:bg-[#EAF2FB] disabled:opacity-40">인쇄</button>
         <button onClick={() => printBuses(buses.map(b => b.name))} disabled={!buses.length} title="전체 호차 배차표 인쇄(호차당 1페이지)"
           className="text-sm font-semibold bg-[#004EA2] text-white rounded-lg px-3 py-1.5 hover:bg-[#003E82] disabled:opacity-40">전체 인쇄</button>
+        <button onClick={() => { setBackupOpen(true); loadBackups() }} title="차량 스케줄 백업/복원"
+          className="text-sm font-semibold border border-[#E2E8F0] text-[#64748B] rounded-lg px-3 py-1.5 hover:bg-[#F7F8FA]">백업</button>
         <div className="relative w-[220px] max-w-full">
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="정류장명 검색"
             className="w-full border border-[#E2E8F0] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#004EA2]" />
@@ -1014,6 +1051,33 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
           </div>
         )
       })()}
+
+      {/* 백업/복원 모달 */}
+      {backupOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[300] px-4" onClick={() => setBackupOpen(false)}>
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-4 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-[15px] font-extrabold text-[#1E293B]">차량 스케줄 백업/복원</h3>
+              <button onClick={() => setBackupOpen(false)} className="text-[#94A3B8] hover:text-[#1E293B] text-lg leading-none">✕</button>
+            </div>
+            <button onClick={createBackup} disabled={backupBusy === 'save'}
+              className="w-full mb-3 text-sm font-bold text-white bg-[#004EA2] rounded-lg py-2 disabled:opacity-40">{backupBusy === 'save' ? '저장 중…' : '＋ 현재 상태 백업'}</button>
+            <div className="space-y-1.5">
+              {backups.length === 0 && <p className="text-center text-[#CBD5E1] text-sm py-6">백업 없음</p>}
+              {backups.map(b => (
+                <div key={b.id} className="flex items-center gap-2 border border-[#E2E8F0] rounded-lg px-3 py-2">
+                  <span className="flex-1 text-[13px] font-semibold text-[#334155] truncate">{b.label}</span>
+                  <button onClick={() => restoreBackup(b.id, b.label)} disabled={!!backupBusy}
+                    className="text-[12px] font-bold text-[#004EA2] border border-[#004EA2] rounded px-2 py-1 disabled:opacity-40">{backupBusy === 'restore|' + b.id ? '복원…' : '복원'}</button>
+                  <button onClick={() => deleteBackup(b.id)} disabled={!!backupBusy}
+                    className="text-[12px] text-[#EF4444] border border-[#FCA5A5] rounded px-2 py-1 disabled:opacity-40">삭제</button>
+                </div>
+              ))}
+            </div>
+            <p className="text-[11px] text-[#94A3B8] mt-3">복원 시 현재 차량 스케줄이 백업 시점으로 덮어써집니다.</p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
