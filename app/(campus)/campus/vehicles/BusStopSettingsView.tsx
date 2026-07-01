@@ -6,7 +6,7 @@
 //   시간·장소 = 셀 클릭 인라인 개별 수정(일괄 폼 없음). 좌표 = [좌표] 팝오버(주소검색/핀) 또는 [지도] 드래그.
 //   학생 추가 검색 = 개설반 현황(enrolled) 소스. 학생명 = 분리 칩.
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 interface Bus { id: string; name: string; sort_order: number }
 interface Student {
@@ -72,7 +72,7 @@ function stopDayTriples(s: Student): [string, string, string][] {
 }
 
 interface Row { stop: string; time: string; sess: string[]; days: string[]; students: StuRef[]; hasStudents: boolean }
-const GRID = 'grid grid-cols-[56px_190px_1fr_120px]'
+const GRID = 'grid grid-cols-[56px_190px_128px_1fr]'  // 시간 | 장소 | 작업 | 탑승자명단
 
 export default function BusStopSettingsView({ campusName, onLocateStop }: { campusName?: string; onLocateStop?: (stop: string, bus: string) => void }) {
   void campusName
@@ -100,6 +100,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
   const [riderResults, setRiderResults] = useState<{ id: string; name: string; english_name: string | null }[]>([])
   // 새 정류장
   const [addStop, setAddStop] = useState<Record<string, { stop: string; time: string }>>({})
+  const composing = useRef(false)  // 한글 IME 조합 중 검색 트리거 억제(자모 분해 방지)
 
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(''), 3200) }
 
@@ -276,7 +277,6 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
     } catch (e) { alert(`제외 실패: ${(e as Error).message}`) } finally { setSavingKey(null) }
   }
   async function searchRiders(qstr: string) {
-    setRiderQ(qstr)
     if (!qstr.trim()) { setRiderResults([]); return }
     const res = await fetch('/api/campus/vehicles', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -351,22 +351,16 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
     return (
       <div className="border-b border-[#EEF2F7] last:border-0" style={{ borderLeft: `3px solid ${color}` }}>
         <div className={`${GRID} items-center text-[11px] ${i % 2 === 0 ? 'bg-white' : 'bg-[#FAFBFC]'} hover:bg-[#F5F8FC]`}>
-          {/* 시간 (클릭 인라인) */}
+          {/* 시간 (클릭 → 아래 편집행) */}
           <div className="px-1 py-1 border-r border-[#F1F5F9] text-center">
-            {editing && cellEdit!.field === 'time'
-              ? <input type="time" autoFocus value={cellVal} onChange={e => setCellVal(e.target.value)}
-                  onBlur={() => commitCell(dir, bus, r)} onKeyDown={e => { if (e.key === 'Enter') commitCell(dir, bus, r); else if (e.key === 'Escape') setCellEdit(null) }}
-                  className="w-full border border-[#004EA2] rounded px-0.5 py-px text-[11px]" />
-              : <button onClick={() => startCell(k, 'time', r.time)} title="클릭해 시간 변경" className="font-bold tabular-nums hover:underline" style={{ color }}>{r.time || '–'}</button>}
+            <button onClick={() => startCell(k, 'time', r.time)} title="클릭해 시간 변경"
+              className={`font-bold tabular-nums hover:underline ${editing && cellEdit!.field === 'time' ? 'ring-1 ring-[#004EA2] rounded px-1' : ''}`} style={{ color }}>{r.time || '–'}</button>
           </div>
-          {/* 장소 (클릭 인라인 이름변경) + 요일 */}
+          {/* 장소 (클릭 → 아래 편집행) + 요일 */}
           <div className="px-1.5 py-1 border-r border-[#F1F5F9] min-w-0">
-            {editing && cellEdit!.field === 'name'
-              ? <input autoFocus value={cellVal} onChange={e => setCellVal(e.target.value)}
-                  onBlur={() => commitCell(dir, bus, r)} onKeyDown={e => { if (e.key === 'Enter') commitCell(dir, bus, r); else if (e.key === 'Escape') setCellEdit(null) }}
-                  className="w-full border border-[#004EA2] rounded px-1 py-px text-[11px]" />
-              : <button onClick={() => startCell(k, 'name', r.stop)} title="클릭해 정류장명 변경" className="font-semibold text-[#1E293B] truncate hover:underline block w-full text-left">
-                  {r.stop}{!hasCoord && <span className="text-[#F59E0B] font-normal"> *</span>}</button>}
+            <button onClick={() => startCell(k, 'name', r.stop)} title="클릭해 정류장명 변경"
+              className={`font-semibold text-[#1E293B] truncate hover:underline block w-full text-left ${editing && cellEdit!.field === 'name' ? 'ring-1 ring-[#004EA2] rounded px-1' : ''}`}>
+              {r.stop}{!hasCoord && <span className="text-[#F59E0B] font-normal"> *</span>}</button>
             {r.days.length > 0 && r.days.length < 5 && (
               <div className="flex gap-0.5 mt-0.5">
                 {r.days.map(day => (
@@ -375,6 +369,15 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
                 ))}
               </div>
             )}
+          </div>
+          {/* 작업 */}
+          <div className="px-1 py-0.5 flex items-center gap-0.5 flex-wrap text-[9px] border-r border-[#F1F5F9]">
+            <button onClick={() => { setAddRiderKey(a => a === k ? null : k); setRiderQ(''); setRiderResults([]) }}
+              className={`font-bold border rounded px-1 py-px ${adding ? 'bg-[#16A34A] text-white border-[#16A34A]' : 'text-[#16A34A] border-[#16A34A]'}`}>학생+</button>
+            <button onClick={() => { if (coording) setCoordKey(null); else { setCoordKey(k); const c = coords[r.stop]; setCoordDraft({ lat: c ? String(c.lat) : '', lng: c ? String(c.lng) : '', addr: '' }) } }}
+              className={`font-bold border rounded px-1 py-px ${coording ? 'bg-[#004EA2] text-white border-[#004EA2]' : 'text-[#004EA2] border-[#004EA2]'}`}>좌표</button>
+            {onLocateStop && <button onClick={() => onLocateStop(r.stop, bus)} title="시스템 지도로 이동 → 핀 드래그로 위치수정" className="font-bold text-[#004EA2] border border-[#004EA2] rounded px-1 py-px">지도</button>}
+            {!r.hasStudents && <button onClick={() => deleteStop(dir, bus, r.stop)} title="정류장 삭제" className="text-[#CBD5E1] hover:text-[#EF4444] font-bold px-0.5">×</button>}
           </div>
           {/* 탑승자 명단 (칩) */}
           <div className="px-1.5 py-1 flex flex-wrap gap-1 items-center min-w-0">
@@ -387,21 +390,41 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
             {r.students.length === 0 && <span className="text-[10px] text-[#CBD5E1]">탑승 없음</span>}
             <span className="text-[9px] font-bold text-[#94A3B8]">({r.students.length})</span>
           </div>
-          {/* 작업 */}
-          <div className="px-1 py-0.5 flex items-center gap-0.5 justify-end text-[9px]">
-            <button onClick={() => { setAddRiderKey(a => a === k ? null : k); setRiderQ(''); setRiderResults([]) }}
-              className={`font-bold border rounded px-1 py-px ${adding ? 'bg-[#16A34A] text-white border-[#16A34A]' : 'text-[#16A34A] border-[#16A34A]'}`}>학생+</button>
-            <button onClick={() => { if (coording) setCoordKey(null); else { setCoordKey(k); const c = coords[r.stop]; setCoordDraft({ lat: c ? String(c.lat) : '', lng: c ? String(c.lng) : '', addr: '' }) } }}
-              className={`font-bold border rounded px-1 py-px ${coording ? 'bg-[#004EA2] text-white border-[#004EA2]' : 'text-[#004EA2] border-[#004EA2]'}`}>좌표</button>
-            {onLocateStop && <button onClick={() => onLocateStop(r.stop, bus)} title="시스템 지도에서 핀 드래그" className="font-bold text-[#004EA2] border border-[#004EA2] rounded px-1 py-px">지도</button>}
-            {!r.hasStudents && <button onClick={() => deleteStop(dir, bus, r.stop)} title="정류장 삭제" className="text-[#CBD5E1] hover:text-[#EF4444] font-bold px-0.5">×</button>}
-          </div>
         </div>
+
+        {/* 시간/장소 편집행 (넓은 입력 + 저장·취소, 자동저장 없음) */}
+        {editing && (
+          <div className="px-2 py-1.5 bg-[#FFFBEB] border-t border-[#FDE68A] flex items-center gap-2">
+            {cellEdit!.field === 'time' ? (
+              <>
+                <span className="text-[11px] font-bold text-[#92400E]">시간</span>
+                <input type="time" autoFocus value={cellVal} onChange={e => setCellVal(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') commitCell(dir, bus, r); else if (e.key === 'Escape') setCellEdit(null) }}
+                  className="w-36 border border-[#E2E8F0] rounded px-2 py-1 text-[13px]" />
+              </>
+            ) : (
+              <>
+                <span className="text-[11px] font-bold text-[#92400E]">정류장명</span>
+                <input autoFocus value={cellVal} onChange={e => setCellVal(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') commitCell(dir, bus, r); else if (e.key === 'Escape') setCellEdit(null) }}
+                  className="w-60 border border-[#E2E8F0] rounded px-2 py-1 text-[13px]" />
+              </>
+            )}
+            <button onClick={() => commitCell(dir, bus, r)} disabled={busy}
+              className="text-[12px] bg-[#004EA2] text-white font-bold px-3 py-1 rounded disabled:opacity-40">{busy ? '저장…' : '저장'}</button>
+            <button onClick={() => setCellEdit(null)}
+              className="text-[12px] border border-[#E2E8F0] text-[#64748B] font-semibold px-3 py-1 rounded">취소</button>
+          </div>
+        )}
 
         {/* 학생 추가 검색 (개설반) */}
         {adding && (
           <div className="relative px-2 py-1 bg-[#F0FDF4] border-t border-[#DCFCE7]">
-            <input autoFocus value={riderQ} onChange={e => searchRiders(e.target.value)} placeholder="개설반 학생 이름 검색" className={`w-64 max-w-full ${inputCls}`} />
+            <input autoFocus value={riderQ}
+              onChange={e => { const v = e.target.value; setRiderQ(v); if (!composing.current) searchRiders(v) }}
+              onCompositionStart={() => { composing.current = true }}
+              onCompositionEnd={e => { composing.current = false; searchRiders(e.currentTarget.value) }}
+              placeholder="개설반 학생 이름 검색" className={`w-64 max-w-full ${inputCls}`} />
             {riderResults.length > 0 && (
               <div className="absolute z-20 left-2 mt-0.5 w-64 bg-white border border-[#E2E8F0] rounded-lg shadow-lg max-h-48 overflow-auto">
                 {riderResults.map(s => (
@@ -449,8 +472,8 @@ export default function BusStopSettingsView({ campusName, onLocateStop }: { camp
           <div className={`${GRID} text-[10px] font-bold text-[#64748B] bg-[#F1F5F9] border-b border-[#E2E8F0]`}>
             <div className="px-1 py-1 text-center border-r border-[#E2E8F0]">시간</div>
             <div className="px-1.5 py-1 border-r border-[#E2E8F0]">장소</div>
+            <div className="px-1 py-1 border-r border-[#E2E8F0]">작업</div>
             <div className="px-1.5 py-1">탑승자 명단</div>
-            <div className="px-1 py-1 text-right">작업</div>
           </div>
           {rows.map((r, i) => <StopRow key={r.stop} dir={dir} bus={bus} r={r} i={i} />)}
           {rows.length === 0 && <div className="text-[10px] text-[#CBD5E1] py-2 px-2">정류장 없음</div>}

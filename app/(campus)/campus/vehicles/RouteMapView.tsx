@@ -1978,6 +1978,8 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false,
         clearInterval(id)
         mapRef.current.setLevel(3)
         handleStopResultClick({ stopName: focusStop.name, busName: focusStop.busName ?? '' } as StopSearchRow)
+        // 도착 즉시 위치 세부수정 모드(드래그 핀 + 저장) 진입
+        startAdjust(focusStop.name)
       } else if (tries > 25) {
         clearInterval(id)
         if (!coord) alert(`'${focusStop.name}' 정류장은 좌표(핀)가 없습니다. 호차별 정류장 탭에서 좌표를 먼저 설정하세요.`)
@@ -2051,7 +2053,8 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false,
   // 정류장 위치 조정 시작 — 재검색 없이 지도에서 핀을 끌거나 클릭해 바로 조정
   function startAdjust(stopName: string) {
     const kakao = (window as any).kakao
-    const c = coords[stopName]
+    // coordsRef 우선: focusStop 인터벌이 마운트 시점(coords state 비어있음) 호출해도 정확 위치로 핀 배치
+    const c = coordsRef.current[stopName] ?? coords[stopName]
     const center = c
       ?? coords[effectiveSchoolName ?? SCHOOL_STOP.name]
       ?? (campusId ? null : { lat: SCHOOL_STOP.lat, lng: SCHOOL_STOP.lng })
