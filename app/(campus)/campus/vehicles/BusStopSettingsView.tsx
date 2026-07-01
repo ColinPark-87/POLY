@@ -256,6 +256,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
     })
     const j = await res.json().catch(() => ({}))
     if (!res.ok || j.ok === false) throw new Error(`이름/좌표:${j.error ?? res.status}`)
+    return j as { ok?: boolean; result?: { coordsDeleted?: number; enrChanged?: number; regUpdated?: number } }
   }
 
   // ── 인라인 개별 저장 ──
@@ -271,11 +272,15 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
   }
   async function saveName(dir: Dir, bus: string, r: Row, newName: string) {
     const nm = newName.trim()
-    if (!nm || nm === r.stop) return
+    if (!nm) { flash('이름을 입력하세요'); return }
+    if (nm === r.stop) { flash('변경 없음(이름 동일)'); return }
     const k = dkey(dir, bus, r.stop); setSavingKey(k)
     try {
-      await renameApi(r.stop, nm)
-      flash(`정류장명 '${r.stop}' → '${nm}' 변경됨`); load()
+      const j = await renameApi(r.stop, nm)
+      const rr = j?.result ?? {}
+      const changed = (rr.coordsDeleted ?? 0) + (rr.enrChanged ?? 0) + (rr.regUpdated ?? 0)
+      flash(changed ? `정류장명 → '${nm}' 변경(${changed}건)` : `'${nm}' 저장 — 반영 대상 0(이름 불일치 가능)`)
+      load()
     } catch (e) { alert(`이름 변경 실패: ${(e as Error).message}`) } finally { setSavingKey(null) }
   }
   async function saveCoord(dir: Dir, bus: string, r: Row) {
