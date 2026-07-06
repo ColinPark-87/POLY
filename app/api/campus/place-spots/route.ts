@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { resolvePermissions } from '@/lib/permissions'
+import { resolveCampusId } from '@/lib/utils/resolve-campus'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,8 +23,7 @@ async function getCtx(request: NextRequest) {
     perm_vehicles_restricted: profile?.perm_vehicles_restricted ?? null,
   })
   if (!perms.vehicles) return { error: '권한 없음', status: 403 as const }
-  let campusId: string | null | undefined = profile?.campus_id
-  if (!campusId && profile?.role === 'hq_admin') campusId = new URL(request.url).searchParams.get('campus_id')
+  const campusId = resolveCampusId(profile?.role, profile?.campus_id, new URL(request.url).searchParams.get('campus_id'))
   if (!campusId) return { error: '캠퍼스 없음', status: 400 as const }
   return { service, campusId }
 }

@@ -4,6 +4,7 @@ import { resolvePermissions } from '@/lib/permissions'
 import { selectOrphanOverrides, buildSynthEntry } from '@/lib/utils/today-overrides'
 import { applyEnrollmentSchedule, applyBulkTimeToSchedule } from '@/lib/utils/vehicle-schedule'
 import { clampRideDaysToSession } from '@/lib/utils/session-days'
+import { resolveCampusId } from '@/lib/utils/resolve-campus'
 import { conflictBody } from '@/lib/vehicles/conflict'
 import { logUsage } from '@/lib/usage-log'
 import { normStop } from '@/lib/utils/stop-name'
@@ -106,8 +107,7 @@ export async function GET(request: NextRequest) {
   }
 
   const { searchParams } = new URL(request.url)
-  let campusId: string | null | undefined = profile?.campus_id
-  if (!campusId && profile?.role === 'hq_admin') campusId = searchParams.get('campus_id')
+  const campusId = resolveCampusId(profile?.role, profile?.campus_id, searchParams.get('campus_id'))
   if (!campusId) return NextResponse.json({ error: '캠퍼스 없음' }, { status: 400 })
 
   const dateStr = searchParams.get('date') ?? new Date().toISOString().slice(0, 10)
@@ -523,7 +523,8 @@ export async function POST(request: NextRequest) {
     .select('campus_id, name, position, role, perm_class_roster, perm_vehicles, perm_vehicles_restricted')
     .eq('id', user.id)
     .single()
-  const campusId = profile?.campus_id
+  // hq_admin은 편집도 선택한 캠퍼스(param) 대상 — RouteMapView가 POST URL에 campus_id를 실어 보낸다.
+  const campusId = resolveCampusId(profile?.role, profile?.campus_id, new URL(request.url).searchParams.get('campus_id'))
   if (!campusId) return NextResponse.json({ error: '캠퍼스 없음' }, { status: 400 })
 
   // 차량 편집 권한 — GET 과 동일한 resolvePermissions 사용 + restricted(POLY안전) 는 읽기 전용

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { resolvePermissions } from '@/lib/permissions'
 import { filterPresent } from '@/lib/vehicles/presence'
+import { resolveCampusId } from '@/lib/utils/resolve-campus'
 
 const PERM_SELECT = 'campus_id, name, role, position, perm_class_roster, perm_vehicles, perm_vehicles_restricted'
 function canView(p: { role?: string | null; position?: string | null; perm_class_roster?: boolean | null; perm_vehicles?: boolean | null; perm_vehicles_restricted?: boolean | null } | null) {
@@ -26,9 +27,8 @@ async function ctx(request: NextRequest): Promise<Ctx | { err: NextResponse }> {
   const service = createServiceClient()
   const { data: profile } = await service.from('users').select(PERM_SELECT).eq('id', user.id).single()
   if (!canView(profile)) return { err: NextResponse.json({ error: '권한 없음' }, { status: 403 }) }
-  let campusId: string | null | undefined = profile?.campus_id
   const sp = new URL(request.url).searchParams
-  if (!campusId && profile?.role === 'hq_admin') campusId = sp.get('campus_id')
+  const campusId = resolveCampusId(profile?.role, profile?.campus_id, sp.get('campus_id'))
   if (!campusId) return { err: NextResponse.json({ error: '캠퍼스 없음' }, { status: 400 }) }
   return { user, service, profile, campusId }
 }

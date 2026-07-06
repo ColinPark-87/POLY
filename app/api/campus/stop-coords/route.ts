@@ -4,6 +4,7 @@ import { resolvePermissions } from '@/lib/permissions'
 import { conflictBody } from '@/lib/vehicles/conflict'
 import { logUsage } from '@/lib/usage-log'
 import { renameStopInSchedule, sameStop } from '@/lib/utils/stop-name'
+import { resolveCampusId } from '@/lib/utils/resolve-campus'
 
 // 차량 관리 권한 보유자(vehicles)만 접근 — 일반 직원의 좌표 열람/변조 차단.
 // 제한권한(vehiclesRestricted, 안전선생님)도 현행대로 접근 가능하도록 vehicles 만 요구.
@@ -27,8 +28,7 @@ export async function GET(request: NextRequest) {
   const { data: profile } = await service.from('users').select(PERM_SELECT).eq('id', user.id).single()
   if (!canVehicles(profile)) return NextResponse.json({ error: '권한 없음' }, { status: 403 })
   const { searchParams } = new URL(request.url)
-  let campusId: string | null | undefined = profile?.campus_id
-  if (!campusId && profile?.role === 'hq_admin') campusId = searchParams.get('campus_id')
+  const campusId = resolveCampusId(profile?.role, profile?.campus_id, searchParams.get('campus_id'))
   if (!campusId) return NextResponse.json({ error: '캠퍼스 없음' }, { status: 400 })
 
   const { data, error } = await service
@@ -55,8 +55,7 @@ export async function POST(request: NextRequest) {
   const { data: profile } = await service.from('users').select(PERM_SELECT).eq('id', user.id).single()
   if (!canVehicles(profile)) return NextResponse.json({ error: '권한 없음' }, { status: 403 })
   const { searchParams } = new URL(request.url)
-  let campusId: string | null | undefined = profile?.campus_id
-  if (!campusId && profile?.role === 'hq_admin') campusId = searchParams.get('campus_id')
+  const campusId = resolveCampusId(profile?.role, profile?.campus_id, searchParams.get('campus_id'))
   if (!campusId) return NextResponse.json({ error: '캠퍼스 없음' }, { status: 400 })
 
   await logUsage(service, { event_type: 'edit', area: 'vehicles', campusId, userId: user.id, userName: profile?.name ?? null, role: profile?.role ?? null })
@@ -114,8 +113,7 @@ export async function PATCH(request: NextRequest) {
   const { data: profile } = await service.from('users').select(PERM_SELECT).eq('id', user.id).single()
   if (!canVehicles(profile)) return NextResponse.json({ error: '권한 없음' }, { status: 403 })
   const { searchParams } = new URL(request.url)
-  let campusId: string | null | undefined = profile?.campus_id
-  if (!campusId && profile?.role === 'hq_admin') campusId = searchParams.get('campus_id')
+  const campusId = resolveCampusId(profile?.role, profile?.campus_id, searchParams.get('campus_id'))
   if (!campusId) return NextResponse.json({ error: '캠퍼스 없음' }, { status: 400 })
 
   await logUsage(service, { event_type: 'edit', area: 'vehicles', campusId, userId: user.id, userName: profile?.name ?? null, role: profile?.role ?? null })

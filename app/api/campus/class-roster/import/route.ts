@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import * as XLSX from 'xlsx'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { logUsage } from '@/lib/usage-log'
+import { resolveCampusId } from '@/lib/utils/resolve-campus'
 
 const DAYS_KO = ['월', '화', '수', '목', '금'] as const
 
@@ -27,8 +28,7 @@ export async function POST(request: NextRequest) {
   const service = createServiceClient()
   const { data: profile } = await service.from('users').select('campus_id, name, role, position').eq('id', user.id).single()
   const { searchParams } = new URL(request.url)
-  let campusId: string | null | undefined = profile?.campus_id
-  if (!campusId && profile?.role === 'hq_admin') campusId = searchParams.get('campus_id')
+  const campusId = resolveCampusId(profile?.role, profile?.campus_id, searchParams.get('campus_id'))
   if (!campusId) return NextResponse.json({ error: '캠퍼스 없음' }, { status: 400 })
   const isAdmin = profile?.role === 'campus_admin' || profile?.role === 'hq_admin' || (profile?.position ?? '').includes('부원장')
   if (!isAdmin) return NextResponse.json({ error: '권한 없음' }, { status: 403 })

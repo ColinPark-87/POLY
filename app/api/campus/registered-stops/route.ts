@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { resolvePermissions } from '@/lib/permissions'
 import { logUsage } from '@/lib/usage-log'
+import { resolveCampusId } from '@/lib/utils/resolve-campus'
 
 // 빈 정류장 마스터 (campus_registered_stops) — 학생 배정 없이 정류장만 등록.
 // 좌표는 기존 campus_stop_coords(stop-coords route)에 저장하고 여기서는 다루지 않음.
@@ -27,8 +28,7 @@ export async function GET(request: NextRequest) {
   const { data: profile } = await service.from('users').select(PERM_SELECT).eq('id', user.id).single()
   if (!gateVehicles(profile).vehicles) return NextResponse.json({ error: '권한 없음' }, { status: 403 })
   const { searchParams } = new URL(request.url)
-  let campusId: string | null | undefined = profile?.campus_id
-  if (!campusId && profile?.role === 'hq_admin') campusId = searchParams.get('campus_id')
+  const campusId = resolveCampusId(profile?.role, profile?.campus_id, searchParams.get('campus_id'))
   if (!campusId) return NextResponse.json({ error: '캠퍼스 없음' }, { status: 400 })
 
   const { data, error } = await service
@@ -51,8 +51,7 @@ export async function POST(request: NextRequest) {
   const perms = gateVehicles(profile)
   if (!perms.vehicles || perms.vehiclesRestricted) return NextResponse.json({ error: '권한 없음' }, { status: 403 })
   const { searchParams } = new URL(request.url)
-  let campusId: string | null | undefined = profile?.campus_id
-  if (!campusId && profile?.role === 'hq_admin') campusId = searchParams.get('campus_id')
+  const campusId = resolveCampusId(profile?.role, profile?.campus_id, searchParams.get('campus_id'))
   if (!campusId) return NextResponse.json({ error: '캠퍼스 없음' }, { status: 400 })
 
   const body = await request.json()
@@ -87,8 +86,7 @@ export async function DELETE(request: NextRequest) {
   const perms = gateVehicles(profile)
   if (!perms.vehicles || perms.vehiclesRestricted) return NextResponse.json({ error: '권한 없음' }, { status: 403 })
   const { searchParams } = new URL(request.url)
-  let campusId: string | null | undefined = profile?.campus_id
-  if (!campusId && profile?.role === 'hq_admin') campusId = searchParams.get('campus_id')
+  const campusId = resolveCampusId(profile?.role, profile?.campus_id, searchParams.get('campus_id'))
   if (!campusId) return NextResponse.json({ error: '캠퍼스 없음' }, { status: 400 })
 
   const body = await request.json()
