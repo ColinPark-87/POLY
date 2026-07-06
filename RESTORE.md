@@ -4,12 +4,22 @@
 
 | 항목 | 내용 |
 |---|---|
-| 백업 일시 | 2026-07-06 #3 (신규학생 정류장 세션-락 제거: NewStudentModal도 전 세션 union+등록정류장 병합. + 전 캠퍼스 데이터 감사: 홍유나형 오배차 8명(대치5·광명3) 세션 외 요일 실호차 제거. 백업 `_backup_daybug_20260706.json`) |
-| 백업 브랜치 | `backup/pre-newstudent-stops-20260706` (=커밋 `4cf1a54`, 이 수정 이전 라이브) |
-| 변경 커밋 | `1e28b19` (NewStudentModal getArr/DepStops 세션-락 제거, 테스트 148/148) |
-| Vercel 롤백 대상 (직전 라이브) | `poly-2ofmdf9p1-colinpark-87s-projects.vercel.app` (정류장 그룹 dedup) |
-| 현재 라이브 | `poly-ijczchnzf-colinpark-87s-projects.vercel.app` / https://poly-system.vercel.app (2026-07-06 #3) |
-| 롤백 방법 (최신) | `vercel promote poly-2ofmdf9p1-colinpark-87s-projects.vercel.app` 또는 `git checkout backup/pre-newstudent-stops-20260706` 후 재배포. 데이터 롤백은 `_backup_daybug_20260706.json`의 arr/dep_schedule 원본으로 복원 |
+| 백업 일시 | 2026-07-06 #4 (본사 캠퍼스 해석: hq_admin은 선택 캠퍼스 param 우선. HQ 계정 campus_id=중계라 광교·수지 등 모든 캠퍼스가 중계로 뜨던 버그. resolveCampusId 헬퍼로 차량 뷰 전 엔드포인트 일괄. + 본사 계정 추가 도구 scripts/create-hq-account.mjs) |
+| 백업 브랜치 | `backup/pre-hq-campus-resolve-20260706` (=커밋 `d0299fd`, 이 수정 이전 라이브) |
+| 변경 커밋 | `d19b40c` (resolveCampusId + 7 엔드포인트, 테스트 154/154) |
+| Vercel 롤백 대상 (직전 라이브) | `poly-ijczchnzf-colinpark-87s-projects.vercel.app` (신규학생 정류장) |
+| 현재 라이브 | `poly-60msc45xq-colinpark-87s-projects.vercel.app` / https://poly-system.vercel.app (2026-07-06 #4) |
+| 롤백 방법 (최신) | `vercel promote poly-ijczchnzf-colinpark-87s-projects.vercel.app` 또는 `git checkout backup/pre-hq-campus-resolve-20260706` 후 재배포 |
+
+### (이전) 2026-07-06 #3 백업 정보
+
+| 항목 | 내용 |
+|---|---|
+| 내용 | 신규학생 정류장 세션-락 제거(NewStudentModal 전 세션 union+등록정류장) + 데이터 감사 홍유나형 오배차 8명(대치5·광명3) 정정. 데이터 백업 `_backup_daybug_20260706.json` |
+| 백업 브랜치 | `backup/pre-newstudent-stops-20260706` (=커밋 `4cf1a54`) |
+| 변경 커밋 | `1e28b19` |
+| 롤백 대상 | `poly-2ofmdf9p1-colinpark-87s-projects.vercel.app` |
+| 라이브였던 dpl | `poly-ijczchnzf` |
 
 ### (이전) 2026-07-06 #2 백업 정보
 
