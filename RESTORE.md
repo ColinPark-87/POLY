@@ -4,6 +4,17 @@
 
 | 항목 | 내용 |
 |---|---|
+| 백업 일시 | 2026-07-06 (요일반 학생 차량 배정 요일 clamp: "초등부 월수금" 학생이 빈 정류장 첫 탑승자로 추가될 때 days=전요일로 들어가 화·목이 박히던 버그. add_rider + approve_change_request 두 경로. 홍유나 7월 데이터도 월수금 정정) |
+| 백업 브랜치 | `backup/pre-hong-daybug-20260706` (=커밋 `5f31437`, 수정 이전 라이브) |
+| 변경 커밋 | `f304653` (session-days clampRideDaysToSession + route.ts 2경로, 테스트 148/148) |
+| Vercel 롤백 대상 (직전 라이브) | `poly-m8lbpzqdz-colinpark-87s-projects.vercel.app` |
+| 현재 라이브 | `poly-h4e6prfsx-colinpark-87s-projects.vercel.app` (dpl_DpwnT6GVLzDVrTwj32JYAifF7aXK) / https://poly-system.vercel.app (2026-07-06) |
+| 롤백 방법 (최신) | `vercel promote poly-m8lbpzqdz-colinpark-87s-projects.vercel.app` 또는 `git checkout backup/pre-hong-daybug-20260706` 후 재배포 |
+
+### (이전) 2026-07-01 백업 정보
+
+| 항목 | 내용 |
+|---|---|
 | 백업 일시 | 2026-07-01 (호차별 정류장 = 개설반 반편성식 밴드 재설계: (호차×방향)=밴드 "1호차 등원"/"1호차 하원" 줄 분리, 정류장 카드=반카드식·학생명단 2열(최대 18=9×2), 이모지 전부 제거 + 지도 위치보기 stale coords 버그 수정) |
 | 백업 브랜치 | `backup/pre-busstop-2col-20260701` (=커밋 `bc0d888`, 2col 카드 이전 라이브) |
 | 변경 커밋 | `cb1a3cc` (반편성식 밴드·학생 2열·이모지제거 + RouteMapView handleStopResultClick coordsRef 폴백) |
