@@ -3047,10 +3047,10 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false,
   // 호차 명단 편집기: (호차·정류장)의 기존 운행 시간 자동 매칭.
   // ※ 반드시 '학생이 속한 세션그룹'(group) 안에서만 매칭 — 같은 정류장을 유치부·초등부가
   //    공유해도 다른 세션 시간이 섞이지 않게 한다(모바일 timeFor와 동일 원칙).
-  function rosterStopTimeFor(group: TimeGroup | undefined, bus: string, loc: string): string {
-    if (!group || !bus || !loc) return ''
+  function rosterStopTimeFor(groups: (TimeGroup | undefined)[], bus: string, loc: string): string {
+    if (!bus || !loc) return ''
     const times: string[] = []
-    for (const s of (group.busMap[bus] ?? []) as StudentEntry[]) {
+    for (const group of groups) for (const s of (group?.busMap[bus] ?? []) as StudentEntry[]) {
       if (sameStop(s.location, loc) && s.pickup_time) times.push(s.pickup_time)
       if (s.dayLocs && s.dayTimes) for (const [d, l] of Object.entries(s.dayLocs)) {
         if (sameStop(l, loc) && s.dayTimes[d]) times.push(s.dayTimes[d] as string)
@@ -3061,22 +3061,24 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false,
     times.forEach(t => { freq[t] = (freq[t] ?? 0) + 1 })
     return normalizeTime(Object.entries(freq).sort((a, b) => b[1] - a[1])[0][0])
   }
-  // 이 세션그룹의 해당 호차 정류장 목록 (중복·공백 제거) — 다른 세션 정류장 섞지 않음
-  function rosterBusStops(group: TimeGroup | undefined, bus: string): string[] {
+  // 해당 호차 정류장 목록(중복·공백 제거). 전 세션 그룹 집계 — 유치부 학생이 초등부(매일반) 호차 정류장도
+  // 고를 수 있도록 세션 잠금 해제(전엔 한 세션만 봐서 크로스세션 정류장이 안 떴다).
+  function rosterBusStops(groups: (TimeGroup | undefined)[], bus: string): string[] {
     const seen = new Set<string>()
-    for (const s of (group?.busMap[bus] ?? []) as StudentEntry[]) {
-      if (s.location) { const n = normStop(s.location); if (n) seen.add(n) }
-      if (s.dayLocs) for (const l of Object.values(s.dayLocs)) if (l) { const n = normStop(l); if (n) seen.add(n) }
+    for (const group of groups) {
+      for (const s of (group?.busMap[bus] ?? []) as StudentEntry[]) {
+        if (s.location) { const n = normStop(s.location); if (n) seen.add(n) }
+        if (s.dayLocs) for (const l of Object.values(s.dayLocs)) if (l) { const n = normStop(l); if (n) seen.add(n) }
+      }
+      for (const l of (group?.busLocations[bus] ?? [])) if (l) { const n = normStop(l); if (n) seen.add(n) }
     }
-    for (const l of (group?.busLocations[bus] ?? [])) if (l) { const n = normStop(l); if (n) seen.add(n) }
     return [...seen].sort((a, b) => a.localeCompare(b, 'ko'))
   }
   function renderRosterEditInline() {
     if (!rEditModal) return null
     const stu = rEditModal.student
     const rDir = rEditModal.dir
-    // 이 학생이 속한 세션그룹 — 정류장/시간 매칭을 이 세션 안으로 한정(유치부에 초등부 섞임 방지)
-    const myGroup = p2MasterGroups[rDir].find(g => Object.values(g.busMap).some(arr => (arr as StudentEntry[]).some(s => s.student_id === stu.student_id)))
+    // 정류장/시간은 전 세션 그룹(p2MasterGroups[rDir])에서 집계 — 유치부 학생도 초등부(매일반) 호차 정류장 선택 가능.
     const busColor = getBusColor(rEditBus, buses.findIndex(b => b.name === rEditBus))
     const selBuses = buses.filter(b => !b.name.includes('결석') && !isIndividualBus(b.name))
     return (
@@ -3112,12 +3114,12 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false,
             </div>
             <div>
               <p className="text-[9px] font-bold text-[#94A3B8] mb-1">정류장 <span className="font-normal">(선택하면 시간 자동매칭)</span></p>
-              {(() => { const stops = rEditBus ? rosterBusStops(myGroup, rEditBus) : []; return stops.length > 0 && (
+              {(() => { const stops = rEditBus ? rosterBusStops(p2MasterGroups[rDir], rEditBus) : []; return stops.length > 0 && (
                 <div className="flex flex-wrap gap-1 mb-1.5">
                   {stops.map(st => {
                     const on = sameStop(rEditLoc, st)
                     return (
-                      <button key={st} onClick={() => { setREditLoc(st); const t = rosterStopTimeFor(myGroup, rEditBus, st); if (t) setREditTime(t) }}
+                      <button key={st} onClick={() => { setREditLoc(st); const t = rosterStopTimeFor(p2MasterGroups[rDir], rEditBus, st); if (t) setREditTime(t) }}
                         className="text-[10px] px-1.5 py-0.5 rounded-lg border transition-colors"
                         style={on ? { background: '#4338CA', color: '#fff', borderColor: '#4338CA' } : { background: '#fff', color: '#475569', borderColor: '#E2E8F0' }}>📍{st}</button>
                     )
@@ -3126,7 +3128,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false,
               )})()}
               <div className="flex gap-2">
                 <div className="flex-1 min-w-0">
-                  <input value={rEditLoc} onChange={e => { const v = e.target.value; setREditLoc(v); const t = rosterStopTimeFor(myGroup, rEditBus, v); if (t) setREditTime(t) }} placeholder="정류장 직접 입력"
+                  <input value={rEditLoc} onChange={e => { const v = e.target.value; setREditLoc(v); const t = rosterStopTimeFor(p2MasterGroups[rDir], rEditBus, v); if (t) setREditTime(t) }} placeholder="정류장 직접 입력"
                     className="w-full border border-[#E2E8F0] rounded-lg px-2 py-1 text-[12px] focus:outline-none focus:ring-1 focus:ring-[#4338CA]" />
                 </div>
                 <div className="w-20 shrink-0">
@@ -3174,7 +3176,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false,
                       className="w-16 shrink-0 border border-[#E2E8F0] rounded-lg px-1 py-1 text-[11px] bg-white">
                       {selBuses.map(b => <option key={b.name} value={b.name}>{b.name}</option>)}
                     </select>
-                    <input value={rEditDayLoc[d] ?? ''} onChange={e => { const v = e.target.value; setREditDayLoc(prev => ({ ...prev, [d]: v })); const bus = rEditDayBus[d] || rEditBus; const t = rosterStopTimeFor(myGroup, bus, v); if (t) setREditDayTime(prev => ({ ...prev, [d]: t })) }} placeholder={rEditLoc || '정류장'}
+                    <input value={rEditDayLoc[d] ?? ''} onChange={e => { const v = e.target.value; setREditDayLoc(prev => ({ ...prev, [d]: v })); const bus = rEditDayBus[d] || rEditBus; const t = rosterStopTimeFor(p2MasterGroups[rDir], bus, v); if (t) setREditDayTime(prev => ({ ...prev, [d]: t })) }} placeholder={rEditLoc || '정류장'}
                       className="flex-1 min-w-0 border border-[#E2E8F0] rounded-lg px-1.5 py-1 text-[11px]" />
                     <input value={rEditDayTime[d] ?? ''} onChange={e => setREditDayTime(prev => ({ ...prev, [d]: e.target.value }))} placeholder={rEditTime || '시간'}
                       className="w-14 shrink-0 border border-[#E2E8F0] rounded-lg px-1 py-1 text-[11px]" />
