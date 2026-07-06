@@ -4,12 +4,22 @@
 
 | 항목 | 내용 |
 |---|---|
-| 백업 일시 | 2026-07-06 #2 (개설반 현황 정류장 후보 dedup을 세션 그룹별로: 유치부 학생을 매일반 하원시간으로 배차할 때 공유 정류장(롯데우성·건영)이 매일반 그룹서 사라지던 버그. getStopGroups 전역 seen→그룹별 dedup) |
-| 백업 브랜치 | `backup/pre-stopgroup-dedup-20260706` (=커밋 `f304653`, 이 수정 이전 라이브) |
-| 변경 커밋 | `dfd4f44` (class-roster getStopGroups 그룹별 dedup, 실데이터 검증·테스트 148/148) |
-| Vercel 롤백 대상 (직전 라이브) | `poly-h4e6prfsx-colinpark-87s-projects.vercel.app` (요일 clamp) |
-| 현재 라이브 | `poly-2ofmdf9p1-colinpark-87s-projects.vercel.app` / https://poly-system.vercel.app (2026-07-06 #2) |
-| 롤백 방법 (최신) | `vercel promote poly-h4e6prfsx-colinpark-87s-projects.vercel.app` 또는 `git checkout backup/pre-stopgroup-dedup-20260706` 후 재배포 |
+| 백업 일시 | 2026-07-06 #3 (신규학생 정류장 세션-락 제거: NewStudentModal도 전 세션 union+등록정류장 병합. + 전 캠퍼스 데이터 감사: 홍유나형 오배차 8명(대치5·광명3) 세션 외 요일 실호차 제거. 백업 `_backup_daybug_20260706.json`) |
+| 백업 브랜치 | `backup/pre-newstudent-stops-20260706` (=커밋 `4cf1a54`, 이 수정 이전 라이브) |
+| 변경 커밋 | `1e28b19` (NewStudentModal getArr/DepStops 세션-락 제거, 테스트 148/148) |
+| Vercel 롤백 대상 (직전 라이브) | `poly-2ofmdf9p1-colinpark-87s-projects.vercel.app` (정류장 그룹 dedup) |
+| 현재 라이브 | `poly-ijczchnzf-colinpark-87s-projects.vercel.app` / https://poly-system.vercel.app (2026-07-06 #3) |
+| 롤백 방법 (최신) | `vercel promote poly-2ofmdf9p1-colinpark-87s-projects.vercel.app` 또는 `git checkout backup/pre-newstudent-stops-20260706` 후 재배포. 데이터 롤백은 `_backup_daybug_20260706.json`의 arr/dep_schedule 원본으로 복원 |
+
+### (이전) 2026-07-06 #2 백업 정보
+
+| 항목 | 내용 |
+|---|---|
+| 내용 | 개설반 현황 정류장 후보 dedup을 세션 그룹별로(getStopGroups): 공유 정류장(롯데우성·건영)이 매일반 그룹서 사라지던 버그 |
+| 백업 브랜치 | `backup/pre-stopgroup-dedup-20260706` (=커밋 `f304653`) |
+| 변경 커밋 | `dfd4f44` |
+| 롤백 대상 | `poly-h4e6prfsx-colinpark-87s-projects.vercel.app` |
+| 라이브였던 dpl | `poly-2ofmdf9p1` |
 
 ### (이전) 2026-07-06 #1 백업 정보
 
