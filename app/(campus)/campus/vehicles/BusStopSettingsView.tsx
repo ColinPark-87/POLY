@@ -162,11 +162,14 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
   const buildDir = useCallback((flt: string, dir: Dir): Record<string, Row[]> => {
     if (!raw) return {}
     const resp = raw[dir]
-    const cellByBus: Record<string, Record<string, { times: string[]; sess: Set<string>; days: Set<string>; stu: Map<string, { id: string; name: string; class_id: string; days: Set<string> }>; hasStudents: boolean }>> = {}
-    const ensure = (bus: string, stop: string) => {
+    // 같은 정류장이라도 시간이 다르면(예: 건영3차 유치부 14:57 / 김건우 화 16:50) 시간별로 행을 분리해
+    // 서로 다른 하차시간이 각각 보이도록 한다. 키 = 정류장|::|시간(시간 없으면 '').
+    const cellByBus: Record<string, Record<string, { stop: string; time: string; sess: Set<string>; days: Set<string>; stu: Map<string, { id: string; name: string; class_id: string; days: Set<string> }>; hasStudents: boolean }>> = {}
+    const ensure = (bus: string, stop: string, time: string) => {
+      const key = `${stop}|::|${time || ''}`
       cellByBus[bus] ??= {}
-      cellByBus[bus][stop] ??= { times: [], sess: new Set(), days: new Set(), stu: new Map(), hasStudents: false }
-      return cellByBus[bus][stop]
+      cellByBus[bus][key] ??= { stop, time: time || '', sess: new Set(), days: new Set(), stu: new Map(), hasStudents: false }
+      return cellByBus[bus][key]
     }
     for (const tg of resp.timeGroups ?? []) {
       if (sessBase(tg.session_name, dir) !== flt) continue
@@ -174,7 +177,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
         for (const s of students) {
           for (const [stop, t, day] of stopDayTriples(s)) {
             if (!stop) continue
-            const c = ensure(bus, stop)
+            const c = ensure(bus, stop, t || '')
             c.hasStudents = true
             c.sess.add(tg.session_name)
             if (s.name && s.student_id) {
@@ -183,22 +186,22 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
               if (day) e.days.add(day)
             }
             if (day) c.days.add(day)
-            if (t) c.times.push(t)
           }
         }
       }
     }
     for (const rs of resp.registeredStops ?? []) {
-      const c = ensure(rs.bus_name, rs.stop_name.trim())
-      const t = normalizeTime(rs.default_time)
-      if (t && c.times.length === 0) c.times.push(t)
+      const bus = rs.bus_name, stop = rs.stop_name.trim()
+      // 학생이 이미 있는 정류장은 시간별 행이 있으므로 빈 등록정류장은 스킵(중복 방지).
+      if (Object.values(cellByBus[bus] ?? {}).some(c => c.stop === stop)) continue
+      ensure(bus, stop, normalizeTime(rs.default_time) || '')
     }
     const out: Record<string, Row[]> = {}
     for (const bus of buses.map(b => b.name)) {
       const cells = cellByBus[bus] ?? {}
-      out[bus] = Object.entries(cells)
-        .map(([stop, c]) => ({
-          stop, time: c.times.length ? c.times.slice().sort()[0] : '', sess: [...c.sess],
+      out[bus] = Object.values(cells)
+        .map(c => ({
+          stop: c.stop, time: c.time, sess: [...c.sess],
           days: DAYS.filter(d => c.days.has(d)),
           students: [...c.stu.values()].sort((a, b) => a.name.localeCompare(b.name, 'ko'))
             .map(e => ({ id: e.id, name: e.name, class_id: e.class_id, days: DAYS.filter(d => e.days.has(d)) })),
@@ -223,7 +226,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
   }, [buildDir, sessions])
   const rowsOf = (flt: string, dir: Dir, bus: string) => built[flt]?.[dir]?.[bus] ?? []
 
-  const dkey = (dir: Dir, bus: string, stop: string) => `${dir}|${bus}|${stop}`
+  const dkey = (dir: Dir, bus: string, stop: string, time = '') => `${dir}|${bus}|${stop}|${time}`
 
   // ── 저장 헬퍼 ──
   async function postRegistered(bus: string, stop: string, dir: Dir, time: string) {
@@ -264,7 +267,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
   // ── 인라인 개별 저장 ──
   async function saveTime(dir: Dir, bus: string, r: Row, newTime: string) {
     if (newTime === r.time) return
-    const k = dkey(dir, bus, r.stop); setSavingKey(k)
+    const k = dkey(dir, bus, r.stop, r.time); setSavingKey(k)
     try {
       await postRegistered(bus, r.stop, dir, newTime)
       let n = 0
@@ -276,7 +279,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
     const nm = newName.trim()
     if (!nm) { flash('이름을 입력하세요'); return }
     if (nm === r.stop) { flash('변경 없음(이름 동일)'); return }
-    const k = dkey(dir, bus, r.stop); setSavingKey(k)
+    const k = dkey(dir, bus, r.stop, r.time); setSavingKey(k)
     try {
       const j = await renameApi(r.stop, nm)
       const rr = j?.result ?? {}
@@ -299,7 +302,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
 
   async function removeDay(dir: Dir, bus: string, r: Row, day: string) {
     if (!confirm(`${bus} '${r.stop}' ${dirLabel(dir)} ${day}요일 탑승을 제거할까요?`)) return
-    const k = dkey(dir, bus, r.stop); setSavingKey(k)
+    const k = dkey(dir, bus, r.stop, r.time); setSavingKey(k)
     try {
       let n = 0
       for (const sess of r.sess) n += await removeDayApi(bus, r.stop, dir, sess, [day])
@@ -513,7 +516,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
       ? `${bus} '${r.stop}' (${dirLabel(dir)}) 정류장을 삭제할까요?\n\n⚠️ 탑승 ${n}명의 이 정류장(${dirLabel(dir)}) 배정이 함께 해제됩니다.\n(학생·개설반에서 이 호차 ${dirLabel(dir)} 배차가 사라짐)`
       : `${bus} '${r.stop}' (${dirLabel(dir)}) 정류장을 삭제할까요?`
     if (!confirm(msg)) return
-    setSavingKey('del|' + dkey(dir, bus, r.stop))
+    setSavingKey('del|' + dkey(dir, bus, r.stop, r.time))
     try {
       // 학생 있으면 먼저 배정 해제(그 방향)
       for (const s of r.students) {
@@ -633,7 +636,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
 
   // 엑셀 배차표 표 행 (정류장 그룹)
   const StopRow = ({ dir, bus, r, i, flt }: { dir: Dir; bus: string; r: Row; i: number; flt: string }) => {
-    const k = dkey(dir, bus, r.stop)
+    const k = dkey(dir, bus, r.stop, r.time)
     const busy = savingKey === k
     const editing = cellEdit?.key === k
     const adding = addRiderKey === k
@@ -845,7 +848,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
             <div className="px-1 py-0.5 text-center border-r border-[#E2E8F0]">작업</div>
             <div className="px-1 py-0.5 text-center">탑승자 명단</div>
           </div>
-          {rows.map((r, i) => <Fragment key={r.stop}>{StopRow({ dir, bus, r, i, flt })}</Fragment>)}
+          {rows.map((r, i) => <Fragment key={r.stop + "|" + r.time}>{StopRow({ dir, bus, r, i, flt })}</Fragment>)}
           {rows.length === 0 && <div className="text-[10px] text-[#CBD5E1] py-2 px-2">정류장 없음</div>}
           {!q && !ro && (
             <div className="flex items-center gap-1 px-2 py-1 border-t border-[#EEF2F7] bg-[#FAFBFC]">
@@ -904,7 +907,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
 
   // ── 모바일 정류장 카드 (지도·좌표 없음, 터치 큼) ──
   const MobileStopCard = ({ dir, bus, r, flt }: { dir: Dir; bus: string; r: Row; flt: string }) => {
-    const k = dkey(dir, bus, r.stop)
+    const k = dkey(dir, bus, r.stop, r.time)
     const busy = savingKey === k
     const editing = cellEdit?.key === k
     const adding = addRiderKey === k
@@ -1037,7 +1040,7 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
                     {dirLabel(dd)}
                     <span className="text-[10px] text-[#94A3B8] font-normal">정류장 {rows.length} · 탑승 {rows.reduce((n, r) => n + dayCount(r, dd, bus), 0)}명</span>
                   </div>
-                  {rows.map(r => <Fragment key={r.stop}>{MobileStopCard({ dir: dd, bus, r, flt: active })}</Fragment>)}
+                  {rows.map(r => <Fragment key={r.stop + "|" + r.time}>{MobileStopCard({ dir: dd, bus, r, flt: active })}</Fragment>)}
                 </div>
               )
             })}
