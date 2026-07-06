@@ -4,12 +4,12 @@
 
 | 항목 | 내용 |
 |---|---|
-| 백업 일시 | 2026-07-06 #4 (본사 캠퍼스 해석: hq_admin은 선택 캠퍼스 param 우선. HQ 계정 campus_id=중계라 광교·수지 등 모든 캠퍼스가 중계로 뜨던 버그. resolveCampusId 헬퍼로 차량 뷰 전 엔드포인트 일괄. + 본사 계정 추가 도구 scripts/create-hq-account.mjs) |
-| 백업 브랜치 | `backup/pre-hq-campus-resolve-20260706` (=커밋 `d0299fd`, 이 수정 이전 라이브) |
-| 변경 커밋 | `d19b40c` (resolveCampusId + 7 엔드포인트, 테스트 154/154) |
-| Vercel 롤백 대상 (직전 라이브) | `poly-ijczchnzf-colinpark-87s-projects.vercel.app` (신규학생 정류장) |
-| 현재 라이브 | `poly-60msc45xq-colinpark-87s-projects.vercel.app` / https://poly-system.vercel.app (2026-07-06 #4) |
-| 롤백 방법 (최신) | `vercel promote poly-ijczchnzf-colinpark-87s-projects.vercel.app` 또는 `git checkout backup/pre-hq-campus-resolve-20260706` 후 재배포 |
+| 백업 일시 | 2026-07-06 #5 (위치 없는 당일 override 버그: add_rider가 location 없이 생성한 당일 override 때문에 월수금 학생(홍유나)이 호차별 정류장에서 타는 날인데 인원0·회색으로 표시. ridesHere가 location 없는 override는 주간 정류장 유지하도록 + add_rider override에 location 저장) |
+| 백업 브랜치 | `backup/pre-override-noloc-20260706` (=커밋 `13f7ab9`, 이 수정 이전 라이브) |
+| 변경 커밋 | `8aa91c5` (BusStopSettingsView ridesHere + add_rider override location, 테스트 154/154) |
+| Vercel 롤백 대상 (직전 라이브) | `poly-60msc45xq-colinpark-87s-projects.vercel.app` (본사 캠퍼스 해석) |
+| 현재 라이브 | `poly-fq1hcjku5-colinpark-87s-projects.vercel.app` / https://poly-system.vercel.app (2026-07-06 #5) |
+| 롤백 방법 (최신) | `vercel promote poly-60msc45xq-colinpark-87s-projects.vercel.app` 또는 `git checkout backup/pre-override-noloc-20260706` 후 재배포 |
 
 ### (이전) 2026-07-06 #3 백업 정보
 
