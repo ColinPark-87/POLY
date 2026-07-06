@@ -3335,21 +3335,24 @@ function StudentDetailModal({ enrollment, student, classes, sessions, buses, enr
                   {(() => {
                     const groups = getStopGroups(arr[day] ?? '', 'arr')
                     const cur = arrLoc[day] ?? ''
-                    const inGroups = groups.some(g => g.stops.some(x => x.loc === cur))
+                    const curT = arrTime[day] ?? ''
+                    const curVal = cur ? `${cur}|::|${curT}` : ''
+                    // 같은 정류장이 세션별 다른 시간으로 있으면(예: 건영3차 유치부 14:57/매일반 16:50) value에 시간을 함께
+                    // 실어 옵션을 구분 → 매일반 것을 고르면 매일반 시간이 따라온다.
+                    const inGroups = groups.some(g => g.stops.some(x => `${x.loc}|::|${x.time ?? ''}` === curVal))
                     return (
                       <>
-                      <select value={cur} onChange={e => {
-                          const loc = e.target.value
-                          setArrLoc(p => ({ ...p, [day]: loc }))
-                          const ts = [...new Set(groups.flatMap(g => g.stops).filter(x => x.loc === loc).map(x => x.time).filter(Boolean))]
-                          if (ts.length === 1) setArrTime(p => ({ ...p, [day]: ts[0] as string }))
+                      <select value={curVal} onChange={e => {
+                          const [loc, t] = e.target.value.split('|::|')
+                          setArrLoc(p => ({ ...p, [day]: loc ?? '' }))
+                          if (t !== undefined) setArrTime(p => ({ ...p, [day]: t }))
                         }}
                         className="w-full text-xs border border-[#E2E8F0] rounded px-1 py-1 bg-white focus:outline-none">
                         <option value="">-</option>
-                        {cur && !inGroups && <option value={cur}>{cur} (현재)</option>}
+                        {cur && !inGroups && <option value={curVal}>{cur}{curT ? ` · ${curT}` : ''} (현재)</option>}
                         {groups.map((g, gi) => (
                           <optgroup key={g.sid} label={g.session} style={{ background: SESS_BG[gi % SESS_BG.length] }}>
-                            {g.stops.map(s => <option key={s.loc} value={s.loc} style={{ background: SESS_BG[gi % SESS_BG.length] }}>{s.loc}{s.time ? ` · ${s.time}` : ''}</option>)}
+                            {g.stops.map(s => <option key={g.sid + '|' + s.loc} value={`${s.loc}|::|${s.time ?? ''}`} style={{ background: SESS_BG[gi % SESS_BG.length] }}>{s.loc}{s.time ? ` · ${s.time}` : ''}</option>)}
                           </optgroup>
                         ))}
                       </select>
@@ -3370,21 +3373,24 @@ function StudentDetailModal({ enrollment, student, classes, sessions, buses, enr
                   {(() => {
                     const groups = getStopGroups(dep[day] ?? '', 'dep')
                     const cur = depLoc[day] ?? ''
-                    const inGroups = groups.some(g => g.stops.some(x => x.loc === cur))
+                    const curT = depTime[day] ?? ''
+                    const curVal = cur ? `${cur}|::|${curT}` : ''
+                    // 같은 정류장이 세션별 다른 시간(건영3차 유치부 14:57/매일반 16:50)이면 value에 시간을 함께 실어
+                    // 옵션 구분 → 매일반 것을 고르면 매일반 시간이 따라온다.
+                    const inGroups = groups.some(g => g.stops.some(x => `${x.loc}|::|${x.time ?? ''}` === curVal))
                     return (
                       <>
-                      <select value={cur} onChange={e => {
-                          const loc = e.target.value
-                          setDepLoc(p => ({ ...p, [day]: loc }))
-                          const ts = [...new Set(groups.flatMap(g => g.stops).filter(x => x.loc === loc).map(x => x.time).filter(Boolean))]
-                          if (ts.length === 1) setDepTime(p => ({ ...p, [day]: ts[0] as string }))
+                      <select value={curVal} onChange={e => {
+                          const [loc, t] = e.target.value.split('|::|')
+                          setDepLoc(p => ({ ...p, [day]: loc ?? '' }))
+                          if (t !== undefined) setDepTime(p => ({ ...p, [day]: t }))
                         }}
                         className="w-full text-xs border border-[#E2E8F0] rounded px-1 py-1 bg-white focus:outline-none">
                         <option value="">-</option>
-                        {cur && !inGroups && <option value={cur}>{cur} (현재)</option>}
+                        {cur && !inGroups && <option value={curVal}>{cur}{curT ? ` · ${curT}` : ''} (현재)</option>}
                         {groups.map((g, gi) => (
                           <optgroup key={g.sid} label={g.session} style={{ background: SESS_BG[gi % SESS_BG.length] }}>
-                            {g.stops.map(s => <option key={s.loc} value={s.loc} style={{ background: SESS_BG[gi % SESS_BG.length] }}>{s.loc}{s.time ? ` · ${s.time}` : ''}</option>)}
+                            {g.stops.map(s => <option key={g.sid + '|' + s.loc} value={`${s.loc}|::|${s.time ?? ''}`} style={{ background: SESS_BG[gi % SESS_BG.length] }}>{s.loc}{s.time ? ` · ${s.time}` : ''}</option>)}
                           </optgroup>
                         ))}
                       </select>
