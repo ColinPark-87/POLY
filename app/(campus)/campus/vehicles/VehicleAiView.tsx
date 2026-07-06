@@ -73,10 +73,22 @@ export default function VehicleAiView({ campusId }: { campusId?: string }) {
             ))}
           </div>
 
-          <div className="grid grid-cols-2 gap-2 mb-3">
-            <KakaoRouteMap title={`현행 (${buses.length}대)`} buses={buses} highlight={removeBus} movedStops={[]} sdkReady={sdkReady} />
-            <KakaoRouteMap title={`${removeBus} 감차 후 (${afterBuses.length}대)`} buses={afterBuses} highlight={''} movedStops={plan.moves.map(m => m.stop)} sdkReady={sdkReady} />
-          </div>
+          {/* 변경되는 호차만 지도에 표시(감차 대상 + 정류장 편입받는 호차). 나머지 호차는 안 그림 → 깔끔·의미. */}
+          {(() => {
+            const affected = new Set<string>([removeBus, ...plan.moves.map(m => m.toBus)])
+            const before = buses.filter(b => affected.has(b.bus))
+            const after = afterBuses.filter(b => affected.has(b.bus))
+            const recvNames = [...new Set(plan.moves.map(m => m.toBus))]
+            return (
+              <>
+                <p className="text-[10px] text-[#64748B] mb-1">지도에는 <b className="text-[#DC2626]">{removeBus}(감차)</b> + 정류장 편입받는 <b>{recvNames.join(', ') || '없음'}</b>만 표시</p>
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  <KakaoRouteMap title={`현행 · 관련 호차 ${before.length}대`} buses={before} highlight={removeBus} movedStops={[]} sdkReady={sdkReady} />
+                  <KakaoRouteMap title={`${removeBus} 감차 후 · ${after.length}대`} buses={after} highlight={''} movedStops={plan.moves.map(m => m.stop)} sdkReady={sdkReady} />
+                </div>
+              </>
+            )
+          })()}
 
           <div className="border border-[#E2E8F0] rounded-xl p-3 space-y-2 bg-[#FAFBFC]">
             <p className="text-[13px] font-black text-[#0F172A]">💬 분석</p>
