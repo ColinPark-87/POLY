@@ -3567,26 +3567,46 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false,
         )}
         <div ref={mapContainerRef} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
 
-        {/* ── 노선그리기 컨트롤 (drawMode 전용, 좌상단 플로팅) ── */}
+        {/* ── 노선그리기 상단 가로바 (drawMode 전용) — 리모컨 대신 ── */}
         {drawMode && (
-          <div className="absolute top-2 left-2 z-[1200] bg-white rounded-xl border border-[#E2E8F0] shadow-lg p-2.5 w-[236px]" style={{ boxShadow: '0 4px 16px rgba(0,0,0,.15)' }}>
-            <p className="text-[12px] font-black text-[#DC2626] mb-1">✏️ 노선그리기</p>
-            {!canDraw ? (
-              <p className="text-[10px] text-[#64748B] leading-snug">우측 리모컨에서 <b>등/하원 · 세션 · 호차 1대</b>를 선택하면 지도를 클릭해 실제 노선을 그릴 수 있어요. (TMAP 경로는 점선 참고)</p>
-            ) : (
-              <>
-                <p className="text-[10px] text-[#334155] leading-snug mb-1.5">지도 클릭=점 추가 · 점 드래그=이동 · 점 클릭=삭제. <b className="text-[#DC2626]">{drawPts.length}개</b> 점{drawDirty ? ' · 미저장' : ''}</p>
-                <div className="flex gap-1">
-                  <button onClick={saveDrawRoute} disabled={drawSaving || !drawDirty}
-                    className="flex-1 text-[11px] font-bold bg-[#DC2626] text-white rounded-lg px-2 py-1.5 disabled:opacity-40">{drawSaving ? '저장…' : '저장'}</button>
-                  <button onClick={() => { setDrawPts(p => p.slice(0, -1)); setDrawDirty(true) }} disabled={!drawPts.length}
-                    className="text-[11px] font-bold border border-[#E2E8F0] text-[#334155] rounded-lg px-2 py-1.5 disabled:opacity-40">되돌리기</button>
-                  <button onClick={() => { setDrawPts([]); setDrawDirty(true) }} disabled={!drawPts.length}
-                    className="text-[11px] font-bold border border-[#FCA5A5] text-[#EF4444] rounded-lg px-2 py-1.5 disabled:opacity-40">비우기</button>
-                </div>
-                <p className="text-[9px] text-[#94A3B8] mt-1">저장하면 노선 탭에 이 경로가 실선으로 표시됨(예상시간은 TMAP 기준).</p>
-              </>
-            )}
+          <div className="absolute top-0 left-0 right-0 z-[1200] bg-white/95 border-b border-[#E2E8F0] px-2 py-1.5 flex items-center gap-2 overflow-x-auto" style={{ backdropFilter: 'blur(4px)', boxShadow: '0 2px 8px rgba(0,0,0,.08)' }}>
+            <span className="text-[12px] font-black text-[#DC2626] whitespace-nowrap">✏️ 노선그리기</span>
+            {/* 등/하원 */}
+            <div className="flex gap-1 shrink-0">
+              {(['arr', 'dep'] as const).map(d => (
+                <button key={d} onClick={() => setDir(d)} className="px-2.5 py-1 rounded-lg text-[11px] font-black whitespace-nowrap"
+                  style={dir === d ? { background: d === 'arr' ? '#1A73E8' : '#D93025', color: '#fff' } : { background: '#F1F3F4', color: '#5F6368' }}>{d === 'arr' ? '등원' : '하원'}</button>
+              ))}
+            </div>
+            {/* 세션 */}
+            <div className="flex gap-1 shrink-0">
+              {sessionDirOptions.filter(o => !o.label.includes('결석') && (dir === 'arr' ? o.arr : o.dep)).map(o => (
+                <button key={o.label} onClick={() => { setSelectedSession(o.label); setSelectedBuses([]) }} className="px-2 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap"
+                  style={selectedSession === o.label ? { background: o.color, color: '#fff' } : { background: '#F1F3F4', color: '#5F6368' }}>{o.label}</button>
+              ))}
+            </div>
+            {/* 호차 (단일선택) */}
+            <div className="flex gap-1 shrink-0">
+              {sessionBuses.map(bus => {
+                const active = selectedBuses[0] === bus.name && selectedBuses.length === 1
+                const color = getBusColor(bus.name, buses.findIndex(b => b.id === bus.id))
+                return (
+                  <button key={bus.name} onClick={() => setSelectedBuses([bus.name])} className="px-2 py-1 rounded-lg text-[11px] font-black whitespace-nowrap"
+                    style={active ? { background: color, color: '#fff' } : { background: '#F1F3F4', color: '#5F6368' }}>{bus.name}</button>
+                )
+              })}
+            </div>
+            {/* 컨트롤 */}
+            <div className="flex items-center gap-1.5 ml-auto shrink-0">
+              {canDraw ? (
+                <>
+                  <span className="text-[10px] text-[#334155] whitespace-nowrap"><b className="text-[#DC2626]">{drawPts.length}</b>점{drawDirty ? ' ·미저장' : ''}</span>
+                  <button onClick={saveDrawRoute} disabled={drawSaving || !drawDirty} className="text-[11px] font-bold bg-[#DC2626] text-white rounded-lg px-2.5 py-1 disabled:opacity-40 whitespace-nowrap">{drawSaving ? '저장…' : '저장'}</button>
+                  <button onClick={() => { setDrawPts(p => p.slice(0, -1)); setDrawDirty(true) }} disabled={!drawPts.length} className="text-[11px] font-bold border border-[#E2E8F0] text-[#334155] rounded-lg px-2 py-1 disabled:opacity-40 whitespace-nowrap">되돌리기</button>
+                  <button onClick={() => { setDrawPts([]); setDrawDirty(true) }} disabled={!drawPts.length} className="text-[11px] font-bold border border-[#FCA5A5] text-[#EF4444] rounded-lg px-2 py-1 disabled:opacity-40 whitespace-nowrap">비우기</button>
+                </>
+              ) : <span className="text-[10px] text-[#64748B] whitespace-nowrap">등/하원·세션·호차 1대 선택 후 지도 클릭(점 추가 / 드래그 이동 / 점클릭 삭제)</span>}
+            </div>
           </div>
         )}
 
@@ -3681,8 +3701,8 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false,
               </div>
             )}
           </div>
-          {/* 지도 스팟 토글 (학교/아파트 밀집) — 검색바 아래 */}
-          <div className="flex gap-1.5 mt-2">
+          {/* 지도 스팟 토글 (학교/아파트 밀집) — 검색바 아래. 노선그리기 중엔 숨김 */}
+          <div className="flex gap-1.5 mt-2" style={drawMode ? { display: 'none' } : undefined}>
             {/* 🏫 학교 — 본체=표시토글, ▾=관리 */}
             <div className="flex-1 flex rounded-xl overflow-hidden shadow-md"
               style={showSchoolSpots ? { background: '#047857' } : { background: 'rgba(255,255,255,0.97)', outline: '1px solid #E2E8F0' }}>
@@ -4009,7 +4029,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false,
         )}
 
         {/* 호차별 노선 카드 (컴팩트) — 2대 이상 선택 시 요약만 표시해 지도 확보 */}
-        {sidebarPage === 1 && selectedSession && selectedBuses.length >= 2 && !bothDir && !loading && (
+        {!drawMode && sidebarPage === 1 && selectedSession && selectedBuses.length >= 2 && !bothDir && !loading && (
           <div className="absolute top-3 left-3 z-[1000] flex flex-col gap-1.5 pointer-events-auto overflow-y-auto"
             style={{ width: 232, maxHeight: 'calc(100vh - 190px)' }}>
             {selectedBuses.map(busName => {
@@ -4048,7 +4068,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false,
         )}
 
         {/* 호차별 노선 카드 (상세) — 1대 선택 또는 등하원 동시보기 */}
-        {sidebarPage === 1 && selectedSession && selectedBuses.length > 0 && !loading && !(selectedBuses.length >= 2 && !bothDir) && (
+        {!drawMode && sidebarPage === 1 && selectedSession && selectedBuses.length > 0 && !loading && !(selectedBuses.length >= 2 && !bothDir) && (
           <div className="absolute top-3 left-3 z-[1000] grid gap-2 pointer-events-auto overflow-y-auto"
             style={{ gridTemplateColumns: bothDir ? 'repeat(2, 1fr)' : `repeat(${gridCols}, 1fr)`, width: bothDir ? 600 : gridContainerW, maxHeight: 'calc(100vh - 190px)' }}>
             {/* bothDir 모드: 등원(파랑)·하원(빨강) 카드 2장 */}
@@ -4251,7 +4271,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false,
 
       {/* 플로팅 리모컨 — 지도 위에 떠서 드래그 이동 */}
       <div ref={remoteWrapRef} className="absolute flex z-[1100]"
-        style={{ ...(remotePos ? { left: remotePos.x, top: remotePos.y } : { right: 8, top: 8 }), maxHeight: 'calc(100% - 16px)' }}>
+        style={{ ...(remotePos ? { left: remotePos.x, top: remotePos.y } : { right: 8, top: 8 }), maxHeight: 'calc(100% - 16px)', ...(drawMode ? { display: 'none' } : {}) }}>
       {/* ── 최소화 캡슐 (선택 요약 + 펼치기) */}
       {remoteMinimized && (
         <div className="flex items-center gap-2 rounded-full border border-[#DADCE0] bg-white pl-3 pr-1.5 py-1.5 shrink-0"
