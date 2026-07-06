@@ -3221,19 +3221,25 @@ function StudentDetailModal({ enrollment, student, classes, sessions, buses, enr
     if (!busName) return []
     const bySess = (dir === 'arr' ? busSessionArrStops : busSessionDepStops)[busName] ?? {}
     const out: { session: string; sid: string; stops: { loc: string; time?: string }[] }[] = []
-    const seen = new Set<string>()
+    // 여러 세션이 공유하는 정류장은 각 세션 그룹에 그 세션의 시간으로 노출한다(중복 제거는 그룹 내부에서만).
+    // 전역 dedup은 현재 세션(예: 유치부)이 공유 정류장을 선점해 다른 세션(예: 매일반) 그룹에서 사라지게 해
+    // "유치부 아이를 매일반 하원시간으로 배차"가 막히는 버그를 유발했다.
+    const allSessionLocs = new Set<string>()  // 지도(reg) 그룹 중복 방지용 — 세션에 이미 있는 정류장은 제외
     const order = [curSessId, ...Object.keys(bySess).filter(s => s !== curSessId)]
     for (const sid of order) {
       const stops = bySess[sid]
       if (!stops || !stops.length) continue
       const name = sessions.find(s => s.id === sid)?.name ?? '기타'
-      const filtered = stops.filter(s => { if (seen.has(s.loc)) return false; seen.add(s.loc); return true })
+      const localSeen = new Set<string>()
+      const filtered = stops.filter(s => { if (localSeen.has(s.loc)) return false; localSeen.add(s.loc); return true })
         .sort((a, b) => (a.time ? parseTimeMin(a.time) : 9999) - (b.time ? parseTimeMin(b.time) : 9999) || a.loc.localeCompare(b.loc, 'ko'))
+      filtered.forEach(s => allSessionLocs.add(s.loc))
       if (filtered.length) out.push({ session: name + (sid === curSessId ? ' (현재 세션)' : ''), sid, stops: filtered })
     }
+    const regSeen = new Set<string>()
     const reg = registeredStops.filter(rs => rs.bus_name === busName && rs.direction === dir)
       .map(rs => ({ loc: rs.stop_name.trim(), time: rs.default_time ?? undefined }))
-      .filter(s => { if (seen.has(s.loc)) return false; seen.add(s.loc); return true })
+      .filter(s => { if (allSessionLocs.has(s.loc) || regSeen.has(s.loc)) return false; regSeen.add(s.loc); return true })
       .sort((a, b) => (a.time ? parseTimeMin(a.time) : 9999) - (b.time ? parseTimeMin(b.time) : 9999) || a.loc.localeCompare(b.loc, 'ko'))
     if (reg.length) out.push({ session: '추가 정류장(지도)', sid: 'reg', stops: reg })
     return out
