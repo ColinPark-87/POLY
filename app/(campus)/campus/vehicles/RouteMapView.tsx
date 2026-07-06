@@ -113,7 +113,7 @@ function capStatus(n: number, cap: number = BUS_CAP): { label: string; color: st
   return { label: '여유', color: '#16A34A', bg: '#F0FDF4', ring: '#BBF7D0' }
 }
 
-export default function RouteMapView({ campusId, campusName, fullscreen = false, showPresence = true, onEditingChange, focusStop, onCoordSaved }: { campusId?: string; campusName?: string; fullscreen?: boolean; showPresence?: boolean; onEditingChange?: (editing: boolean) => void; focusStop?: { name: string; busName?: string; nonce: number; lat?: number; lng?: number } | null; onCoordSaved?: (stop: string) => void }) {
+export default function RouteMapView({ campusId, campusName, fullscreen = false, showPresence = true, onEditingChange, focusStop, onCoordSaved, drawMode = false }: { campusId?: string; campusName?: string; fullscreen?: boolean; showPresence?: boolean; onEditingChange?: (editing: boolean) => void; focusStop?: { name: string; busName?: string; nonce: number; lat?: number; lng?: number } | null; onCoordSaved?: (stop: string) => void; drawMode?: boolean }) {
   const cqs = campusId ? `&campus_id=${campusId}` : ''
   // campusId가 없으면 중계(hardcoded), 있으면 해당 캠퍼스 이름 사용 (없으면 null)
   const effectiveSchoolName = campusId ? (campusName ?? null) : SCHOOL_STOP.name
@@ -127,6 +127,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false,
   const uploadRef = useRef<HTMLInputElement>(null)
   const schoolMarkersRef = useRef<any[]>([])
   const campusMarkerRef = useRef<any>(null)
+  const drawLayerRef = useRef<any[]>([])  // 노선그리기 마커·폴리라인
   const centeredRef = useRef(false)
   const coordsRef = useRef<Record<string, { lat: number; lng: number }>>({})
   const schoolGeocodedRef = useRef(false)
@@ -160,6 +161,47 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false,
 
   const [selectedSession, setSelectedSession] = useState<string | null>(null)
   const [selectedBuses, setSelectedBuses] = useState<string[]>([])
+
+  // ── 수동 노선그리기 (drawMode) ─────────────────────────────────────
+  // 저장된 수동 노선(호차|세션|방향 → 좌표점). 노선 탭에선 TMAP 대신 이걸 렌더(예상시간은 TMAP 유지).
+  const [manualRoutes, setManualRoutes] = useState<Record<string, [number, number][]>>({})
+  const [drawPts, setDrawPts] = useState<[number, number][]>([])  // 현재 편집중 좌표점
+  const [drawSaving, setDrawSaving] = useState(false)
+  const [drawDirty, setDrawDirty] = useState(false)
+  const drawKey = (bus: string, sess: string | null, d: 'arr' | 'dep') => `${bus}|::|${sess ?? ''}|::|${d}`
+  const drawTargetBus = selectedBuses.length === 1 ? selectedBuses[0] : null
+  const canDraw = drawMode && !!drawTargetBus && !!selectedSession
+  const curDrawKey = drawTargetBus ? drawKey(drawTargetBus, selectedSession, dir) : ''
+  // 저장된 수동 노선 로드
+  useEffect(() => {
+    fetch(`/api/campus/manual-routes${campusId ? `?campus_id=${campusId}` : ''}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (!d?.routes) return
+        const m: Record<string, [number, number][]> = {}
+        for (const r of d.routes) m[drawKey(r.bus_name, r.session_label, r.direction)] = r.points ?? []
+        setManualRoutes(m)
+      }).catch(() => {})
+  }, [campusId])  // eslint-disable-line react-hooks/exhaustive-deps
+  // 선택(호차·세션·방향) 바뀌면 편집중 좌표를 저장본으로 초기화
+  useEffect(() => {
+    setDrawPts(curDrawKey ? (manualRoutes[curDrawKey] ?? []) : [])
+    setDrawDirty(false)
+  }, [curDrawKey, manualRoutes])
+  async function saveDrawRoute() {
+    if (!drawTargetBus || !selectedSession) return
+    setDrawSaving(true)
+    try {
+      const res = await fetch(`/api/campus/manual-routes${campusId ? `?campus_id=${campusId}` : ''}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bus_name: drawTargetBus, session_label: selectedSession, direction: dir, points: drawPts }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) { alert(d?.tableMissing ? '수동노선 테이블 미생성 — 마이그레이션 019 실행 필요' : `저장 실패: ${d?.error ?? res.status}`); return }
+      setManualRoutes(prev => ({ ...prev, [curDrawKey]: [...drawPts] }))
+      setDrawDirty(false)
+    } finally { setDrawSaving(false) }
+  }
 
   const [expandedStop, setExpandedStop] = useState<string | null>(null)
   // 카드에서 정류장 클릭 시 뜨는 작은 팝업 (명단·좌표설정) — 인라인이 아니라 오버레이로
@@ -1035,22 +1077,27 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false,
     const kakao = (window as any).kakao
     const map = mapRef.current
     const h = (mouseEvent: any) => {
-      if (!candidateStop) return
       const latlng = mouseEvent.latLng
       const lat = latlng.getLat()
       const lng = latlng.getLng()
+      if (canDraw) {  // 노선그리기: 클릭한 점을 경로에 추가
+        setDrawPts(prev => [...prev, [lat, lng]])
+        setDrawDirty(true)
+        return
+      }
+      if (!candidateStop) return
       setCandidateCoord({ lat, lng })
       setManualCoord(prev => ({ ...prev, [candidateStop]: { lat: lat.toFixed(6), lng: lng.toFixed(6) } }))
     }
     kakao.maps.event.addListener(map, 'click', h)
     return () => kakao.maps.event.removeListener(map, 'click', h)
-  }, [mapReady, candidateStop])
+  }, [mapReady, candidateStop, canDraw])
 
   useEffect(() => {
     if (mapContainerRef.current) {
-      mapContainerRef.current.style.cursor = candidateStop ? 'crosshair' : ''
+      mapContainerRef.current.style.cursor = (candidateStop || canDraw) ? 'crosshair' : ''
     }
-  }, [candidateStop])
+  }, [candidateStop, canDraw])
 
   // 후보 마커 (드래그 가능)
   useEffect(() => {
@@ -1294,21 +1341,26 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false,
       const pts = stops.filter(s => coords[s.name]).map(s => new kakao.maps.LatLng(coords[s.name].lat, coords[s.name].lng))
       pts.forEach((p: any) => allLatLngs.push(p))
 
-      const routeLatLngs = tmapRoutes[busName]
-        ? tmapRoutes[busName].map(([lat, lng]) => new kakao.maps.LatLng(lat, lng))
-        : pts
+      // 노선 탭: 저장된 수동 노선이 있으면 TMAP 대신 그걸 렌더(실제 운행 경로). 예상시간은 TMAP 유지(별도).
+      const mKey = drawKey(busName, selectedSession, dir)
+      const manual = (!drawMode && selectedSession && (manualRoutes[mKey]?.length ?? 0) > 1) ? manualRoutes[mKey] : null
+      const routeLatLngs = manual
+        ? manual.map(([lat, lng]) => new kakao.maps.LatLng(lat, lng))
+        : tmapRoutes[busName]
+          ? tmapRoutes[busName].map(([lat, lng]) => new kakao.maps.LatLng(lat, lng))
+          : pts
 
       if (routeLatLngs.length > 1) {
         // 반투명 흰 그림자 (얇게 깔아서 배경 분리)
         const shadow = new kakao.maps.Polyline({
           map, path: routeLatLngs,
-          strokeWeight: 9, strokeColor: '#FFFFFF', strokeOpacity: 0.5, strokeStyle: 'solid', zIndex: 1,
+          strokeWeight: 9, strokeColor: '#FFFFFF', strokeOpacity: drawMode ? 0.3 : 0.5, strokeStyle: 'solid', zIndex: 1,
         })
         polylinesRef.current.push(shadow)
-        // 메인 선 — 두껍고 선명하게
+        // 메인 선 — drawMode에선 TMAP을 점선 참고선으로(사용자가 그린 실선과 구분)
         const polyline = new kakao.maps.Polyline({
           map, path: routeLatLngs,
-          strokeWeight: 6, strokeColor: color, strokeOpacity: 1, strokeStyle: 'solid', zIndex: 2,
+          strokeWeight: 6, strokeColor: color, strokeOpacity: drawMode ? 0.55 : 1, strokeStyle: drawMode ? 'dashed' : 'solid', zIndex: 2,
         })
         polylinesRef.current.push(polyline)
         addDirectionArrows(kakao, map, routeLatLngs, color, polylinesRef.current)
@@ -1375,7 +1427,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false,
       const cardW = n === 0 ? 0 : n === 1 ? 300 : 250
       map.setBounds(bounds, 60, 40, 60, cardW + 20)
     }
-  }, [mapReady, routeStopsByBus, coords, selectedBuses, buses, tmapRoutes, tmapBothDirRoutes, bothDir, bothDirStopsByBus, sidebarPage, p2SelectedBus, adjustMode])
+  }, [mapReady, routeStopsByBus, coords, selectedBuses, buses, tmapRoutes, tmapBothDirRoutes, bothDir, bothDirStopsByBus, sidebarPage, p2SelectedBus, adjustMode, dir, manualRoutes, selectedSession, drawMode])
 
   // Page 2: 선택된 버스의 오늘 노선 렌더
   useEffect(() => {
@@ -1608,7 +1660,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false,
     const kakao = (window as any).kakao
     schoolMarkersRef.current.forEach(m => m.setMap(null))
     schoolMarkersRef.current = []
-    if (!showSchoolSpots) return
+    if (!showSchoolSpots || drawMode) return  // 노선그리기 중엔 학교/아파트 마커 숨김
     const rankedSchools = Object.entries(effSchoolSpots).sort((a, b) => b[1].count - a[1].count)
     rankedSchools.forEach(([school, spot], i) => {
       schoolMarkersRef.current.push(makeBubbleOverlay(
@@ -1619,7 +1671,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false,
         i < 3 ? i + 1 : 0
       ))
     })
-  }, [mapReady, effSchoolSpots, showSchoolSpots])
+  }, [mapReady, effSchoolSpots, showSchoolSpots, drawMode])
 
   // 아파트 버블 렌더링
   useEffect(() => {
@@ -1627,7 +1679,7 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false,
     const kakao = (window as any).kakao
     aptMarkersRef.current.forEach(m => m.setMap(null))
     aptMarkersRef.current = []
-    if (!showAptSpots) return
+    if (!showAptSpots || drawMode) return  // 노선그리기 중엔 학교/아파트 마커 숨김
     const rankedApts = Object.entries(effAptSpots).sort((a, b) => b[1].count - a[1].count)
     rankedApts.forEach(([apt, spot], i) => {
       aptMarkersRef.current.push(makeBubbleOverlay(
@@ -1638,7 +1690,34 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false,
         i < 3 ? i + 1 : 0
       ))
     })
-  }, [mapReady, effAptSpots, showAptSpots])
+  }, [mapReady, effAptSpots, showAptSpots, drawMode])
+
+  // 노선그리기: 현재 편집중 좌표점을 드래그 마커 + 실선 폴리라인으로 렌더
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return
+    const kakao = (window as any).kakao
+    if (!kakao?.maps) return
+    drawLayerRef.current.forEach(o => { try { o.setMap(null) } catch {} })
+    drawLayerRef.current = []
+    if (!drawMode || !canDraw) return
+    const map = mapRef.current
+    const path = drawPts.map(([la, ln]) => new kakao.maps.LatLng(la, ln))
+    if (path.length > 1) {
+      drawLayerRef.current.push(new kakao.maps.Polyline({ map, path, strokeWeight: 6, strokeColor: '#DC2626', strokeOpacity: 0.95, strokeStyle: 'solid', zIndex: 5 }))
+    }
+    drawPts.forEach(([la, ln], i) => {
+      const mk = new kakao.maps.Marker({ map, position: new kakao.maps.LatLng(la, ln), draggable: true, zIndex: 11 })
+      kakao.maps.event.addListener(mk, 'dragend', () => {
+        const p = mk.getPosition()
+        setDrawPts(prev => { const nx = prev.slice(); nx[i] = [p.getLat(), p.getLng()]; return nx }); setDrawDirty(true)
+      })
+      // 점 클릭 = 그 점 삭제
+      kakao.maps.event.addListener(mk, 'click', () => { setDrawPts(prev => prev.filter((_, j) => j !== i)); setDrawDirty(true) })
+      const lbl = new kakao.maps.CustomOverlay({ map, position: new kakao.maps.LatLng(la, ln), yAnchor: 2.1, zIndex: 12,
+        content: `<div style="background:#DC2626;color:#fff;font-size:10px;font-weight:900;border-radius:9px;padding:0 5px;box-shadow:0 1px 3px rgba(0,0,0,.3)">${i + 1}</div>` })
+      drawLayerRef.current.push(mk, lbl)
+    })
+  }, [mapReady, drawMode, canDraw, drawPts])
 
   // 탑승장소 수정 팝업이 열린 정류장을 지도에서 눈에 띄게 강조 (펄스 핀 + '수정 중' 라벨)
   useEffect(() => {
@@ -3487,6 +3566,29 @@ export default function RouteMapView({ campusId, campusName, fullscreen = false,
           </div>
         )}
         <div ref={mapContainerRef} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
+
+        {/* ── 노선그리기 컨트롤 (drawMode 전용, 좌상단 플로팅) ── */}
+        {drawMode && (
+          <div className="absolute top-2 left-2 z-[1200] bg-white rounded-xl border border-[#E2E8F0] shadow-lg p-2.5 w-[236px]" style={{ boxShadow: '0 4px 16px rgba(0,0,0,.15)' }}>
+            <p className="text-[12px] font-black text-[#DC2626] mb-1">✏️ 노선그리기</p>
+            {!canDraw ? (
+              <p className="text-[10px] text-[#64748B] leading-snug">우측 리모컨에서 <b>등/하원 · 세션 · 호차 1대</b>를 선택하면 지도를 클릭해 실제 노선을 그릴 수 있어요. (TMAP 경로는 점선 참고)</p>
+            ) : (
+              <>
+                <p className="text-[10px] text-[#334155] leading-snug mb-1.5">지도 클릭=점 추가 · 점 드래그=이동 · 점 클릭=삭제. <b className="text-[#DC2626]">{drawPts.length}개</b> 점{drawDirty ? ' · 미저장' : ''}</p>
+                <div className="flex gap-1">
+                  <button onClick={saveDrawRoute} disabled={drawSaving || !drawDirty}
+                    className="flex-1 text-[11px] font-bold bg-[#DC2626] text-white rounded-lg px-2 py-1.5 disabled:opacity-40">{drawSaving ? '저장…' : '저장'}</button>
+                  <button onClick={() => { setDrawPts(p => p.slice(0, -1)); setDrawDirty(true) }} disabled={!drawPts.length}
+                    className="text-[11px] font-bold border border-[#E2E8F0] text-[#334155] rounded-lg px-2 py-1.5 disabled:opacity-40">되돌리기</button>
+                  <button onClick={() => { setDrawPts([]); setDrawDirty(true) }} disabled={!drawPts.length}
+                    className="text-[11px] font-bold border border-[#FCA5A5] text-[#EF4444] rounded-lg px-2 py-1.5 disabled:opacity-40">비우기</button>
+                </div>
+                <p className="text-[9px] text-[#94A3B8] mt-1">저장하면 노선 탭에 이 경로가 실선으로 표시됨(예상시간은 TMAP 기준).</p>
+              </>
+            )}
+          </div>
+        )}
 
         {/* ── 동시 접속자/편집자 표시 (캠퍼스 단위) — 지도 좌상단. 페이지가 자체 배지를 그리면(showPresence=false) 숨김 */}
         {showPresence && (
