@@ -1497,7 +1497,7 @@ export default function ClassRosterPage() {
       {newStudentModal && (
         <NewStudentModal
           classId={newStudentModal.classId} classLevel={newStudentModal.classLevel}
-          buses={buses} enrollments={enrollments} classes={classes}
+          buses={buses} enrollments={enrollments} classes={classes} registeredStops={registeredStops}
           onAdd={handleNewStudentAdd} onClose={() => { setNewStudentModal(null); setFormError('') }} saving={saving}
           error={formError}
         />
@@ -3483,8 +3483,9 @@ function WaitlistAddModal({ classId, classLevel, buses, onAdd, onClose, saving, 
 }
 
 // ─── NewStudentModal ───────────────────────────────────────────
-function NewStudentModal({ classId, classLevel, buses, enrollments, classes, onAdd, onClose, saving, error }: {
+function NewStudentModal({ classId, classLevel, buses, enrollments, classes, registeredStops, onAdd, onClose, saving, error }: {
   classId: string; classLevel: string; buses: Bus[]; enrollments: Enrollment[]; classes: ClassItem[]
+  registeredStops: RegisteredStop[]
   onAdd: (classId: string, name: string, englishName: string, arr: Record<string, string>, dep: Record<string, string>) => void
   onClose: () => void; saving: boolean; error: string
 }) {
@@ -3522,17 +3523,26 @@ function NewStudentModal({ classId, classLevel, buses, enrollments, classes, onA
       }
     }
   }
+  // 전 세션 정류장 union + 등록정류장 병합 (StudentDetailModal getStopGroups와 동일 수준).
+  // 현재 세션에만 있는 정류장으로 한정하지 않는다 — 유치부 신규생을 매일반 호차에 배차할 때
+  // 매일반 정류장이 후보에서 사라지던 세션-락 버그 방지.
+  function withReg(busName: string, dir: 'arr' | 'dep', base: { loc: string; time?: string }[]) {
+    const merged = base.filter((s, i, a) => a.findIndex(x => x.loc === s.loc) === i)
+    for (const rs of registeredStops) {
+      if (rs.bus_name !== busName || rs.direction !== dir) continue
+      const loc = rs.stop_name.trim()
+      if (merged.some(x => x.loc === loc)) continue
+      merged.push({ loc, time: rs.default_time ?? undefined })
+    }
+    return merged
+  }
   function getArrStops(busName: string): { loc: string; time?: string }[] {
-    const same = busArrStops[busName]?.[curSessId] ?? []
-    if (same.length > 0) return same
-    const all = Object.values(busArrStops[busName] ?? {}).flat()
-    return all.filter((s, i, a) => a.findIndex(x => x.loc === s.loc) === i)
+    if (!busName) return []
+    return withReg(busName, 'arr', Object.values(busArrStops[busName] ?? {}).flat())
   }
   function getDepStops(busName: string): { loc: string; time?: string }[] {
-    const same = busDepStops[busName]?.[curSessId] ?? []
-    if (same.length > 0) return same
-    const all = Object.values(busDepStops[busName] ?? {}).flat()
-    return all.filter((s, i, a) => a.findIndex(x => x.loc === s.loc) === i)
+    if (!busName) return []
+    return withReg(busName, 'dep', Object.values(busDepStops[busName] ?? {}).flat())
   }
 
   function handleSubmit(e: React.FormEvent) {
