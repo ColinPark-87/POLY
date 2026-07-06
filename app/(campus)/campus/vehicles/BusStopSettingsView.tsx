@@ -171,12 +171,27 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
       cellByBus[bus][key] ??= { stop, time: time || '', sess: new Set(), days: new Set(), stu: new Map(), hasStudents: false }
       return cellByBus[bus][key]
     }
+    // 세션 탭 분류를 '운행 시간' 기준으로: 유치부 학생이라도 초등부(매일반) 시간에 하차하면 그 시간이
+    // 속한 세션(매일반) 탭에 뜨게 한다. 각 시간마다 그 시간을 쓰는 학생이 가장 많은 세션을 소속으로 본다.
+    // (정상 학생은 자기 세션 시간이라 그대로, 시간이 어긋난 학생만 해당 운행 탭으로 이동)
+    const timeCount: Record<string, Record<string, number>> = {}
     for (const tg of resp.timeGroups ?? []) {
-      if (sessBase(tg.session_name, dir) !== flt) continue
+      const sb = sessBase(tg.session_name, dir)
+      for (const students of Object.values(tg.busMap ?? {})) for (const s of students) for (const [stop, t] of stopDayTriples(s)) {
+        if (!stop || !t) continue
+        timeCount[t] ??= {}; timeCount[t][sb] = (timeCount[t][sb] ?? 0) + 1
+      }
+    }
+    const timeToSess: Record<string, string> = {}
+    for (const [t, m] of Object.entries(timeCount)) timeToSess[t] = Object.entries(m).sort((a, b) => b[1] - a[1])[0][0]
+    for (const tg of resp.timeGroups ?? []) {
+      const enrSess = sessBase(tg.session_name, dir)
       for (const [bus, students] of Object.entries(tg.busMap ?? {})) {
         for (const s of students) {
           for (const [stop, t, day] of stopDayTriples(s)) {
             if (!stop) continue
+            const rowSess = (t && timeToSess[t]) ? timeToSess[t] : enrSess  // 운행 시간 기준 탭 분류
+            if (rowSess !== flt) continue
             const c = ensure(bus, stop, t || '')
             c.hasStudents = true
             c.sess.add(tg.session_name)
