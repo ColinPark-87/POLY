@@ -32,6 +32,20 @@ export function pickReductionCandidate(buses: RBus[]): string | null {
   return cands.slice().sort((a, b) => riders(a) - riders(b))[0].bus
 }
 
+// 최적 감차: 후보(비유치부)를 하나씩 빼보고 재배정 비용이 가장 적은 1대를 고른다.
+// 비용 = 재배정 불가 정류장 큰 페널티 + 총 이동거리(멀리 옮길수록 나쁨). "아무거나"가 아니라 최선.
+export function pickOptimalReduction(buses: RBus[]): { bus: string; plan: ReductionPlan; cost: number } | null {
+  const cands = buses.filter(b => !b.yuchi && b.stops.length > 0)
+  if (cands.length < 1 || buses.length < 2) return null
+  let best: { bus: string; plan: ReductionPlan; cost: number } | null = null
+  for (const c of cands) {
+    const plan = planReduction(buses, c.bus)
+    const cost = plan.infeasible.length * 1000 + plan.moves.reduce((s, m) => s + m.distKm, 0)
+    if (!best || cost < best.cost) best = { bus: c.bus, plan, cost }
+  }
+  return best
+}
+
 // 감차 재배정 계획. REROUTE_KM 초과면 '노선 변경(재라우팅)'으로 표시.
 const REROUTE_KM = 0.6
 export function planReduction(buses: RBus[], removeBus: string): ReductionPlan {

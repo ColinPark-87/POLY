@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { haversineKm, pickReductionCandidate, planReduction, type RBus } from '@/lib/utils/vehicle-reduction'
+import { haversineKm, pickReductionCandidate, pickOptimalReduction, planReduction, type RBus } from '@/lib/utils/vehicle-reduction'
 
 describe('haversineKm', () => {
   it('같은 점=0, 대략 거리', () => {
@@ -19,6 +19,18 @@ const buses: RBus[] = [
 describe('pickReductionCandidate', () => {
   it('유치부 제외, 인원 최소 초등부 호차 선택', () => {
     expect(pickReductionCandidate(buses)).toBe('2호차') // 3명으로 최소
+  })
+})
+
+describe('pickOptimalReduction', () => {
+  it('재배정 이동거리 최소인 호차를 최적 감차로 선택', () => {
+    // 2호차(C, A와 근접)를 빼면 이동 거의 0 → 최적. 1호차를 빼면 A·B를 멀리 옮겨야 함.
+    const opt = pickOptimalReduction(buses)
+    expect(opt?.bus).toBe('2호차')
+    expect(opt?.plan.moves.length).toBeGreaterThan(0)
+  })
+  it('감차 후보 없으면 null', () => {
+    expect(pickOptimalReduction([{ bus: '3호차', yuchi: true, stops: [{ name: 'Y', count: 4, lat: 37.7, lng: 127.1 }] }])).toBeNull()
   })
 })
 

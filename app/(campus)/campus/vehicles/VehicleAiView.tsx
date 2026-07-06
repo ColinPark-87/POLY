@@ -1,7 +1,7 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
 import Script from 'next/script'
-import { pickReductionCandidate, planReduction, type RBus, type ReductionPlan } from '@/lib/utils/vehicle-reduction'
+import { pickOptimalReduction, planReduction, type RBus, type ReductionPlan } from '@/lib/utils/vehicle-reduction'
 
 // AI 차량 분석(증차/감차/쪽차). 호차=등하원 한 차이므로 방향 안 나누고 호차 단위로 합쳐 분석.
 // 감차: 그 호차의 모든 정류장(등원+하원)을 다른 호차의 최근접 정류장으로 편입(가까우면 흡수·멀면 노선변경).
@@ -10,6 +10,7 @@ import { pickReductionCandidate, planReduction, type RBus, type ReductionPlan } 
 interface AiResult { summary?: string; actions?: { type: string; bus: string; session?: string; reason?: string }[] }
 const BUS_COLORS = ['#2563EB', '#DC2626', '#16A34A', '#D97706', '#7C3AED', '#0891B2', '#DB2777', '#65A30D', '#EA580C', '#4F46E5']
 const cqsOf = (c?: string) => (c ? `&campus_id=${c}` : '')
+const escH = (t: string) => t.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string))
 
 export default function VehicleAiView({ campusId }: { campusId?: string }) {
   const [loading, setLoading] = useState(false)
@@ -34,8 +35,9 @@ export default function VehicleAiView({ campusId }: { campusId?: string }) {
       const combined = buildBuses([arrR, depR], coords)  // 등원+하원 합쳐 호차 단위
       setBuses(combined)
       if (combined.length === 0) { setErr('분석할 호차 데이터가 없습니다.'); return }
-      const cand = pickReductionCandidate(combined)
-      if (cand) { setRemoveBus(cand); setPlan(planReduction(combined, cand)) }
+      // 최적 감차: 모든 후보를 평가해 재배정 이동이 가장 적은 1대 선택(아무거나 아님)
+      const opt = pickOptimalReduction(combined)
+      if (opt) { setRemoveBus(opt.bus); setPlan(opt.plan) }
       const res = await fetch(`/api/campus/vehicle-analysis${campusId ? `?campus_id=${campusId}` : ''}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ vehicles: combined.map(b => ({ bus: b.bus, yuchi: b.yuchi, total: b.stops.reduce((n, s) => n + s.count, 0), stops: b.stops.map(s => ({ name: s.name, count: s.count })) })) }),
@@ -166,10 +168,15 @@ function KakaoRouteMap({ title, buses, highlight, movedStops = [], sdkReady }: {
           const pl = new kakao.maps.Polyline({ map, path, strokeWeight: highlight === b.bus ? 5 : 3, strokeColor: color, strokeOpacity: 0.85, strokeStyle: highlight === b.bus ? 'dashed' : 'solid' })
           overlaysRef.current.push(pl)
         }
-        sp.forEach(s => {
+        // 승하차 지점: 순번 원 + 정류장 이름 라벨 (점만 찍지 않음)
+        sp.forEach((s, j) => {
           const moved = movedSet.has(s.name)
-          const ov = new kakao.maps.CustomOverlay({ map, position: new kakao.maps.LatLng(s.lat, s.lng), yAnchor: 0.5, zIndex: moved ? 5 : 3,
-            content: `<div title="${b.bus} · ${s.name} (${s.count})" style="width:${moved ? 12 : 9}px;height:${moved ? 12 : 9}px;border-radius:50%;background:${moved ? '#DC2626' : color};border:1.5px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.3)"></div>` })
+          const bg = moved ? '#DC2626' : color
+          const ov = new kakao.maps.CustomOverlay({ map, position: new kakao.maps.LatLng(s.lat, s.lng), yAnchor: 1, zIndex: moved ? 6 : 4,
+            content: `<div style="display:flex;flex-direction:column;align-items:center;transform:translateY(-3px)" title="${b.bus} · ${escH(s.name)} (${s.count}명)">
+              <div style="background:${bg};color:#fff;font-size:9px;font-weight:900;min-width:15px;height:15px;padding:0 2px;border-radius:8px;border:1.5px solid #fff;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(0,0,0,.35)">${j + 1}</div>
+              <div style="background:rgba(255,255,255,.93);color:#334155;font-size:8px;font-weight:700;padding:0 3px;border-radius:3px;margin-top:1px;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,.18)">${escH(s.name)}</div>
+            </div>` })
           overlaysRef.current.push(ov)
         })
       })
