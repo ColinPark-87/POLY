@@ -701,7 +701,7 @@ export async function POST(request: NextRequest) {
     if (ovDay && dayList.includes(ovDay)) {
       const { error } = await service.from('pickup_overrides').upsert({
         student_id, campus_id: campusId, date, direction: dir,
-        bus_name, is_absent: false,
+        bus_name, location: pickup_location ?? null, is_absent: false,
         created_by: user.id,
       }, { onConflict: 'student_id,date,direction' })
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })

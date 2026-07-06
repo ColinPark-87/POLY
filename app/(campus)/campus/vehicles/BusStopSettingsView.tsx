@@ -607,7 +607,10 @@ export default function BusStopSettingsView({ campusName, onLocateStop, restrict
   const ridesHere = (s: StuRef, r: Row, dir: Dir, bus: string) => {
     const ov = ovByStudent(dir).get(s.id)
     if (ov?.is_absent) return false
-    if (ov && !(ov.bus_name === bus && sameStopC(ov.location, r.stop))) return false  // 그날 다른 호차/정류장으로 이동됨
+    // 그날 다른 호차로 이동 → 제외. 단 override에 위치가 없으면(예: 당일 재탑승 추가로 호차만 기록)
+    // 주간 정류장을 유지 — location이 있을 때만 정류장 이동으로 보고 불일치 시 제외.
+    if (ov && ov.bus_name !== bus) return false
+    if (ov && ov.location && !sameStopC(ov.location, r.stop)) return false
     return ridesOn(s, r)
   }
   // 당일추가(이동해 들어온) 학생 — 단, 이 정류장 주간명단에 이미 있으면 제외(중복 방지)
