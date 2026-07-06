@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import RouteMapView from './RouteMapView'
 import BusStopSettingsView from './BusStopSettingsView'
+import VehicleAiView from './VehicleAiView'
 import { PresenceBadge } from '@/components/campus/PresenceBadge'
 import { sameStop } from '@/lib/utils/stop-name'
 
@@ -199,7 +200,7 @@ export default function VehiclesPage() {
   const today = new Date()
   const todayStr = [today.getFullYear(), String(today.getMonth()+1).padStart(2,'0'), String(today.getDate()).padStart(2,'0')].join('-')
 
-  const [tab, setTab] = useState<'master'|'today'|'map'|'draw'|'busstops'>('map')
+  const [tab, setTab] = useState<'master'|'today'|'map'|'draw'|'busstops'|'ai'>('map')
   // 호차별 정류장 탭 → 시스템 지도에서 해당 정류장 위치 보기 (init=주소검색 좌표로 핀 초기배치)
   const [focusStop, setFocusStop] = useState<{ name: string; busName: string; nonce: number; lat?: number; lng?: number } | null>(null)
   function locateStop(stop: string, busName: string, init?: { lat: number; lng: number }) {
@@ -1236,7 +1237,7 @@ export default function VehiclesPage() {
         <h1 className="text-sm font-bold text-[#1E293B] whitespace-nowrap pr-2 hidden md:block">차량 관리</h1>
         <div className="flex gap-0 overflow-x-auto">
           {/* 탭통합: 모바일(today)·학생설정(master) 삭제 → 호차별 정류장이 대체. 시스템(노선)+호차별 2탭 */}
-          {([['map','노선'],['draw','노선그리기'],['busstops','호차별 정류장']] as const)
+          {([['map','노선'],['draw','노선그리기'],['busstops','호차별 정류장'],['ai','AI분석']] as const)
             .filter(([k]) => !vehiclesRestricted || k === 'map' || k === 'busstops')
             .map(([k, label]) => (
             <button key={k} onClick={() => setTab(k)}
@@ -1435,6 +1436,9 @@ export default function VehiclesPage() {
 
       {/* ═══ 호차별 정류장 세팅 탭 (중계 전용) ════════════════════ */}
       {tab === 'busstops' && <BusStopSettingsView campusName={campusName} onLocateStop={locateStop} restricted={vehiclesRestricted} onlyBuses={myBuses} />}
+
+      {/* ═══ AI 차량 분석 탭 ══════════════════════════════════════ */}
+      {tab === 'ai' && <VehicleAiView campusId={campusId} />}
 
       </div>{/* /탭 콘텐츠 */}
 
