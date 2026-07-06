@@ -4,12 +4,12 @@
 
 | 항목 | 내용 |
 |---|---|
-| 백업 일시 | 2026-07-06 #5 (위치 없는 당일 override 버그: add_rider가 location 없이 생성한 당일 override 때문에 월수금 학생(홍유나)이 호차별 정류장에서 타는 날인데 인원0·회색으로 표시. ridesHere가 location 없는 override는 주간 정류장 유지하도록 + add_rider override에 location 저장) |
-| 백업 브랜치 | `backup/pre-override-noloc-20260706` (=커밋 `13f7ab9`, 이 수정 이전 라이브) |
-| 변경 커밋 | `8aa91c5` (BusStopSettingsView ridesHere + add_rider override location, 테스트 154/154) |
-| Vercel 롤백 대상 (직전 라이브) | `poly-60msc45xq-colinpark-87s-projects.vercel.app` (본사 캠퍼스 해석) |
-| 현재 라이브 | `poly-fq1hcjku5-colinpark-87s-projects.vercel.app` / https://poly-system.vercel.app (2026-07-06 #5) |
-| 롤백 방법 (최신) | `vercel promote poly-60msc45xq-colinpark-87s-projects.vercel.app` 또는 `git checkout backup/pre-override-noloc-20260706` 후 재배포 |
+| 백업 일시 | 2026-07-06 #6 (개설반 현황 모달 요일별 등하원 시간 편집 추가: 유치부 학생이 특정 요일만 매일반 정류장·시간으로 하원 지원. 시간칸 없어 유치부 공유 _time만 유지되던 문제. buildDirSchedule로 시간 XOR 저장) |
+| 백업 브랜치 | `backup/pre-roster-perday-time-20260706` (=커밋 `828b361` 직전, 이 수정 이전 라이브) |
+| 변경 커밋 | `828b361` (StudentDetailModal 요일별 시간 input + buildDirSchedule XOR, 테스트 154/154, 라이브 렌더 검증) |
+| Vercel 롤백 대상 (직전 라이브) | `poly-fq1hcjku5-colinpark-87s-projects.vercel.app` (위치없는 override) |
+| 현재 라이브 | `poly-614os6vsi-colinpark-87s-projects.vercel.app` / https://poly-system.vercel.app (2026-07-06 #6) |
+| 롤백 방법 (최신) | `vercel promote poly-fq1hcjku5-colinpark-87s-projects.vercel.app` 또는 `git checkout backup/pre-roster-perday-time-20260706` 후 재배포 |
 
 ### (이전) 2026-07-06 #3 백업 정보
 
