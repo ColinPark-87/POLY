@@ -3,6 +3,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { resolvePermissions } from '@/lib/permissions'
 import { selectOrphanOverrides, buildSynthEntry } from '@/lib/utils/today-overrides'
 import { applyEnrollmentSchedule, applyBulkTimeToSchedule } from '@/lib/utils/vehicle-schedule'
+import { clampRideDaysToSession } from '@/lib/utils/session-days'
 import { conflictBody } from '@/lib/vehicles/conflict'
 import { logUsage } from '@/lib/usage-log'
 import { normStop } from '@/lib/utils/stop-name'
@@ -644,9 +645,14 @@ export async function POST(request: NextRequest) {
     }
 
     const { data: targetClasses } = targetSessionIds.length
-      ? await service.from('classes').select('id').in('session_id', targetSessionIds)
+      ? await service.from('classes').select('id, session_id').in('session_id', targetSessionIds)
       : { data: null }
     const targetClassIds = (targetClasses ?? []).map((c: { id: string }) => c.id)
+    // class_id → 세션명 (학생 실제 수업요일 clamp용)
+    const sessNameById = new Map(allSessRows.map(s => [s.id, s.name]))
+    const classSessName = new Map(
+      (targetClasses ?? []).map((c: { id: string; session_id: string }) => [c.id, sessNameById.get(c.session_id) ?? null]),
+    )
 
     // ⚠️.in(대량 classIds) URL한도 회피: 학생 enrollment를 campus+student로 직접 조회 후 세션(targetClassIds) 메모리 필터
     const { data: allEnrs } = await service.from('class_enrollments')
@@ -666,7 +672,11 @@ export async function POST(request: NextRequest) {
     const enrTyped = enrList as { class_id: string; arr_schedule: Record<string, string>; dep_schedule: Record<string, string> }[]
     const enr = enrTyped.find(e => DAY5.some(d => (e[schedKey] ?? {})[d] === bus_name)) ?? enrTyped[0]
     const currentSched = { ...(enr[schedKey] ?? {}) } as Record<string, string>
-    const dayList: string[] = Array.isArray(days) ? days : []
+    // 요일반(월수금/화목) 학생은 그 요일만 배정 — 빈 정류장 첫 추가 시 클라가 전 요일을 보내는 버그 방지.
+    const dayList: string[] = clampRideDaysToSession(
+      Array.isArray(days) ? days : [],
+      classSessName.get(enr.class_id),
+    )
     for (const d of dayList) {
       const busChanged = currentSched[d] !== bus_name
       currentSched[d] = bus_name
@@ -885,7 +895,14 @@ export async function POST(request: NextRequest) {
     if (enr) {
       const schedKey = req.direction === 'arr' ? 'arr_schedule' : 'dep_schedule'
       const sched = { ...(enr[schedKey] ?? {}) }
-      const reqDays: string[] = Array.isArray(req.days) ? req.days : []
+      // 요일반(월수금/화목) 학생은 그 요일만 — 여사님 변경신청도 빈 정류장이면 전 요일이 담겨오므로 clamp.
+      const { data: reqCls } = await service.from('classes').select('session_id').eq('id', req.class_id).maybeSingle()
+      let reqSessName: string | null = null
+      if (reqCls?.session_id) {
+        const { data: reqSess } = await service.from('class_sessions').select('name').eq('id', reqCls.session_id).maybeSingle()
+        reqSessName = reqSess?.name ?? null
+      }
+      const reqDays: string[] = clampRideDaysToSession(Array.isArray(req.days) ? req.days : [], reqSessName)
       const allDays = ['월', '화', '수', '목', '금']
       // 같은 호차에서 요일을 줄일 때만 제거. 호차 이동 시엔 선택 안 한 요일은 기존 호차 유지(요일별 다른 호차 지원).
       const reducingSameBus = !!req.to_bus && (!req.from_bus || req.from_bus === req.to_bus)
