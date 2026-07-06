@@ -3341,7 +3341,6 @@ function StudentDetailModal({ enrollment, student, classes, sessions, buses, enr
                     // 실어 옵션을 구분 → 매일반 것을 고르면 매일반 시간이 따라온다.
                     const inGroups = groups.some(g => g.stops.some(x => `${x.loc}|::|${x.time ?? ''}` === curVal))
                     return (
-                      <>
                       <select value={curVal} onChange={e => {
                           const [loc, t] = e.target.value.split('|::|')
                           setArrLoc(p => ({ ...p, [day]: loc ?? '' }))
@@ -3356,9 +3355,6 @@ function StudentDetailModal({ enrollment, student, classes, sessions, buses, enr
                           </optgroup>
                         ))}
                       </select>
-                      {(arr[day] ?? '').trim() && <input type="time" value={arrTime[day] ?? ''} onChange={e => setArrTime(p => ({ ...p, [day]: e.target.value }))}
-                        title="등원 시간" className="w-full text-[10px] border border-[#E2E8F0] rounded px-1 py-0.5 bg-white focus:outline-none mt-0.5" />}
-                      </>
                     )
                   })()}
                 </td>
@@ -3379,7 +3375,6 @@ function StudentDetailModal({ enrollment, student, classes, sessions, buses, enr
                     // 옵션 구분 → 매일반 것을 고르면 매일반 시간이 따라온다.
                     const inGroups = groups.some(g => g.stops.some(x => `${x.loc}|::|${x.time ?? ''}` === curVal))
                     return (
-                      <>
                       <select value={curVal} onChange={e => {
                           const [loc, t] = e.target.value.split('|::|')
                           setDepLoc(p => ({ ...p, [day]: loc ?? '' }))
@@ -3394,9 +3389,6 @@ function StudentDetailModal({ enrollment, student, classes, sessions, buses, enr
                           </optgroup>
                         ))}
                       </select>
-                      {(dep[day] ?? '').trim() && <input type="time" value={depTime[day] ?? ''} onChange={e => setDepTime(p => ({ ...p, [day]: e.target.value }))}
-                        title="하원 시간" className="w-full text-[10px] border border-[#E2E8F0] rounded px-1 py-0.5 bg-white focus:outline-none mt-0.5" />}
-                      </>
                     )
                   })()}
                 </td>
