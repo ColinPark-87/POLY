@@ -3131,6 +3131,32 @@ function extractLocOnly(sched: Record<string, string>) {
   for (const [k, v] of Object.entries(sched)) if (k.endsWith('_loc')) out[k.slice(0, -4)] = v
   return out
 }
+// 요일별 하원/등원 시간 초기값 — 요일별 {요일}_time 우선, 없으면 공유 _time.
+function extractTimeOnly(sched: Record<string, string>) {
+  const shared = sched['_time'] || sched['time'] || ''
+  const out: Record<string, string> = {}
+  for (const d of DAYS) out[d] = sched[`${d}_time`] || shared || ''
+  return out
+}
+// 요일별 호차·장소·시간 → dep/arr_schedule JSON. 시간 XOR 불변식:
+// 탑승 요일 시간이 모두 같으면 공유 _time 하나로, 다르면 요일별 {요일}_time (다른 시간대 정류장 혼용 지원).
+// → 유치부 학생이 특정 요일만 매일반 정류장·시간으로 하원해도 그 요일 시간이 유지된다.
+function buildDirSchedule(bus: Record<string, string>, loc: Record<string, string>, time: Record<string, string>) {
+  const out: Record<string, string> = {}
+  const ridingDays = DAYS.filter(d => (bus[d] ?? '').trim())
+  for (const d of ridingDays) {
+    out[d] = (bus[d] ?? '').trim()
+    if (loc[d]) out[`${d}_loc`] = loc[d]
+  }
+  const times = ridingDays.map(d => (time[d] ?? '').trim())
+  const uniq = [...new Set(times.filter(Boolean))]
+  if (ridingDays.length > 0 && times.every(Boolean) && uniq.length === 1) {
+    out['_time'] = uniq[0]
+  } else {
+    for (const d of ridingDays) { const t = (time[d] ?? '').trim(); if (t) out[`${d}_time`] = t }
+  }
+  return out
+}
 
 // 승하차 장소 드롭다운 세션 그룹별 배경색(구분용)
 const SESS_BG = ['#EFF6FF', '#F0FDF4', '#FEF3C7', '#FCE7F3', '#F5F3FF', '#ECFEFF', '#FEF2F2']
@@ -3151,6 +3177,8 @@ function StudentDetailModal({ enrollment, student, classes, sessions, buses, enr
   const [dep, setDep] = useState<Record<string, string>>(extractBusOnly(enrollment.dep_schedule ?? {}))
   const [arrLoc, setArrLoc] = useState<Record<string, string>>(extractLocOnly(enrollment.arr_schedule ?? {}))
   const [depLoc, setDepLoc] = useState<Record<string, string>>(extractLocOnly(enrollment.dep_schedule ?? {}))
+  const [arrTime, setArrTime] = useState<Record<string, string>>(extractTimeOnly(enrollment.arr_schedule ?? {}))
+  const [depTime, setDepTime] = useState<Record<string, string>>(extractTimeOnly(enrollment.dep_schedule ?? {}))
   const [editName, setEditName] = useState(student.name)
   const [editEnglishName, setEditEnglishName] = useState(student.english_name ?? '')
   const [highlightColor, setHighlightColor] = useState(enrollment.highlight_color ?? '')
@@ -3309,7 +3337,13 @@ function StudentDetailModal({ enrollment, student, classes, sessions, buses, enr
                     const cur = arrLoc[day] ?? ''
                     const inGroups = groups.some(g => g.stops.some(x => x.loc === cur))
                     return (
-                      <select value={cur} onChange={e => setArrLoc(p => ({ ...p, [day]: e.target.value }))}
+                      <>
+                      <select value={cur} onChange={e => {
+                          const loc = e.target.value
+                          setArrLoc(p => ({ ...p, [day]: loc }))
+                          const ts = [...new Set(groups.flatMap(g => g.stops).filter(x => x.loc === loc).map(x => x.time).filter(Boolean))]
+                          if (ts.length === 1) setArrTime(p => ({ ...p, [day]: ts[0] as string }))
+                        }}
                         className="w-full text-xs border border-[#E2E8F0] rounded px-1 py-1 bg-white focus:outline-none">
                         <option value="">-</option>
                         {cur && !inGroups && <option value={cur}>{cur} (현재)</option>}
@@ -3319,6 +3353,9 @@ function StudentDetailModal({ enrollment, student, classes, sessions, buses, enr
                           </optgroup>
                         ))}
                       </select>
+                      {(arr[day] ?? '').trim() && <input type="time" value={arrTime[day] ?? ''} onChange={e => setArrTime(p => ({ ...p, [day]: e.target.value }))}
+                        title="등원 시간" className="w-full text-[10px] border border-[#E2E8F0] rounded px-1 py-0.5 bg-white focus:outline-none mt-0.5" />}
+                      </>
                     )
                   })()}
                 </td>
@@ -3335,7 +3372,13 @@ function StudentDetailModal({ enrollment, student, classes, sessions, buses, enr
                     const cur = depLoc[day] ?? ''
                     const inGroups = groups.some(g => g.stops.some(x => x.loc === cur))
                     return (
-                      <select value={cur} onChange={e => setDepLoc(p => ({ ...p, [day]: e.target.value }))}
+                      <>
+                      <select value={cur} onChange={e => {
+                          const loc = e.target.value
+                          setDepLoc(p => ({ ...p, [day]: loc }))
+                          const ts = [...new Set(groups.flatMap(g => g.stops).filter(x => x.loc === loc).map(x => x.time).filter(Boolean))]
+                          if (ts.length === 1) setDepTime(p => ({ ...p, [day]: ts[0] as string }))
+                        }}
                         className="w-full text-xs border border-[#E2E8F0] rounded px-1 py-1 bg-white focus:outline-none">
                         <option value="">-</option>
                         {cur && !inGroups && <option value={cur}>{cur} (현재)</option>}
@@ -3345,6 +3388,9 @@ function StudentDetailModal({ enrollment, student, classes, sessions, buses, enr
                           </optgroup>
                         ))}
                       </select>
+                      {(dep[day] ?? '').trim() && <input type="time" value={depTime[day] ?? ''} onChange={e => setDepTime(p => ({ ...p, [day]: e.target.value }))}
+                        title="하원 시간" className="w-full text-[10px] border border-[#E2E8F0] rounded px-1 py-0.5 bg-white focus:outline-none mt-0.5" />}
+                      </>
                     )
                   })()}
                 </td>
@@ -3392,12 +3438,9 @@ function StudentDetailModal({ enrollment, student, classes, sessions, buses, enr
         <span className="text-[10px] text-[#94A3B8] flex-1">🐾 드래그로도 이동 가능</span>
         <button onClick={onClose} className="border border-[#E2E8F0] text-[#64748B] px-4 py-2 rounded-xl text-sm">취소</button>
         <button onClick={() => {
-          const mergedArr = { ...arr }
-          const mergedDep = { ...dep }
-          for (const day of DAYS) {
-            if (arrLoc[day]) mergedArr[`${day}_loc`] = arrLoc[day]
-            if (depLoc[day]) mergedDep[`${day}_loc`] = depLoc[day]
-          }
+          // 요일별 호차·장소·시간을 XOR 불변식으로 재구성(요일마다 다른 시간대 정류장 혼용 지원).
+          const mergedArr = buildDirSchedule(arr, arrLoc, arrTime)
+          const mergedDep = buildDirSchedule(dep, depLoc, depTime)
           onSave(enrollment.id, mergedArr, mergedDep, toClassId, highlightColor, editName, editEnglishName)
         }} disabled={saving}
           className="bg-[#1e3a5f] text-white px-4 py-2 rounded-xl text-sm font-semibold disabled:opacity-50">
