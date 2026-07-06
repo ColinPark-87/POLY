@@ -3253,7 +3253,12 @@ function StudentDetailModal({ enrollment, student, classes, sessions, buses, enr
     // 전역 dedup은 현재 세션(예: 유치부)이 공유 정류장을 선점해 다른 세션(예: 매일반) 그룹에서 사라지게 해
     // "유치부 아이를 매일반 하원시간으로 배차"가 막히는 버그를 유발했다.
     const allSessionLocs = new Set<string>()  // 지도(reg) 그룹 중복 방지용 — 세션에 이미 있는 정류장은 제외
-    const order = [curSessId, ...Object.keys(bySess).filter(s => s !== curSessId)]
+    // 세션 그룹 순서 = 그 세션 정류장 중 가장 이른 시간 순(유치부 14~15시 → 매일반 16~17시 → 3일/화목 18~19시).
+    const sessEarliest = (sid: string) => {
+      const ts = (bySess[sid] ?? []).map(s => (s.time ? parseTimeMin(s.time) : 9999)).filter(t => t < 9999)
+      return ts.length ? Math.min(...ts) : 9999
+    }
+    const order = Object.keys(bySess).sort((a, b) => sessEarliest(a) - sessEarliest(b))
     for (const sid of order) {
       const stops = bySess[sid]
       if (!stops || !stops.length) continue
